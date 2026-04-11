@@ -1,0 +1,63 @@
+# ── Environment & Secrets ──────────────────────────────────────────
+.env
+.env.local
+.env.development
+.env.production
+.env.*.local
+*.env
+
+# ── Node.js ────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ── Next.js ────────────────────────────────────────────────────────
+.next/
+out/
+build/
+dist/
+
+# ── Logs ───────────────────────────────────────────────────────────
+logs/
+*.log
+*.log.*
+
+# ── OS files ───────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ── Editor ─────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Diagnostic / temp files ────────────────────────────────────────
+diag_*.py
+diag_*.txt
+generate_pdf.py
+*.pdf
+/src/
+
+# ── Docker volumes ─────────────────────────────────────────────────
+postgres_data/
+redis_data/
+
+# ── Certificates ───────────────────────────────────────────────────
+*.pem
+*.key
+*.cert
+*.crt
+
+# ── Misc ───────────────────────────────────────────────────────────
+.cache/
+.turbo/
+coverage/
+.nyc_output/

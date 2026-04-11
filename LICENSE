@@ -1,0 +1,153 @@
+PROPRIETARY SOFTWARE LICENSE AGREEMENT
+
+Copyright (c) 2025 Ambuj Kumar. All Rights Reserved.
+
+SPYKAR IQ — INVENTORY INTELLIGENCE PLATFORM
+
+================================================================================
+IMPORTANT: READ THIS LICENSE AGREEMENT CAREFULLY BEFORE ACCESSING, COPYING,
+INSTALLING, OR USING THIS SOFTWARE.
+================================================================================
+
+This software, including all source code, object code, documentation, assets,
+configuration files, database schemas, AI prompts, and any associated materials
+(collectively, the "Software"), is the exclusive proprietary property of
+Ambuj Kumar ("Owner") and is protected by copyright law, trade secret law,
+and international intellectual property treaties.
+
+--------------------------------------------------------------------------------
+1. GRANT OF LICENSE
+--------------------------------------------------------------------------------
+
+This Software is NOT open source. No license, right, or permission is granted
+to any person or entity to use, copy, modify, merge, publish, distribute,
+sublicense, sell, or create derivative works of this Software, except as
+explicitly authorised in writing by the Owner.
+
+Access to this repository is granted solely for:
+  (a) Internal review by authorised Spykar Jeans employees and contractors; and
+  (b) Development and maintenance by individuals explicitly authorised in writing
+      by the Owner.
+
+Any use beyond the above requires a separate written licence agreement signed
+by the Owner.
+
+--------------------------------------------------------------------------------
+2. RESTRICTIONS
+--------------------------------------------------------------------------------
+
+Without the prior written consent of the Owner, you MAY NOT:
+
+  (a) Copy, reproduce, or duplicate this Software or any portion thereof;
+  (b) Modify, adapt, translate, reverse engineer, decompile, disassemble,
+      or create derivative works based on this Software;
+  (c) Distribute, publish, sublicense, rent, lease, loan, or otherwise
+      transfer this Software to any third party;
+  (d) Remove, alter, or obscure any proprietary notices, labels, or marks
+      on or in the Software;
+  (e) Use this Software for any commercial purpose not explicitly authorised
+      by the Owner;
+  (f) Use, adapt, or replicate the AI prompt engineering, database schema,
+      ETL pipeline logic, or chatbot architecture for any other project;
+  (g) Host, deploy, or make available this Software or any derivative of it
+      on any public or private server without written authorisation;
+  (h) Disclose, share, or publish any portion of this Software's source code,
+      architecture, or design to any third party.
+
+--------------------------------------------------------------------------------
+3. INTELLECTUAL PROPERTY OWNERSHIP
+--------------------------------------------------------------------------------
+
+The Owner retains all right, title, and interest in and to the Software,
+including all intellectual property rights therein. This License does not
+convey to you any rights of ownership in or related to the Software.
+
+All inventions, innovations, improvements, and modifications relating to the
+Software, whether made by the Owner or any authorised user, shall remain the
+exclusive property of the Owner.
+
+--------------------------------------------------------------------------------
+4. CONFIDENTIALITY
+--------------------------------------------------------------------------------
+
+This Software contains trade secrets and confidential information belonging to
+the Owner. You agree to:
+
+  (a) Maintain strict confidentiality of all aspects of the Software;
+  (b) Not disclose any part of the Software to any third party without prior
+      written consent of the Owner;
+  (c) Use the same degree of care to protect the confidentiality of the Software
+      as you use to protect your own confidential information, but in no event
+      less than reasonable care.
+
+--------------------------------------------------------------------------------
+5. NO WARRANTY
+--------------------------------------------------------------------------------
+
+THIS SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+THE OWNER MAKES NO WARRANTY THAT:
+  (a) THE SOFTWARE WILL MEET YOUR REQUIREMENTS;
+  (b) THE SOFTWARE WILL BE UNINTERRUPTED, TIMELY, SECURE, OR ERROR-FREE;
+  (c) THE RESULTS OBTAINED FROM USE OF THE SOFTWARE WILL BE ACCURATE OR RELIABLE.
+
+--------------------------------------------------------------------------------
+6. LIMITATION OF LIABILITY
+--------------------------------------------------------------------------------
+
+IN NO EVENT SHALL THE OWNER BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+--------------------------------------------------------------------------------
+7. TERMINATION
+--------------------------------------------------------------------------------
+
+Any rights granted under this License will terminate automatically and
+immediately, without notice, if you breach any term of this License.
+
+Upon termination, you must:
+  (a) Immediately cease all use of the Software;
+  (b) Destroy all copies of the Software in your possession or control;
+  (c) Certify in writing to the Owner that you have complied with the foregoing.
+
+The Owner reserves the right to pursue all available legal remedies for any
+violation of this License, including injunctive relief and monetary damages.
+
+--------------------------------------------------------------------------------
+8. GOVERNING LAW
+--------------------------------------------------------------------------------
+
+This License shall be governed by and construed in accordance with the laws of
+India, without regard to its conflict of law provisions. Any disputes arising
+under this License shall be subject to the exclusive jurisdiction of the courts
+located in India.
+
+--------------------------------------------------------------------------------
+9. ENTIRE AGREEMENT
+--------------------------------------------------------------------------------
+
+This License constitutes the entire agreement between the parties with respect
+to the use of the Software and supersedes all prior or contemporaneous
+understandings regarding such subject matter.
+
+--------------------------------------------------------------------------------
+10. CONTACT
+--------------------------------------------------------------------------------
+
+For licensing enquiries, permissions, or to report violations:
+
+  Author  : Ambuj Kumar
+  GitHub  : https://github.com/Ambujkumar909
+  Project : Spykar IQ — Inventory Intelligence Platform
+
+================================================================================
+COPYRIGHT (c) 2025 AMBUJ KUMAR. ALL RIGHTS RESERVED.
+UNAUTHORISED USE, COPYING, OR DISTRIBUTION IS STRICTLY PROHIBITED.
+================================================================================

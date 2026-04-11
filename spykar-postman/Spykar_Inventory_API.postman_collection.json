@@ -1,0 +1,645 @@
+{
+  "info": {
+    "name": "Spykar Inventory Intelligence API",
+    "description": "Complete API collection for the Spykar Jeans Inventory Intelligence Platform.\n\n**Setup:**\n1. Set the `baseUrl` variable to your server URL (default: http://localhost:4000/api/v1)\n2. Run the `Login` request first — it auto-sets `accessToken` and `refreshToken`\n3. All other requests use the `accessToken` automatically\n\n**Test Credentials (after seeding):**\n- admin@spykar.com / Admin@123\n- manager@spykar.com / Manager@123\n- viewer@spykar.com / Viewer@123",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "spykar-v1"
+  },
+  "variable": [
+    { "key": "baseUrl",      "value": "http://localhost:4000/api/v1", "type": "string" },
+    { "key": "accessToken",  "value": "", "type": "string" },
+    { "key": "refreshToken", "value": "", "type": "string" },
+    { "key": "locationId",   "value": "", "type": "string" },
+    { "key": "skuId",        "value": "", "type": "string" },
+    { "key": "dispatchId",   "value": "", "type": "string" }
+  ],
+  "item": [
+
+    {
+      "name": "🔐 Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "const res = pm.response.json();",
+                "if (res.success) {",
+                "  pm.collectionVariables.set('accessToken',  res.data.accessToken);",
+                "  pm.collectionVariables.set('refreshToken', res.data.refreshToken);",
+                "  pm.test('Login successful', () => pm.expect(res.success).to.be.true);",
+                "  pm.test('Access token returned', () => pm.expect(res.data.accessToken).to.be.a('string'));",
+                "  console.log('✅ Logged in as:', res.data.user.email);",
+                "}"
+              ],
+              "type": "text/javascript"
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@spykar.com\",\n  \"password\": \"Admin@123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        },
+        {
+          "name": "Get Current User (Me)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "const res = pm.response.json();",
+                "if (res.success) {",
+                "  pm.collectionVariables.set('accessToken',  res.data.accessToken);",
+                "  pm.collectionVariables.set('refreshToken', res.data.refreshToken);",
+                "}"
+              ],
+              "type": "text/javascript"
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/auth/refresh", "host": ["{{baseUrl}}"], "path": ["auth", "refresh"] }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/logout", "host": ["{{baseUrl}}"], "path": ["auth", "logout"] }
+          }
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/../health", "raw": "http://localhost:4000/health" }
+          }
+        },
+        {
+          "name": "Deep Health Check",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "http://localhost:4000/health/deep" }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "📊 Inventory",
+      "item": [
+        {
+          "name": "Executive Summary",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/inventory/executive-summary", "host": ["{{baseUrl}}"], "path": ["inventory", "executive-summary"] }
+          }
+        },
+        {
+          "name": "Snapshot — All Stock",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/snapshot?page=1&limit=50",
+              "host": ["{{baseUrl}}"], "path": ["inventory", "snapshot"],
+              "query": [
+                { "key": "page",  "value": "1" },
+                { "key": "limit", "value": "50" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Snapshot — Filter by Size 34",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/snapshot?size=34&sort_by=qty_on_hand&sort_order=DESC",
+              "host": ["{{baseUrl}}"], "path": ["inventory", "snapshot"],
+              "query": [
+                { "key": "size",       "value": "34" },
+                { "key": "sort_by",    "value": "qty_on_hand" },
+                { "key": "sort_order", "value": "DESC" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Snapshot — Distributors Only, Below Safety",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/snapshot?location_type=DISTRIBUTOR&below_safety=true",
+              "host": ["{{baseUrl}}"], "path": ["inventory", "snapshot"],
+              "query": [
+                { "key": "location_type", "value": "DISTRIBUTOR" },
+                { "key": "below_safety",  "value": "true" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Stock Alerts",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/inventory/alerts", "host": ["{{baseUrl}}"], "path": ["inventory", "alerts"] }
+          }
+        },
+        {
+          "name": "Stock Ageing",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/inventory/ageing", "host": ["{{baseUrl}}"], "path": ["inventory", "ageing"] }
+          }
+        },
+        {
+          "name": "Movement Ledger",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/movements?limit=50&page=1",
+              "host": ["{{baseUrl}}"], "path": ["inventory", "movements"],
+              "query": [{ "key": "limit", "value": "50" }, { "key": "page", "value": "1" }]
+            }
+          }
+        },
+        {
+          "name": "Movements — Sales Only",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/movements?movement_type=SALE&limit=50",
+              "host": ["{{baseUrl}}"], "path": ["inventory", "movements"],
+              "query": [{ "key": "movement_type", "value": "SALE" }, { "key": "limit", "value": "50" }]
+            }
+          }
+        },
+        {
+          "name": "Export Snapshot as CSV",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/inventory/snapshot/export", "host": ["{{baseUrl}}"], "path": ["inventory", "snapshot", "export"] }
+          }
+        },
+        {
+          "name": "Manual Stock Adjustment (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"location_id\": \"{{locationId}}\",\n  \"sku_id\": \"{{skuId}}\",\n  \"qty_change\": 50,\n  \"reason\": \"Manual correction after physical count\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/inventory/adjust", "host": ["{{baseUrl}}"], "path": ["inventory", "adjust"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "🏪 Distributors",
+      "item": [
+        {
+          "name": "List All Distributors",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/distributors?sort_by=total_stock&sort_order=DESC", "host": ["{{baseUrl}}"], "path": ["distributors"], "query": [{ "key": "sort_by", "value": "total_stock" }, { "key": "sort_order", "value": "DESC" }] }
+          }
+        },
+        {
+          "name": "Top 5 Distributors — Size 34",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/distributors/top?n=5&size=34",
+              "host": ["{{baseUrl}}"], "path": ["distributors", "top"],
+              "query": [{ "key": "n", "value": "5" }, { "key": "size", "value": "34" }]
+            }
+          }
+        },
+        {
+          "name": "Top 10 Distributors — Indigo Blue",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/distributors/top?n=10&color_code=INDIGO_BLUE",
+              "host": ["{{baseUrl}}"], "path": ["distributors", "top"],
+              "query": [{ "key": "n", "value": "10" }, { "key": "color_code", "value": "INDIGO_BLUE" }]
+            }
+          }
+        },
+        {
+          "name": "Top 5 Distributors — Size 32, North Zone",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/distributors/top?n=5&size=32&zone_id=1",
+              "host": ["{{baseUrl}}"], "path": ["distributors", "top"],
+              "query": [{ "key": "n", "value": "5" }, { "key": "size", "value": "32" }, { "key": "zone_id", "value": "1" }]
+            }
+          }
+        },
+        {
+          "name": "Distributor Detail",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/distributors/{{locationId}}", "host": ["{{baseUrl}}"], "path": ["distributors", "{{locationId}}"] }
+          }
+        },
+        {
+          "name": "Distributor Inventory — Size 34",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/distributors/{{locationId}}/inventory?size=34",
+              "host": ["{{baseUrl}}"], "path": ["distributors", "{{locationId}}", "inventory"],
+              "query": [{ "key": "size", "value": "34" }]
+            }
+          }
+        },
+        {
+          "name": "Distributor Movements",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/distributors/{{locationId}}/movements", "host": ["{{baseUrl}}"], "path": ["distributors", "{{locationId}}", "movements"] }
+          }
+        },
+        {
+          "name": "Distributor Ageing",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/distributors/{{locationId}}/ageing", "host": ["{{baseUrl}}"], "path": ["distributors", "{{locationId}}", "ageing"] }
+          }
+        },
+        {
+          "name": "Compare Distributors",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/distributors/comparison?ids={{locationId}}",
+              "host": ["{{baseUrl}}"], "path": ["distributors", "comparison"],
+              "query": [{ "key": "ids", "value": "{{locationId}}" }]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "📍 Locations",
+      "item": [
+        {
+          "name": "List All Locations",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/locations", "host": ["{{baseUrl}}"], "path": ["locations"] }
+          }
+        },
+        {
+          "name": "COCO Stores Only",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/locations?type=COCO", "host": ["{{baseUrl}}"], "path": ["locations"], "query": [{ "key": "type", "value": "COCO" }] }
+          }
+        },
+        {
+          "name": "Warehouses Only",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/locations?type=WAREHOUSE", "host": ["{{baseUrl}}"], "path": ["locations"], "query": [{ "key": "type", "value": "WAREHOUSE" }] }
+          }
+        },
+        {
+          "name": "Location Detail",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/locations/{{locationId}}", "host": ["{{baseUrl}}"], "path": ["locations", "{{locationId}}"] }
+          }
+        },
+        {
+          "name": "Location Summary",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/locations/{{locationId}}/summary", "host": ["{{baseUrl}}"], "path": ["locations", "{{locationId}}", "summary"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "👖 SKUs",
+      "item": [
+        {
+          "name": "List SKUs",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/skus?limit=50", "host": ["{{baseUrl}}"], "path": ["skus"], "query": [{ "key": "limit", "value": "50" }] }
+          }
+        },
+        {
+          "name": "Size × Color Matrix (Heatmap)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/skus/matrix", "host": ["{{baseUrl}}"], "path": ["skus", "matrix"] }
+          }
+        },
+        {
+          "name": "Matrix — Distributors Only",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/skus/matrix?location_type=DISTRIBUTOR", "host": ["{{baseUrl}}"], "path": ["skus", "matrix"], "query": [{ "key": "location_type", "value": "DISTRIBUTOR" }] }
+          }
+        },
+        {
+          "name": "All Sizes with Stock",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/skus/sizes", "host": ["{{baseUrl}}"], "path": ["skus", "sizes"] }
+          }
+        },
+        {
+          "name": "All Colors with Stock",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/skus/colors", "host": ["{{baseUrl}}"], "path": ["skus", "colors"] }
+          }
+        },
+        {
+          "name": "Top Moving SKUs (30 days)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/skus/top-moving?n=10&days=30", "host": ["{{baseUrl}}"], "path": ["skus", "top-moving"], "query": [{ "key": "n", "value": "10" }, { "key": "days", "value": "30" }] }
+          }
+        },
+        {
+          "name": "Slow / Dead Stock (90 days)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/skus/slow-moving?days=90", "host": ["{{baseUrl}}"], "path": ["skus", "slow-moving"], "query": [{ "key": "days", "value": "90" }] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "🚚 Dispatch",
+      "item": [
+        {
+          "name": "List All Dispatches",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/dispatch?limit=50", "host": ["{{baseUrl}}"], "path": ["dispatch"], "query": [{ "key": "limit", "value": "50" }] }
+          }
+        },
+        {
+          "name": "Dispatches In Transit",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/dispatch/in-transit", "host": ["{{baseUrl}}"], "path": ["dispatch", "in-transit"] }
+          }
+        },
+        {
+          "name": "Dispatch Summary by Status",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/dispatch/summary", "host": ["{{baseUrl}}"], "path": ["dispatch", "summary"] }
+          }
+        },
+        {
+          "name": "Create Dispatch Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from_location_id\": \"{{locationId}}\",\n  \"to_location_id\": \"{{locationId}}\",\n  \"expected_at\": \"2025-09-30T00:00:00Z\",\n  \"notes\": \"Seasonal replenishment\",\n  \"items\": [\n    { \"sku_id\": \"{{skuId}}\", \"qty_ordered\": 100 }\n  ]\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/dispatch", "host": ["{{baseUrl}}"], "path": ["dispatch"] }
+          }
+        },
+        {
+          "name": "Update Dispatch Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"DELIVERED\",\n  \"tracking_no\": \"TRK-123456\",\n  \"courier_name\": \"BlueDart\"\n}" },
+            "url": { "raw": "{{baseUrl}}/dispatch/{{dispatchId}}/status", "host": ["{{baseUrl}}"], "path": ["dispatch", "{{dispatchId}}", "status"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "📈 Analytics",
+      "item": [
+        {
+          "name": "Network Overview",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/analytics/network-overview", "host": ["{{baseUrl}}"], "path": ["analytics", "network-overview"] }
+          }
+        },
+        {
+          "name": "Stock Trend (30 days)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/analytics/stock-trend?days=30", "host": ["{{baseUrl}}"], "path": ["analytics", "stock-trend"], "query": [{ "key": "days", "value": "30" }] }
+          }
+        },
+        {
+          "name": "Size Distribution — All",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/analytics/size-distribution", "host": ["{{baseUrl}}"], "path": ["analytics", "size-distribution"] }
+          }
+        },
+        {
+          "name": "Color Distribution",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/analytics/color-distribution", "host": ["{{baseUrl}}"], "path": ["analytics", "color-distribution"] }
+          }
+        },
+        {
+          "name": "Zone Heatmap",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/analytics/zone-heatmap", "host": ["{{baseUrl}}"], "path": ["analytics", "zone-heatmap"] }
+          }
+        },
+        {
+          "name": "Fill Rate (30 days)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/analytics/fill-rate?days=30", "host": ["{{baseUrl}}"], "path": ["analytics", "fill-rate"], "query": [{ "key": "days", "value": "30" }] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "🤖 AI Query",
+      "item": [
+        {
+          "name": "Ask — Top 5 Distributors Size 34",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"question\": \"Show top 5 distributors by stock for size 34 jeans\"\n}" },
+            "url": { "raw": "{{baseUrl}}/ai/query", "host": ["{{baseUrl}}"], "path": ["ai", "query"] }
+          }
+        },
+        {
+          "name": "Ask — Which size is critically low?",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"question\": \"Which size is running critically low across all distributors?\"\n}" },
+            "url": { "raw": "{{baseUrl}}/ai/query", "host": ["{{baseUrl}}"], "path": ["ai", "query"] }
+          }
+        },
+        {
+          "name": "Ask — Units in transit to COCO stores",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"question\": \"How many units are currently in transit to COCO stores?\"\n}" },
+            "url": { "raw": "{{baseUrl}}/ai/query", "host": ["{{baseUrl}}"], "path": ["ai", "query"] }
+          }
+        },
+        {
+          "name": "Ask — Dead stock by location",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"question\": \"Which locations have the highest dead stock older than 180 days?\"\n}" },
+            "url": { "raw": "{{baseUrl}}/ai/query", "host": ["{{baseUrl}}"], "path": ["ai", "query"] }
+          }
+        },
+        {
+          "name": "Suggested Queries",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/ai/suggested-queries", "host": ["{{baseUrl}}"], "path": ["ai", "suggested-queries"] }
+          }
+        },
+        {
+          "name": "Query History",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/ai/history", "host": ["{{baseUrl}}"], "path": ["ai", "history"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "🔄 Sync (Admin)",
+      "item": [
+        {
+          "name": "Sync Status",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/sync/status", "host": ["{{baseUrl}}"], "path": ["sync", "status"] }
+          }
+        },
+        {
+          "name": "Sync Logs",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/sync/logs", "host": ["{{baseUrl}}"], "path": ["sync", "logs"] }
+          }
+        },
+        {
+          "name": "Trigger Manual Sync",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/sync/trigger", "host": ["{{baseUrl}}"], "path": ["sync", "trigger"] }
+          }
+        }
+      ]
+    }
+
+  ]
+}
