@@ -115,7 +115,7 @@ async function getSizeDistribution(req, res, next) {
 async function getColorDistribution(req, res, next) {
   try {
     const { location_type, state, city } = req.query;
-    const cacheKey = `analytics:color-dist-v3:${location_type||'all'}:${state||''}:${city||''}`;
+    const cacheKey = `analytics:color-dist-v4:${location_type||'all'}:${state||''}:${city||''}`;
 
     const data = await getOrSet(cacheKey, async () => {
       const locConditions = ['l.is_active = true'];
@@ -129,14 +129,15 @@ async function getColorDistribution(req, res, next) {
           SELECT
             s.color_code,
             s.color_name,
-            COALESCE(SUM(i.qty_on_hand)::int, 0)           AS total_stock,
-            COALESCE(SUM(i.qty_available)::int, 0)          AS available_stock,
+            COALESCE(SUM(i.qty_on_hand)::int, 0)              AS total_stock,
+            COALESCE(SUM(i.qty_available)::int, 0)             AS available_stock,
             COALESCE(ROUND(SUM(i.qty_on_hand * s.mrp), 2), 0) AS stock_value
-          FROM skus s
-          LEFT JOIN inventory_snapshot i ON i.sku_id = s.id
-          LEFT JOIN locations l ON l.id = i.location_id AND ${locConditions.join(' AND ')}
+          FROM inventory_snapshot i
+          JOIN skus s ON s.id = i.sku_id
+          JOIN locations l ON l.id = i.location_id
           WHERE s.is_active = true
             AND s.color_name IS NOT NULL
+            AND ${locConditions.join(' AND ')}
           GROUP BY s.color_code, s.color_name
         )
         SELECT
