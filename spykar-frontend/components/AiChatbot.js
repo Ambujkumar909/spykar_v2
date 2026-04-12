@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Bot, Send, X, Minimize2, Maximize2, RotateCcw, Sparkles, GripHorizontal } from 'lucide-react';
 import { aiService } from '../lib/services';
+import { useAuth } from '../lib/auth-context';
 
 // ─── Suggestion Bank ──────────────────────────────────────────────────────────
 const SUGGESTIONS = [
@@ -436,6 +437,7 @@ function Chips({ suggestions, onSelect }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function AiChatbot() {
+  const { user } = useAuth();
   const [open,        setOpen]        = useState(false);
   const [messages,    setMessages]    = useState([]);
   const [input,       setInput]       = useState('');
@@ -444,6 +446,7 @@ export default function AiChatbot() {
   const [unread,      setUnread]      = useState(0);
   const [isVisible,   setIsVisible]   = useState(false);
   const [maximized,   setMaximized]   = useState(false);
+  const greetedRef = useRef(false);
 
   // Resize state
   const [panelW, setPanelW] = useState(DEFAULT_W);
@@ -495,12 +498,29 @@ export default function AiChatbot() {
     if (open) {
       setIsVisible(true);
       setUnread(0);
+      // Show greeting the very first time the chat is opened
+      if (!greetedRef.current) {
+        greetedRef.current = true;
+        const displayName = user?.name
+          ? user.name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+          : user?.role
+            ? user.role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+            : 'there';
+        const hour = new Date().getHours();
+        const timeGreet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+        setMessages([{
+          role: 'bot',
+          id: Date.now(),
+          text: `${timeGreet}, ${displayName}! 👋\n\nI'm Spykar IQ — your AI inventory assistant. Ask me anything about stock, sales, returns, or store performance.\n\nHow can I help you today?`,
+          error: false,
+        }]);
+      }
       setTimeout(() => { inputRef.current?.focus(); endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, 320);
     } else {
       const t = setTimeout(() => setIsVisible(false), 380);
       return () => clearTimeout(t);
     }
-  }, [open]);
+  }, [open, user]);
 
   useEffect(() => {
     if (open) endRef.current?.scrollIntoView({ behavior: 'smooth' });
