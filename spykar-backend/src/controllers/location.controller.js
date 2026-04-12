@@ -36,7 +36,7 @@ async function list(req, res, next) {
     const cityOptionParams = [...optionParams];
     if (state) { cityOptionParams.push(`%${state}%`); cityOptionConditions.push(`l.state ILIKE $${cityOptionParams.length}`); }
 
-    const cacheKey = `locations:list:${type||'all'}:${city||'all'}:${state||'all'}:${group_name||'all'}:${search||''}:p${pageNum}:l${limitNum}`;
+    const cacheKey = `locations:list:${type||'all'}:${city||'all'}:${state||'all'}:${group_name||'all'}:${search||''}:p${pageNum}:l${limitNum}:s${sort_by||'default'}`;
     const data = await getOrSet(cacheKey, async () => {
       const baseFrom = `
         FROM locations l
