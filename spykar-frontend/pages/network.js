@@ -1,314 +1,640 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import DashboardLayout from '../components/layout/DashboardLayout';
-import Pagination from '../components/ui/Pagination';
-import { locationService, inventoryService } from '../lib/services';
-import { formatNumber, formatCurrency } from '../lib/utils';
-import { MapPin, Search, X, Users, TrendingUp, Package, Globe } from 'lucide-react';
+import { locationService } from '../lib/services';
 import toast from 'react-hot-toast';
+import {
+  Globe, Package, MapPin, PieChart, BarChart2,
+  RefreshCw, TrendingUp, Layers, Activity,
+} from 'lucide-react';
 
-const PALETTE = ['#C0392B','#0284C7','#059669','#D97706','#DC2626','#0D9488','#E74C3C','#EA580C'];
+const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
-export default function Network() {
-  const [locations, setLocations]       = useState([]);
-  const [pagination, setPagination]     = useState(null);
-  const [groupSummary, setGroupSummary] = useState([]);
-  const [networkSummary, setNetworkSummary] = useState(null);
-  const [stateOptions, setStateOptions] = useState([]);
-  const [cityOptions, setCityOptions]   = useState([]);
-  const [selected, setSelected]         = useState(null);
-  const [locInventory, setLocInv]       = useState([]);
-  const [locSummary, setLocSummary]     = useState(null);
-  const [groupFilter, setGroupFilter]   = useState('');
-  const [stateFilter, setStateFilter]   = useState('');
-  const [cityFilter, setCityFilter]     = useState('');
-  const [search, setSearch]             = useState('');
-  const [loading, setLoading]           = useState(true);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [page, setPage]                 = useState(1);
+// ── Typography — identical to sales page ───────────────────────────────────
+const T = {
+  primary:   '#0f172a',
+  secondary: '#1e293b',
+  muted:     '#334155',
+  border:    '#e2e8f0',
+  bg:        '#f8fafc',
+  accent:    '#0f172a',
+};
 
-  const fetchLocations = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await locationService.list({
-        limit: 100,
-        page,
-        group_name: groupFilter || undefined,
-        state:      stateFilter || undefined,
-        city:       cityFilter  || undefined,
-        search:     search      || undefined,
-      });
-      setLocations(res.data.data || []);
-      setPagination(res.data.pagination || null);
-      setGroupSummary(res.data.groups || []);
-      setNetworkSummary(res.data.summary || null);
-      setStateOptions(res.data.states || []);
-      setCityOptions(res.data.cities || []);
-    } catch { toast.error('Failed to load network'); }
-    finally  { setLoading(false); }
-  }, [page, groupFilter, stateFilter, cityFilter, search]);
+// ── Chart base theme — identical to sales page ────────────────────────────
+const chartBase = {
+  fontFamily: 'Inter, system-ui, sans-serif',
+  toolbar: { show: false },
+  zoom: { enabled: false },
+  animations: { enabled: true, speed: 600 },
+};
 
-  useEffect(() => { fetchLocations(); }, [fetchLocations]);
+// ── Formatters — identical to sales page ──────────────────────────────────
+function fmtL(n) {
+  if (!n && n !== 0) return '—';
+  n = Number(n);
+  if (n >= 10000000) return (n / 10000000).toFixed(2) + ' Cr';
+  if (n >= 100000)   return (n / 100000).toFixed(2) + 'L';
+  if (n >= 1000)     return (n / 1000).toFixed(1) + 'K';
+  return n.toLocaleString('en-IN');
+}
+function fmtNum(n) {
+  if (!n && n !== 0) return '0';
+  return Number(n).toLocaleString('en-IN');
+}
 
-  function clearSelection() { setSelected(null); setLocInv([]); setLocSummary(null); }
+// ── Shared filter styles — identical to sales page ─────────────────────────
+const filterInput  = { border: `1.5px solid ${T.border}`, borderRadius: 8, padding: '6px 10px 6px 30px', fontSize: 12, fontWeight: 700, color: T.primary, outline: 'none', background: T.bg };
+const filterSelect = { border: `1.5px solid ${T.border}`, borderRadius: 8, padding: '6px 28px 6px 10px', fontSize: 12, fontWeight: 700, color: T.primary, outline: 'none', background: T.bg, appearance: 'none', cursor: 'pointer' };
+const SearchIcon   = () => <svg style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', opacity: 0.45 }} width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={T.primary} strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
+const ChevronIcon  = () => <svg style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', opacity: 0.5 }} width={11} height={11} viewBox="0 0 24 24" fill="none" stroke={T.primary} strokeWidth={2.5}><polyline points="6 9 12 15 18 9"/></svg>;
 
-  function updateFilters(fn) { clearSelection(); setPage(1); fn(); }
-
-  async function selectLocation(loc) {
-    if (selected?.id === loc.id) { clearSelection(); return; }
-    setSelected(loc); setLocInv([]); setLocSummary(null); setDetailLoading(true);
-    try {
-      const [invRes, sumRes] = await Promise.allSettled([
-        inventoryService.getLocationInventory(loc.id, { limit: 50 }),
-        locationService.getSummary(loc.id),
-      ]);
-      if (invRes.status === 'fulfilled') setLocInv(invRes.value.data.data?.inventory || []);
-      if (sumRes.status === 'fulfilled') setLocSummary(sumRes.value.data.data);
-    } catch { toast.error('Failed to load store details'); }
-    finally  { setDetailLoading(false); }
-  }
-
-  const totalLocations = Number(networkSummary?.total_locations || pagination?.total || locations.length || 0);
-  const totalPages     = Number(pagination?.totalPages || 1);
-  const currentPage    = Number(pagination?.page || page || 1);
-  const availableGroups = groupSummary.map(g => g.group_name).filter(Boolean);
-  const totalNetworkStock = groupSummary.reduce((s, g) => s + Number(g.stock || 0), 0);
-
+// ── KPI Card — identical to sales page ────────────────────────────────────
+function KpiCard({ icon: Icon, label, value, sub, sub2, accent = '#0f172a', loading }) {
   return (
-    <DashboardLayout title="Network" subtitle="Retail network overview — inventory positions across all locations &amp; channels">
-
-      {/* ── Group KPI Cards ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(groupSummary.length || 3, 6)}, 1fr)`, gap: 14, marginBottom: 24 }}>
-        {loading
-          ? [1,2,3,4].map(i => <div key={i} className="kpi-card"><div className="skeleton" style={{ height: 80 }} /></div>)
-          : groupSummary.map((group, i) => {
-            const color = PALETTE[i % PALETTE.length];
-            const pct = totalNetworkStock > 0 ? Math.round((Number(group.stock) / totalNetworkStock) * 100) : 0;
-            return (
-              <div
-                key={group.group_name || i}
-                className="kpi-card"
-                style={{ cursor: 'pointer', borderColor: groupFilter === group.group_name ? color : '', borderWidth: groupFilter === group.group_name ? 2 : 1 }}
-                onClick={() => updateFilters(() => setGroupFilter(groupFilter === group.group_name ? '' : group.group_name))}
-              >
-                <div className="kpi-icon" style={{ background: `${color}18`, color }}><Users size={17} /></div>
-                <div className="kpi-label" style={{ fontSize: 10 }}>{group.group_name || 'Unknown'}</div>
-                <div className="kpi-value" style={{ fontSize: 22 }}>{formatNumber(Number(group.stock || 0))}</div>
-                <div className="kpi-sub" style={{ fontSize: 11 }}>{formatNumber(Number(group.count || 0))} locations · {pct}%</div>
-                <div className="kpi-bar"><div className="kpi-bar-fill" style={{ width: `${pct}%`, background: color }} /></div>
-              </div>
-            );
-          })
-        }
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 390px' : '1fr', gap: 20 }}>
-
-        {/* ── Main Table ── */}
-        <div className="card">
-          <div className="card-header" style={{ flexWrap: 'wrap', gap: 10 }}>
-            <span className="card-title">
-              <Globe size={13} style={{ display: 'inline', marginRight: 6, color: 'var(--accent-primary)' }} />
-              Retail Network — All Locations ({formatNumber(totalLocations)})
-            </span>
-            <div className="filter-bar" style={{ flexWrap: 'wrap' }}>
-              {/* Group filter */}
-              <select className="input" style={{ width: 180 }} value={groupFilter} onChange={e => updateFilters(() => setGroupFilter(e.target.value))}>
-                <option value="">All Channels</option>
-                {availableGroups.map(g => <option key={g} value={g}>{g}</option>)}
-              </select>
-
-              {/* State filter */}
-              <select className="input" style={{ width: 160 }} value={stateFilter} onChange={e => updateFilters(() => { setStateFilter(e.target.value); setCityFilter(''); })}>
-                <option value="">All States</option>
-                {stateOptions.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-
-              {/* City filter */}
-              <select className="input" style={{ width: 160 }} value={cityFilter} onChange={e => updateFilters(() => setCityFilter(e.target.value))}>
-                <option value="">All Cities</option>
-                {cityOptions.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-
-              {/* Search */}
-              <div style={{ position: 'relative' }}>
-                <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-                <input
-                  className="input"
-                  style={{ paddingLeft: 30, width: 220 }}
-                  placeholder="Search store name, code, city…"
-                  value={search}
-                  onChange={e => updateFilters(() => setSearch(e.target.value))}
-                />
-              </div>
-
-              {/* Clear filters */}
-              {(groupFilter || stateFilter || cityFilter || search) && (
-                <button className="btn btn-ghost" style={{ padding: '7px 10px', fontSize: 12 }}
-                  onClick={() => updateFilters(() => { setGroupFilter(''); setStateFilter(''); setCityFilter(''); setSearch(''); })}>
-                  <X size={12} /> Clear
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div style={{ overflowX: 'auto' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Code</th>
-                  <th>Channel</th>
-                  <th>Location</th>
-                  <th>City</th>
-                  <th>State</th>
-                  <th style={{ textAlign: 'right' }}>Qty On Hand</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading
-                  ? Array.from({ length: 10 }).map((_, i) => (
-                    <tr key={i}>{Array.from({ length: 7 }).map((_, j) => (
-                      <td key={j}><div className="skeleton" style={{ height: 13, width: j === 5 ? '60%' : '85%' }} /></td>
-                    ))}</tr>
-                  ))
-                  : locations.map((loc) => {
-                    const isActive = selected?.id === loc.id;
-                    const groupIdx = groupSummary.findIndex(g => g.group_name === loc.group_name);
-                    const color    = PALETTE[Math.max(groupIdx, 0) % PALETTE.length];
-                    return (
-                      <tr
-                        key={loc.id}
-                        style={{ cursor: 'pointer', background: isActive ? 'var(--lavender-glow)' : '' }}
-                        onClick={() => selectLocation(loc)}
-                      >
-                        <td style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-muted)' }}>
-                          {loc.code?.replace(/^[A-Za-z]+-/, '') || '—'}
-                        </td>
-                        <td>
-                          <span className="badge badge-neutral" style={{ fontSize: 10, borderColor: `${color}40`, color }}>
-                            {loc.group_name || '—'}
-                          </span>
-                        </td>
-                        <td style={{ fontWeight: 600 }}>{loc.name}</td>
-                        <td style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{loc.city || '—'}</td>
-                        <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{loc.state || '—'}</td>
-                        <td style={{ textAlign: 'right' }}>
-                          <span style={{ fontWeight: 700, color: 'var(--accent-primary)', fontFamily: 'var(--font-display)', fontSize: 14 }}>
-                            {formatNumber(loc.total_stock)}
-                          </span>
-                        </td>
-                        <td style={{ color: 'var(--accent-primary)', fontSize: 14 }}>→</td>
-                      </tr>
-                    );
-                  })
-                }
-                {!loading && !locations.length && (
-                  <tr><td colSpan={7}>
-                    <div className="empty-state"><MapPin size={32} /><p>No stores found for selected filters</p></div>
-                  </td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {!loading && totalPages > 1 && (
-            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                Page {currentPage} of {totalPages} · {formatNumber(totalLocations)} locations total
-              </span>
-              <Pagination page={currentPage} totalPages={totalPages} onPageChange={setPage} />
-            </div>
-          )}
+    <div style={{
+      background: '#fff', border: `1px solid ${T.border}`, borderRadius: 16,
+      padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 8,
+      position: 'relative', overflow: 'hidden',
+    }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: accent, borderRadius: '16px 16px 0 0' }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <div style={{ width: 30, height: 30, borderRadius: 8, background: accent + '14', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Icon size={14} color={accent} strokeWidth={2.5} />
         </div>
-
-        {/* ── Store Detail Panel ── */}
-        {selected && (
-          <div className="card" style={{ height: 'fit-content', position: 'sticky', top: 100 }}>
-            <div className="card-header">
-              <div style={{ flex: 1, overflow: 'hidden' }}>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', marginBottom: 3 }}>
-                  LOC {selected.code?.replace(/^[A-Za-z]+-/, '')}
-                </div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {selected.name}
-                </div>
-              </div>
-              <button type="button" onClick={clearSelection} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 10, cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600, flexShrink: 0 }}>
-                <X size={14} /> Close
-              </button>
-            </div>
-
-            <div className="card-body" style={{ padding: '14px 18px' }}>
-              {/* Location */}
-              <div style={{ padding: '10px 12px', background: 'var(--bg-elevated)', borderRadius: 8, marginBottom: 12 }}>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Location</div>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{selected.city}{selected.state ? `, ${selected.state}` : ''}</div>
-                {selected.pincode && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>PIN {selected.pincode}</div>}
-              </div>
-
-              {/* Channel */}
-              <div style={{ padding: '10px 12px', background: 'var(--bg-elevated)', borderRadius: 8, marginBottom: 12 }}>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Channel</div>
-                <span className="badge badge-neutral">{selected.group_name || selected.type || '—'}</span>
-              </div>
-
-              {/* Summary stats */}
-              {detailLoading ? (
-                <div className="skeleton" style={{ height: 140, marginBottom: 12 }} />
-              ) : locSummary ? (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
-                  {[
-                    { label: 'Total Stock',  value: formatNumber(locSummary.total_stock) },
-                    { label: 'Available',    value: formatNumber(locSummary.available) },
-                    { label: 'In Transit',   value: formatNumber(locSummary.in_transit) },
-                    { label: 'SKU Count',    value: formatNumber(locSummary.sku_count) },
-                    { label: 'Stock Value',  value: formatCurrency(locSummary.stock_value), span: 2 },
-                    { label: 'Low Stock Alerts', value: locSummary.alerts, color: locSummary.alerts > 0 ? '#DC2626' : '#059669', span: 2 },
-                  ].map((item, idx) => (
-                    <div key={idx} style={{ gridColumn: item.span ? `span ${item.span}` : '', padding: '9px 12px', background: 'var(--bg-elevated)', borderRadius: 8 }}>
-                      <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{item.label}</div>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: item.color || 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>{item.value}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              {/* Contact */}
-              {selected.contact_name && (
-                <div style={{ padding: '10px 12px', background: 'var(--bg-elevated)', borderRadius: 8, marginBottom: 14 }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Contact</div>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{selected.contact_name}</div>
-                  {selected.contact_phone && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{selected.contact_phone}</div>}
-                </div>
-              )}
-
-              {/* Top SKUs */}
-              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, fontWeight: 600 }}>
-                Top SKUs — This Location
-              </div>
-              {detailLoading
-                ? <div className="skeleton" style={{ height: 120 }} />
-                : locInventory.length === 0
-                  ? <div style={{ color: 'var(--text-muted)', fontSize: 12, textAlign: 'center', padding: 20 }}>No inventory data</div>
-                  : locInventory.slice(0, 8).map((inv, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                      <div>
-                        <div style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--text-primary)', fontWeight: 500 }}>{inv.sku_code}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{inv.color_name} · Size {inv.size}</div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>{formatNumber(inv.qty_on_hand)}</div>
-                        {inv.is_below_safety && <div style={{ fontSize: 10, color: '#DC2626', fontWeight: 600 }}>Low Stock</div>}
-                      </div>
-                    </div>
-                  ))
-              }
-            </div>
-          </div>
-        )}
+        <span style={{ fontSize: 11, fontWeight: 800, color: T.muted, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</span>
       </div>
-    </DashboardLayout>
+      {loading
+        ? <div style={{ height: 38, background: '#f1f5f9', borderRadius: 8 }} />
+        : <div style={{ fontSize: 32, fontWeight: 900, color: T.primary, letterSpacing: '-0.03em', lineHeight: 1 }}>{value}</div>
+      }
+      {sub  && <div style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>{sub}</div>}
+      {sub2 && <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, marginTop: -4 }}>{sub2}</div>}
+    </div>
   );
 }
 
-Network.getLayout = (page) => page;
+// ── Section Title — identical to sales page ───────────────────────────────
+function SectionTitle({ icon: Icon, label }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+      <Icon size={16} color={T.primary} strokeWidth={2.5} />
+      <span style={{ fontSize: 13, fontWeight: 900, color: T.primary, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</span>
+    </div>
+  );
+}
+
+// ── Channel Breakdown — robust, always sorted by stock ────────────────────
+function ChannelBreakdownSection({ groups, loading }) {
+  // Always sorted by stock descending — most meaningful view
+  const rows = useMemo(() => {
+    return [...(groups || [])].sort((a, b) => Number(b.stock || 0) - Number(a.stock || 0));
+  }, [groups]);
+
+  const totalStock = rows.reduce((s, r) => s + Number(r.stock || 0), 0);
+  const maxStock   = rows[0] ? Number(rows[0].stock || 0) : 1;
+
+  return (
+    <div style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 16, overflow: 'hidden' }}>
+      <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+          <PieChart size={13} color={T.primary} strokeWidth={2.5} />
+          <span style={{ fontSize: 11, fontWeight: 900, color: T.primary, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Channel Breakdown</span>
+          {!loading && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: T.primary, borderRadius: 100, padding: '2px 7px' }}>{rows.length}</span>}
+        </div>
+        <span style={{ fontSize: 10, fontWeight: 700, color: T.muted }}>Sorted by highest stock</span>
+      </div>
+
+      <div style={{ overflowY: 'auto', maxHeight: 420 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+            <tr style={{ background: T.bg }}>
+              {['#','Channel / Group','Billing','Distribution','Locations','Total Stock','Share %'].map(h => (
+                <th key={h} style={{ padding: '9px 14px', textAlign: ['Locations','Total Stock','Share %'].includes(h) ? 'right' : 'left', fontSize: 10, fontWeight: 900, color: T.primary, letterSpacing: '0.07em', textTransform: 'uppercase', borderBottom: `1.5px solid ${T.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading
+              ? Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={i}><td colSpan={7} style={{ padding: '9px 14px' }}><div style={{ height: 13, background: T.bg, borderRadius: 4 }} /></td></tr>
+                ))
+              : rows.map((r, i) => {
+                  const pct   = maxStock > 0 ? Math.round((Number(r.stock || 0) / maxStock) * 100) : 0;
+                  const share = totalStock > 0 ? ((Number(r.stock || 0) / totalStock) * 100).toFixed(1) : '0.0';
+                  return (
+                    <tr key={i}
+                      style={{ borderBottom: `1px solid ${T.border}`, background: i % 2 === 0 ? '#fff' : '#fafafe' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#f0f4ff'}
+                      onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? '#fff' : '#fafafe'}
+                    >
+                      <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: T.muted, width: 36 }}>{i + 1}</td>
+                      <td style={{ padding: '9px 14px', fontSize: 13, fontWeight: 800, color: T.primary }}>{r.group_name || '—'}</td>
+                      <td style={{ padding: '9px 14px' }}>
+                        <span style={{ background: r.billing_model === 'OUTRIGHT' ? '#FEF3C7' : '#DBEAFE', color: r.billing_model === 'OUTRIGHT' ? '#92400E' : '#1D4ED8', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 800 }}>
+                          {r.billing_model || 'SOR'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '9px 14px', width: 130 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                          <div style={{ flex: 1, background: '#f1f5f9', borderRadius: 100, height: 6, overflow: 'hidden' }}>
+                            <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg,#2563EB,#6366F1)', borderRadius: 100, transition: 'width 0.6s ease' }} />
+                          </div>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: T.muted, minWidth: 30, textAlign: 'right' }}>{pct}%</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 13, fontWeight: 800, color: T.primary }}>{fmtNum(r.count)}</td>
+                      <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 13, fontWeight: 800, color: '#059669' }}>{fmtL(r.stock)}</td>
+                      <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: T.muted }}>{share}%</td>
+                    </tr>
+                  );
+                })
+            }
+            {!loading && rows.length === 0 && (
+              <tr><td colSpan={7} style={{ padding: 32, textAlign: 'center', fontSize: 12, fontWeight: 700, color: T.muted }}>No channel data</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {!loading && rows.length > 0 && (
+        <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.border}`, background: T.bg }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: T.muted }}>
+            <strong style={{ color: T.primary }}>{rows.length}</strong> channels · Total stock: <strong style={{ color: T.primary }}>{fmtL(totalStock)}</strong> units
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Network Charts — 3-chart section like sales page ─────────────────────
+function NetworkChartsSection({ groups, locations, loading }) {
+  // Chart 1: Stock by Channel — horizontal bar (full width)
+  const channelStockChart = useMemo(() => {
+    const rows = [...(groups || [])]
+      .sort((a, b) => Number(b.stock || 0) - Number(a.stock || 0))
+      .slice(0, 10);
+    return {
+      options: {
+        ...chartBase,
+        chart: { ...chartBase, type: 'bar' },
+        plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '62%' } },
+        xaxis: {
+          categories: rows.map(r => r.group_name || ''),
+          labels: { style: { colors: T.muted, fontWeight: 700, fontSize: '11px' }, formatter: v => fmtL(v) },
+          axisBorder: { show: false }, axisTicks: { show: false },
+        },
+        yaxis: { labels: { style: { colors: T.primary, fontWeight: 800, fontSize: '12px' } } },
+        colors: ['#2563EB'],
+        fill: {
+          type: 'gradient',
+          gradient: { shade: 'light', type: 'horizontal', gradientToColors: ['#6366F1'], opacityFrom: 1, opacityTo: 0.85 },
+        },
+        dataLabels: {
+          enabled: true,
+          formatter: v => fmtL(v),
+          style: { fontSize: '11px', fontWeight: 800, colors: ['#fff'] },
+          dropShadow: { enabled: false },
+        },
+        grid: { borderColor: '#f1f5f9', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
+        tooltip: { y: { formatter: v => fmtNum(v) + ' units' }, style: { fontSize: '12px', fontWeight: 700 } },
+        legend: { show: false },
+      },
+      series: [{ name: 'Total Stock', data: rows.map(r => Number(r.stock || 0)) }],
+    };
+  }, [groups]);
+
+  // Chart 2: Billing Model Donut — SOR vs OUTRIGHT
+  const billingDonutChart = useMemo(() => {
+    const sor      = (groups || []).filter(g => g.billing_model !== 'OUTRIGHT').reduce((s, g) => s + Number(g.stock || 0), 0);
+    const outright = (groups || []).filter(g => g.billing_model === 'OUTRIGHT').reduce((s, g) => s + Number(g.stock || 0), 0);
+    const sorCount      = (groups || []).filter(g => g.billing_model !== 'OUTRIGHT').reduce((s, g) => s + Number(g.count || 0), 0);
+    const outrightCount = (groups || []).filter(g => g.billing_model === 'OUTRIGHT').reduce((s, g) => s + Number(g.count || 0), 0);
+    return {
+      options: {
+        ...chartBase,
+        chart: { ...chartBase, type: 'donut' },
+        labels: [`SOR (${fmtNum(sorCount)} stores)`, `Outright (${fmtNum(outrightCount)} stores)`],
+        colors: ['#2563EB', '#F59E0B'],
+        plotOptions: {
+          pie: {
+            donut: {
+              size: '68%',
+              labels: {
+                show: true,
+                total: {
+                  show: true,
+                  label: 'Total Stock',
+                  fontSize: '12px', fontWeight: 800, color: T.muted,
+                  formatter: w => fmtL(w.globals.seriesTotals.reduce((a, b) => a + b, 0)),
+                },
+                value: { fontSize: '18px', fontWeight: 900, color: T.primary, formatter: v => fmtL(Number(v)) },
+              },
+            },
+          },
+        },
+        dataLabels: { enabled: false },
+        legend: { position: 'bottom', fontWeight: 700, fontSize: '12px', labels: { colors: T.primary } },
+        tooltip: { y: { formatter: v => fmtNum(v) + ' units' }, style: { fontSize: '12px', fontWeight: 700 } },
+        stroke: { width: 2, colors: ['#fff'] },
+      },
+      series: [sor, outright],
+    };
+  }, [groups]);
+
+  // Chart 3: Top 10 Stores by Stock — vertical bar
+  const topStoresChart = useMemo(() => {
+    const rows = [...(locations || [])]
+      .sort((a, b) => Number(b.total_stock || 0) - Number(a.total_stock || 0))
+      .filter(r => Number(r.total_stock || 0) > 0)
+      .slice(0, 10);
+    return {
+      options: {
+        ...chartBase,
+        chart: { ...chartBase, type: 'bar' },
+        plotOptions: { bar: { borderRadius: 5, columnWidth: '60%' } },
+        xaxis: {
+          categories: rows.map(r => r.name?.length > 14 ? r.name.slice(0, 14) + '…' : (r.name || '')),
+          labels: { style: { colors: T.muted, fontWeight: 700, fontSize: '10px' }, rotate: -38 },
+          axisBorder: { show: false }, axisTicks: { show: false },
+        },
+        yaxis: { labels: { style: { colors: T.primary, fontWeight: 700 }, formatter: v => fmtL(v) } },
+        colors: ['#059669'],
+        fill: {
+          type: 'gradient',
+          gradient: { shade: 'light', type: 'vertical', gradientToColors: ['#34D399'], opacityFrom: 1, opacityTo: 0.75 },
+        },
+        dataLabels: {
+          enabled: true,
+          formatter: v => fmtL(v),
+          style: { fontSize: '10px', fontWeight: 800, colors: [T.primary] },
+          offsetY: -6,
+        },
+        grid: { borderColor: '#f1f5f9', strokeDashArray: 4 },
+        tooltip: {
+          y: { formatter: (v, { dataPointIndex }) => `${rows[dataPointIndex]?.name || ''}: ${fmtNum(v)} units` },
+          style: { fontSize: '12px', fontWeight: 700 },
+        },
+        legend: { show: false },
+      },
+      series: [{ name: 'Total Stock', data: rows.map(r => Number(r.total_stock || 0)) }],
+    };
+  }, [locations]);
+
+  const chartCardStyle = {
+    background: '#fff', border: `1px solid ${T.border}`, borderRadius: 16, overflow: 'hidden',
+  };
+  const chartHeaderStyle = {
+    padding: '14px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8,
+  };
+  const chartTitleStyle = {
+    fontSize: 11, fontWeight: 900, color: T.primary, letterSpacing: '0.08em', textTransform: 'uppercase',
+  };
+
+  return (
+    <>
+      {/* Chart 1: Stock by Channel — full width horizontal bar */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={chartCardStyle}>
+          <div style={chartHeaderStyle}>
+            <BarChart2 size={13} color={T.primary} strokeWidth={2.5} />
+            <span style={chartTitleStyle}>Stock by Channel — Top 10 Groups</span>
+          </div>
+          <div style={{ padding: '16px 18px 8px' }}>
+            {loading
+              ? <div style={{ height: 280, background: T.bg, borderRadius: 8 }} />
+              : <Chart options={channelStockChart.options} series={channelStockChart.series} type="bar" height={280} />
+            }
+          </div>
+        </div>
+      </div>
+
+      {/* Charts Row: Billing model donut + Top stores bar */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 20, marginBottom: 24 }}>
+        {/* Chart 2: Billing Split Donut */}
+        <div style={chartCardStyle}>
+          <div style={chartHeaderStyle}>
+            <PieChart size={13} color={T.primary} strokeWidth={2.5} />
+            <span style={chartTitleStyle}>Billing Model — SOR vs Outright</span>
+          </div>
+          <div style={{ padding: '16px 18px 8px', display: 'flex', justifyContent: 'center' }}>
+            {loading
+              ? <div style={{ height: 240, width: '100%', background: T.bg, borderRadius: 8 }} />
+              : <Chart options={billingDonutChart.options} series={billingDonutChart.series} type="donut" height={240} width="100%" />
+            }
+          </div>
+        </div>
+
+        {/* Chart 3: Top 10 Stores */}
+        <div style={chartCardStyle}>
+          <div style={chartHeaderStyle}>
+            <Activity size={13} color={T.primary} strokeWidth={2.5} />
+            <span style={chartTitleStyle}>Top 10 Stores — By Stock (Current Filter)</span>
+          </div>
+          <div style={{ padding: '16px 18px 8px' }}>
+            {loading
+              ? <div style={{ height: 240, background: T.bg, borderRadius: 8 }} />
+              : <Chart options={topStoresChart.options} series={topStoresChart.series} type="bar" height={240} />
+            }
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── All Locations Table — server-side pagination ───────────────────────────
+const PAGE_SIZE_LOCS = 25;
+
+function AllLocationsTable({
+  locations, pagination, groups,
+  stateOptions, cityOptions,
+  loading,
+  onFilterChange,
+}) {
+  const [search,  setSearch]  = useState('');
+  const [state,   setState]   = useState('');
+  const [city,    setCity]    = useState('');
+  const [channel, setChannel] = useState('');
+  const [sortBy,  setSortBy]  = useState('total_stock');
+  const [page,    setPage]    = useState(1);
+
+  const availableChannels = useMemo(() =>
+    (groups || []).map(g => g.group_name).filter(Boolean).sort(),
+  [groups]);
+
+  // Notify parent to re-fetch whenever filters / page / sort change
+  useEffect(() => {
+    onFilterChange({ search, state, city, group_name: channel, page, sort_by: sortBy });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, state, city, channel, page, sortBy]);
+
+  const totalRecords = Number(pagination?.total || 0);
+  const totalPages   = Number(pagination?.totalPages || 1);
+  const safePage     = Math.min(page, totalPages);
+
+  const hasFilter = search || state || city || channel;
+
+  const clearAll = () => {
+    setSearch(''); setState(''); setCity(''); setChannel(''); setPage(1);
+  };
+
+  const globalOffset = (safePage - 1) * PAGE_SIZE_LOCS;
+
+  return (
+    <div style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 16, overflow: 'hidden', marginBottom: 24 }}>
+
+      {/* Filter bar */}
+      <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Globe size={13} color={T.primary} strokeWidth={2.5} />
+          <span style={{ fontSize: 11, fontWeight: 900, color: T.primary, letterSpacing: '0.08em', textTransform: 'uppercase' }}>All Locations</span>
+          {!loading && (
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: T.primary, borderRadius: 100, padding: '2px 7px' }}>
+              {fmtNum(totalRecords)}
+            </span>
+          )}
+        </div>
+        <div style={{ flex: 1 }} />
+
+        {/* Search */}
+        <div style={{ position: 'relative' }}>
+          <input type="text" value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
+            placeholder="Search name, code, city…"
+            style={{ ...filterInput, width: 200 }} />
+          <SearchIcon />
+          {search && <button onClick={() => { setSearch(''); setPage(1); }} style={{ position: 'absolute', right: 7, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: T.muted, fontWeight: 900, fontSize: 14, padding: 0, lineHeight: 1 }}>×</button>}
+        </div>
+
+        {/* State */}
+        <div style={{ position: 'relative' }}>
+          <select value={state} onChange={e => { setState(e.target.value); setCity(''); setPage(1); }} style={{ ...filterSelect, minWidth: 140 }}>
+            <option value="">All States</option>
+            {(stateOptions || []).map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <ChevronIcon />
+        </div>
+
+        {/* City */}
+        <div style={{ position: 'relative' }}>
+          <select value={city} onChange={e => { setCity(e.target.value); setPage(1); }} style={{ ...filterSelect, minWidth: 130 }}>
+            <option value="">All Cities</option>
+            {(cityOptions || []).map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <ChevronIcon />
+        </div>
+
+        {/* Channel — uses actual group_names from API */}
+        <div style={{ position: 'relative' }}>
+          <select value={channel} onChange={e => { setChannel(e.target.value); setPage(1); }} style={{ ...filterSelect, minWidth: 160 }}>
+            <option value="">All Channels</option>
+            {availableChannels.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <ChevronIcon />
+        </div>
+
+        {/* Sort */}
+        <div style={{ position: 'relative' }}>
+          <select value={sortBy} onChange={e => { setSortBy(e.target.value); setPage(1); }} style={{ ...filterSelect, minWidth: 150 }}>
+            <option value="total_stock">Sort: Total Stock</option>
+            <option value="name">Sort: Name A–Z</option>
+          </select>
+          <ChevronIcon />
+        </div>
+
+        {hasFilter && (
+          <button onClick={clearAll} style={{ border: `1.5px solid ${T.border}`, borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 800, color: T.primary, background: '#fff', cursor: 'pointer' }}>
+            Clear
+          </button>
+        )}
+      </div>
+
+      {/* Table */}
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ background: T.bg }}>
+              {['#','Location Name','Channel / Group','Billing','State','City','Total Stock'].map(h => (
+                <th key={h} style={{ padding: '10px 14px', textAlign: ['Total Stock','#'].includes(h) ? 'right' : 'left', fontSize: 10, fontWeight: 900, color: T.primary, letterSpacing: '0.07em', textTransform: 'uppercase', borderBottom: `2px solid ${T.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading
+              ? Array.from({ length: 12 }).map((_, i) => (
+                  <tr key={i}><td colSpan={7} style={{ padding: '10px 14px' }}><div style={{ height: 14, background: T.bg, borderRadius: 4 }} /></td></tr>
+                ))
+              : locations.map((r, i) => {
+                  const globalIdx = globalOffset + i;
+                  const isTop3    = globalIdx < 3 && !hasFilter && sortBy === 'total_stock';
+                  return (
+                    <tr key={r.id || i}
+                      style={{ borderBottom: `1px solid ${T.border}`, background: isTop3 ? '#fafaf7' : i % 2 === 0 ? '#fff' : '#fafafa' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'}
+                      onMouseLeave={e => e.currentTarget.style.background = isTop3 ? '#fafaf7' : i % 2 === 0 ? '#fff' : '#fafafa'}
+                    >
+                      <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 12, fontWeight: 900, color: T.muted, width: 40 }}>
+                        {isTop3 ? ['🥇','🥈','🥉'][globalIdx] : globalIdx + 1}
+                      </td>
+                      <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, color: T.primary, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</td>
+                      <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: T.muted, whiteSpace: 'nowrap' }}>{r.group_name || r.type || '—'}</td>
+                      <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                        <span style={{ background: r.billing_model === 'OUTRIGHT' ? '#FEF3C7' : '#DBEAFE', color: r.billing_model === 'OUTRIGHT' ? '#92400E' : '#1D4ED8', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 800 }}>
+                          {r.billing_model || 'SOR'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: T.muted, whiteSpace: 'nowrap' }}>{r.state || '—'}</td>
+                      <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: T.muted, whiteSpace: 'nowrap' }}>{r.city || '—'}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 900, color: T.primary, whiteSpace: 'nowrap' }}>{fmtNum(r.total_stock)}</td>
+                    </tr>
+                  );
+                })
+            }
+            {!loading && locations.length === 0 && (
+              <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', fontSize: 13, fontWeight: 700, color: T.muted }}>No locations match your filters</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination footer */}
+      {!loading && totalRecords > 0 && (
+        <div style={{ padding: '12px 18px', borderTop: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: T.bg, flexWrap: 'wrap', gap: 10 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: T.muted }}>
+            Showing <strong style={{ color: T.primary }}>{globalOffset + 1}–{Math.min(globalOffset + locations.length, totalRecords)}</strong> of <strong style={{ color: T.primary }}>{fmtNum(totalRecords)}</strong> locations
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button onClick={() => setPage(1)} disabled={safePage === 1}
+              style={{ border: `1.5px solid ${T.border}`, borderRadius: 7, padding: '4px 9px', fontSize: 11, fontWeight: 800, color: safePage === 1 ? T.border : T.primary, background: '#fff', cursor: safePage === 1 ? 'default' : 'pointer' }}>«</button>
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
+              style={{ border: `1.5px solid ${T.border}`, borderRadius: 7, padding: '4px 10px', fontSize: 11, fontWeight: 800, color: safePage === 1 ? T.border : T.primary, background: '#fff', cursor: safePage === 1 ? 'default' : 'pointer' }}>‹ Prev</button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 2)
+              .reduce((acc, p, idx, arr) => { if (idx > 0 && p - arr[idx-1] > 1) acc.push('…'); acc.push(p); return acc; }, [])
+              .map((p, idx) => p === '…'
+                ? <span key={`e${idx}`} style={{ fontSize: 12, color: T.muted, padding: '0 2px' }}>…</span>
+                : <button key={p} onClick={() => setPage(p)}
+                    style={{ border: `1.5px solid ${p === safePage ? T.primary : T.border}`, borderRadius: 7, padding: '4px 9px', fontSize: 11, fontWeight: p === safePage ? 900 : 700, color: p === safePage ? '#fff' : T.primary, background: p === safePage ? T.primary : '#fff', cursor: 'pointer', minWidth: 30 }}>{p}</button>
+              )}
+            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
+              style={{ border: `1.5px solid ${T.border}`, borderRadius: 7, padding: '4px 10px', fontSize: 11, fontWeight: 800, color: safePage === totalPages ? T.border : T.primary, background: '#fff', cursor: safePage === totalPages ? 'default' : 'pointer' }}>Next ›</button>
+            <button onClick={() => setPage(totalPages)} disabled={safePage === totalPages}
+              style={{ border: `1.5px solid ${T.border}`, borderRadius: 7, padding: '4px 9px', fontSize: 11, fontWeight: 800, color: safePage === totalPages ? T.border : T.primary, background: '#fff', cursor: safePage === totalPages ? 'default' : 'pointer' }}>»</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────
+export default function NetworkPage() {
+  const [locations,     setLocations]     = useState([]);
+  const [pagination,    setPagination]    = useState(null);
+  const [groupSummary,  setGroupSummary]  = useState([]);
+  const [networkSummary,setNetworkSummary]= useState(null);
+  const [stateOptions,  setStateOptions]  = useState([]);
+  const [cityOptions,   setCityOptions]   = useState([]);
+  const [loading,       setLoading]       = useState(true);
+
+  // Server-side filters — driven by AllLocationsTable
+  const [tableFilters, setTableFilters] = useState({ page: 1, limit: PAGE_SIZE_LOCS });
+
+  const fetchData = useCallback(async (filters = {}) => {
+    setLoading(true);
+    try {
+      const params = {
+        page:       filters.page       || 1,
+        limit:      PAGE_SIZE_LOCS,
+        group_name: filters.group_name || undefined,
+        state:      filters.state      || undefined,
+        city:       filters.city       || undefined,
+        search:     filters.search     || undefined,
+        sort_by:    filters.sort_by    || 'total_stock',
+      };
+      const res = await locationService.list(params);
+      setLocations(res.data.data         || []);
+      setPagination(res.data.pagination  || null);
+      setGroupSummary(res.data.groups    || []);
+      setNetworkSummary(res.data.summary || null);
+      setStateOptions(res.data.states    || []);
+      setCityOptions(res.data.cities     || []);
+    } catch (err) {
+      toast.error('Failed to load network data');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Initial load
+  useEffect(() => { fetchData({ sort_by: 'total_stock' }); }, [fetchData]);
+
+  // Re-fetch when table filters change
+  const handleFilterChange = useCallback((filters) => {
+    setTableFilters(filters);
+    fetchData(filters);
+  }, [fetchData]);
+
+  // Summary KPIs
+  const totalLocations = Number(networkSummary?.total_locations || pagination?.total || 0);
+  const totalStock     = Number(networkSummary?.total_stock || 0);
+  const totalGroups    = groupSummary.length;
+  const totalStates    = stateOptions.length;
+
+  // Top group by stock
+  const topGroup = useMemo(() => {
+    if (!groupSummary.length) return null;
+    return [...groupSummary].sort((a, b) => Number(b.stock || 0) - Number(a.stock || 0))[0];
+  }, [groupSummary]);
+
+  return (
+    <DashboardLayout title="Network" subtitle="Retail network — inventory positions across all locations and channels">
+
+      {/* ── KPI Cards ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 28 }}>
+        <KpiCard icon={Globe}      label="Total Locations" value={fmtNum(totalLocations)} sub={`${totalStates} states covered`}                                                  accent="#0f172a" loading={loading} />
+        <KpiCard icon={Package}    label="Network Stock"   value={fmtL(totalStock)}        sub="total units on hand"                                                              accent="#2563EB" loading={loading} />
+        <KpiCard icon={Layers}     label="Channels"        value={fmtNum(totalGroups)}      sub="distinct channel groups"                                                         accent="#7C3AED" loading={loading} />
+        <KpiCard icon={MapPin}     label="States"          value={fmtNum(totalStates)}      sub="geographic coverage"                                                             accent="#059669" loading={loading} />
+        <KpiCard icon={TrendingUp} label="Top Channel"     value={topGroup?.group_name || '—'} sub={topGroup ? `${fmtL(topGroup.stock)} units · ${fmtNum(topGroup.count)} stores` : 'loading…'} accent="#D97706" loading={loading} />
+      </div>
+
+      {/* ── Refresh ── */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
+        <button onClick={() => fetchData(tableFilters)} disabled={loading} style={{ display: 'flex', alignItems: 'center', gap: 6, border: `1.5px solid ${T.border}`, borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 800, color: T.primary, background: '#fff', cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.6 : 1 }}>
+          <RefreshCw size={13} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} strokeWidth={2.5} />
+          Refresh
+        </button>
+      </div>
+
+      {/* ── Channel Breakdown ── */}
+      <div style={{ marginBottom: 24 }}>
+        <SectionTitle icon={PieChart} label="Channel Breakdown — All Groups" />
+        <ChannelBreakdownSection groups={groupSummary} loading={loading} />
+      </div>
+
+      {/* ── Network Charts ── */}
+      <div style={{ marginBottom: 8 }}>
+        <SectionTitle icon={BarChart2} label="Network Analytics — Stock Distribution" />
+      </div>
+      <NetworkChartsSection groups={groupSummary} locations={locations} loading={loading} />
+
+      {/* ── All Locations Table ── */}
+      <SectionTitle icon={Globe} label="All Locations — Full Network" />
+      <AllLocationsTable
+        locations={locations}
+        pagination={pagination}
+        groups={groupSummary}
+        stateOptions={stateOptions}
+        cityOptions={cityOptions}
+        loading={loading}
+        onFilterChange={handleFilterChange}
+      />
+
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      `}</style>
+    </DashboardLayout>
+  );
+}

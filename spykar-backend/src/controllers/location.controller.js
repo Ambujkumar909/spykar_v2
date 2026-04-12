@@ -5,7 +5,7 @@ const { AppError } = require('../middleware/errorHandler');
 
 async function list(req, res, next) {
   try {
-    const { page = 1, limit = 50, type, city, state, search, group_name } = req.query;
+    const { page = 1, limit = 50, type, city, state, search, group_name, sort_by } = req.query;
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const limitNum = Math.min(parseInt(limit, 10) || 50, 100);
     const offset = (pageNum - 1) * limitNum;
@@ -58,7 +58,7 @@ async function list(req, res, next) {
                  END AS billing_model
           ${baseFrom}
           GROUP BY l.id
-          ORDER BY COALESCE(l.group_name, l.type::text), l.name
+          ORDER BY ${sort_by === 'total_stock' ? 'COALESCE(SUM(i.qty_on_hand),0) DESC NULLS LAST, l.name' : 'COALESCE(l.group_name, l.type::text), l.name'}
           LIMIT $${params.length - 1} OFFSET $${params.length}
         `, params),
         query(`
