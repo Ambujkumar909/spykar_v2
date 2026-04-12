@@ -168,7 +168,7 @@ function ChannelBreakdownSection({ groups, loading }) {
 }
 
 // ── Network Charts — 3-chart section like sales page ─────────────────────
-function NetworkChartsSection({ groups, locations, loading }) {
+function NetworkChartsSection({ groups, filteredGroups, locations, loading }) {
   // Chart 1: Stock by Channel — horizontal bar (full width)
   const channelStockChart = useMemo(() => {
     const rows = [...(groups || [])]
@@ -204,12 +204,13 @@ function NetworkChartsSection({ groups, locations, loading }) {
     };
   }, [groups]);
 
-  // Chart 2: Billing Model Donut — SOR vs OUTRIGHT
+  // Chart 2: Billing Model Donut — uses filteredGroups so it reflects table filters
   const billingDonutChart = useMemo(() => {
-    const sor      = (groups || []).filter(g => g.billing_model !== 'OUTRIGHT').reduce((s, g) => s + Number(g.stock || 0), 0);
-    const outright = (groups || []).filter(g => g.billing_model === 'OUTRIGHT').reduce((s, g) => s + Number(g.stock || 0), 0);
-    const sorCount      = (groups || []).filter(g => g.billing_model !== 'OUTRIGHT').reduce((s, g) => s + Number(g.count || 0), 0);
-    const outrightCount = (groups || []).filter(g => g.billing_model === 'OUTRIGHT').reduce((s, g) => s + Number(g.count || 0), 0);
+    const src = filteredGroups?.length ? filteredGroups : (groups || []);
+    const sor           = src.filter(g => g.billing_model !== 'OUTRIGHT').reduce((s, g) => s + Number(g.stock || 0), 0);
+    const outright      = src.filter(g => g.billing_model === 'OUTRIGHT').reduce((s, g) => s + Number(g.stock || 0), 0);
+    const sorCount      = src.filter(g => g.billing_model !== 'OUTRIGHT').reduce((s, g) => s + Number(g.count || 0), 0);
+    const outrightCount = src.filter(g => g.billing_model === 'OUTRIGHT').reduce((s, g) => s + Number(g.count || 0), 0);
     return {
       options: {
         ...chartBase,
@@ -240,7 +241,7 @@ function NetworkChartsSection({ groups, locations, loading }) {
       },
       series: [sor, outright],
     };
-  }, [groups]);
+  }, [filteredGroups, groups]);
 
   // Chart 3: Top 10 Stores by Stock — vertical bar
   const topStoresChart = useMemo(() => {
@@ -733,10 +734,11 @@ function AllLocationsTable({
 // ── Main Page ─────────────────────────────────────────────────────────────
 export default function NetworkPage() {
   // ── Table state (affected by filters) ─────────────────────────────────────
-  const [locations,   setLocations]   = useState([]);
-  const [pagination,  setPagination]  = useState(null);
-  const [cityOptions, setCityOptions] = useState([]);
-  const [tableLoading,setTableLoading]= useState(true);
+  const [locations,     setLocations]     = useState([]);
+  const [pagination,    setPagination]    = useState(null);
+  const [cityOptions,   setCityOptions]   = useState([]);
+  const [filteredGroups,setFilteredGroups]= useState([]);
+  const [tableLoading,  setTableLoading]  = useState(true);
 
   // ── Summary state (always unfiltered — KPIs + Channel Breakdown) ──────────
   const [groupSummary,   setGroupSummary]   = useState([]);
@@ -776,9 +778,10 @@ export default function NetworkPage() {
         sort_by:    filters.sort_by    || 'total_stock',
       };
       const res = await locationService.list(params);
-      setLocations(res.data.data      || []);
+      setLocations(res.data.data        || []);
       setPagination(res.data.pagination || null);
-      setCityOptions(res.data.cities  || []);
+      setCityOptions(res.data.cities    || []);
+      setFilteredGroups(res.data.groups || []);
     } catch (err) {
       toast.error('Failed to load locations');
     } finally {
@@ -841,7 +844,7 @@ export default function NetworkPage() {
       <div style={{ marginBottom: 8 }}>
         <SectionTitle icon={BarChart2} label="Network Analytics — Stock Distribution" />
       </div>
-      <NetworkChartsSection groups={groupSummary} locations={locations} loading={summaryLoading} />
+      <NetworkChartsSection groups={groupSummary} filteredGroups={filteredGroups} locations={locations} loading={summaryLoading} />
 
       {/* ── Colour & Size Stock Distribution ── */}
       <StockBreakdownSection stateOptions={stateOptions} />
