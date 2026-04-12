@@ -668,7 +668,7 @@ This platform implements multiple layers of security:
 This software is proprietary and confidential.  
 See [LICENSE](./LICENSE) for full terms.
 
-**Copyright © 2025 Ambuj Kumar / Spykar Jeans. All Rights Reserved.**
+**Copyright © 2026 Ambuj Kumar / Spykar Jeans. All Rights Reserved.**
 
 Unauthorised copying, distribution, modification, or use of this software,  
 via any medium, is strictly prohibited without written permission from the author.
