@@ -732,19 +732,39 @@ function AllLocationsTable({
 
 // ── Main Page ─────────────────────────────────────────────────────────────
 export default function NetworkPage() {
-  const [locations,     setLocations]     = useState([]);
-  const [pagination,    setPagination]    = useState(null);
-  const [groupSummary,  setGroupSummary]  = useState([]);
-  const [networkSummary,setNetworkSummary]= useState(null);
-  const [stateOptions,  setStateOptions]  = useState([]);
-  const [cityOptions,   setCityOptions]   = useState([]);
-  const [loading,       setLoading]       = useState(true);
+  // ── Table state (affected by filters) ─────────────────────────────────────
+  const [locations,   setLocations]   = useState([]);
+  const [pagination,  setPagination]  = useState(null);
+  const [cityOptions, setCityOptions] = useState([]);
+  const [tableLoading,setTableLoading]= useState(true);
+
+  // ── Summary state (always unfiltered — KPIs + Channel Breakdown) ──────────
+  const [groupSummary,   setGroupSummary]   = useState([]);
+  const [networkSummary, setNetworkSummary] = useState(null);
+  const [stateOptions,   setStateOptions]   = useState([]);
+  const [summaryLoading, setSummaryLoading] = useState(true);
 
   // Server-side filters — driven by AllLocationsTable
-  const [tableFilters, setTableFilters] = useState({ page: 1, limit: PAGE_SIZE_LOCS });
+  const [tableFilters, setTableFilters] = useState({ sort_by: 'total_stock', page: 1 });
 
-  const fetchData = useCallback(async (filters = {}) => {
-    setLoading(true);
+  // Fetch KPIs + Channel Breakdown — NO filters, always full network
+  const fetchSummaryData = useCallback(async () => {
+    setSummaryLoading(true);
+    try {
+      const res = await locationService.list({ page: 1, limit: PAGE_SIZE_LOCS, sort_by: 'total_stock' });
+      setGroupSummary(res.data.groups    || []);
+      setNetworkSummary(res.data.summary || null);
+      setStateOptions(res.data.states    || []);
+    } catch (err) {
+      toast.error('Failed to load network summary');
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, []);
+
+  // Fetch table rows only — passes all active filters, updates ONLY table state
+  const fetchTableData = useCallback(async (filters = {}) => {
+    setTableLoading(true);
     try {
       const params = {
         page:       filters.page       || 1,
@@ -756,31 +776,31 @@ export default function NetworkPage() {
         sort_by:    filters.sort_by    || 'total_stock',
       };
       const res = await locationService.list(params);
-      setLocations(res.data.data         || []);
-      setPagination(res.data.pagination  || null);
-      setGroupSummary(res.data.groups    || []);
-      setNetworkSummary(res.data.summary || null);
-      setStateOptions(res.data.states    || []);
-      setCityOptions(res.data.cities     || []);
+      setLocations(res.data.data      || []);
+      setPagination(res.data.pagination || null);
+      setCityOptions(res.data.cities  || []);
     } catch (err) {
-      toast.error('Failed to load network data');
+      toast.error('Failed to load locations');
     } finally {
-      setLoading(false);
+      setTableLoading(false);
     }
   }, []);
 
-  // Initial load
-  useEffect(() => { fetchData({ sort_by: 'total_stock' }); }, [fetchData]);
+  // Initial load — both in parallel
+  useEffect(() => {
+    fetchSummaryData();
+    fetchTableData({ sort_by: 'total_stock' });
+  }, [fetchSummaryData, fetchTableData]);
 
-  // Re-fetch when table filters change
+  // Table filter changes → only re-fetch table, never touch summary
   const handleFilterChange = useCallback((filters) => {
     setTableFilters(filters);
-    fetchData(filters);
-  }, [fetchData]);
+    fetchTableData(filters);
+  }, [fetchTableData]);
 
-  // Summary KPIs
-  const totalLocations = Number(networkSummary?.total_locations || pagination?.total || 0);
-  const totalStock     = Number(networkSummary?.total_stock || 0);
+  // Summary KPIs — always from unfiltered summary data
+  const totalLocations = Number(networkSummary?.total_locations || 0);
+  const totalStock     = Number(networkSummary?.total_stock     || 0);
   const totalGroups    = groupSummary.length;
   const totalStates    = stateOptions.length;
 
@@ -793,34 +813,35 @@ export default function NetworkPage() {
   return (
     <DashboardLayout title="Network" subtitle="Retail network — inventory positions across all locations and channels">
 
-      {/* ── KPI Cards ── */}
+      {/* ── KPI Cards — always unfiltered ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 28 }}>
-        <KpiCard icon={Globe}      label="Total Locations" value={fmtNum(totalLocations)} sub={`${totalStates} states covered`}                                                  accent="#0f172a" loading={loading} />
-        <KpiCard icon={Package}    label="Network Stock"   value={fmtL(totalStock)}        sub="total units on hand"                                                              accent="#2563EB" loading={loading} />
-        <KpiCard icon={Layers}     label="Channels"        value={fmtNum(totalGroups)}      sub="distinct channel groups"                                                         accent="#7C3AED" loading={loading} />
-        <KpiCard icon={MapPin}     label="States"          value={fmtNum(totalStates)}      sub="geographic coverage"                                                             accent="#059669" loading={loading} />
-        <KpiCard icon={TrendingUp} label="Top Channel"     value={topGroup?.group_name || '—'} sub={topGroup ? `${fmtL(topGroup.stock)} units · ${fmtNum(topGroup.count)} stores` : 'loading…'} accent="#D97706" loading={loading} />
+        <KpiCard icon={Globe}      label="Total Locations" value={fmtNum(totalLocations)} sub={`${totalStates} states covered`}                                                       accent="#0f172a" loading={summaryLoading} />
+        <KpiCard icon={Package}    label="Network Stock"   value={fmtL(totalStock)}        sub="total units on hand"                                                                   accent="#2563EB" loading={summaryLoading} />
+        <KpiCard icon={Layers}     label="Channels"        value={fmtNum(totalGroups)}      sub="distinct channel groups"                                                              accent="#7C3AED" loading={summaryLoading} />
+        <KpiCard icon={MapPin}     label="States"          value={fmtNum(totalStates)}      sub="geographic coverage"                                                                  accent="#059669" loading={summaryLoading} />
+        <KpiCard icon={TrendingUp} label="Top Channel"     value={topGroup?.group_name || '—'} sub={topGroup ? `${fmtL(topGroup.stock)} units · ${fmtNum(topGroup.count)} stores` : 'loading…'} accent="#D97706" loading={summaryLoading} />
       </div>
 
-      {/* ── Refresh ── */}
+      {/* ── Refresh — refreshes both summary and table ── */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
-        <button onClick={() => fetchData(tableFilters)} disabled={loading} style={{ display: 'flex', alignItems: 'center', gap: 6, border: `1.5px solid ${T.border}`, borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 800, color: T.primary, background: '#fff', cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.6 : 1 }}>
-          <RefreshCw size={13} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} strokeWidth={2.5} />
+        <button onClick={() => { fetchSummaryData(); fetchTableData(tableFilters); }} disabled={summaryLoading || tableLoading}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, border: `1.5px solid ${T.border}`, borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 800, color: T.primary, background: '#fff', cursor: (summaryLoading || tableLoading) ? 'default' : 'pointer', opacity: (summaryLoading || tableLoading) ? 0.6 : 1 }}>
+          <RefreshCw size={13} style={{ animation: (summaryLoading || tableLoading) ? 'spin 1s linear infinite' : 'none' }} strokeWidth={2.5} />
           Refresh
         </button>
       </div>
 
-      {/* ── Channel Breakdown ── */}
+      {/* ── Channel Breakdown — always unfiltered ── */}
       <div style={{ marginBottom: 24 }}>
         <SectionTitle icon={PieChart} label="Channel Breakdown — All Groups" />
-        <ChannelBreakdownSection groups={groupSummary} loading={loading} />
+        <ChannelBreakdownSection groups={groupSummary} loading={summaryLoading} />
       </div>
 
       {/* ── Network Charts ── */}
       <div style={{ marginBottom: 8 }}>
         <SectionTitle icon={BarChart2} label="Network Analytics — Stock Distribution" />
       </div>
-      <NetworkChartsSection groups={groupSummary} locations={locations} loading={loading} />
+      <NetworkChartsSection groups={groupSummary} locations={locations} loading={summaryLoading} />
 
       {/* ── Colour & Size Stock Distribution ── */}
       <StockBreakdownSection stateOptions={stateOptions} />
@@ -833,7 +854,7 @@ export default function NetworkPage() {
         groups={groupSummary}
         stateOptions={stateOptions}
         cityOptions={cityOptions}
-        loading={loading}
+        loading={tableLoading}
         onFilterChange={handleFilterChange}
       />
 
