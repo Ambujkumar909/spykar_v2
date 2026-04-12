@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import DashboardLayout from '../components/layout/DashboardLayout';
-import { locationService } from '../lib/services';
+import { locationService, analyticsService } from '../lib/services';
 import toast from 'react-hot-toast';
 import {
   Globe, Package, MapPin, PieChart, BarChart2,
@@ -343,6 +343,208 @@ function NetworkChartsSection({ groups, locations, loading }) {
   );
 }
 
+// ── Show dropdown values ──────────────────────────────────────────────────
+const SHOW_OPTS = [5, 10, 15, 20, 25, 30, 50, 'All'];
+
+// ── Stock Breakdown by Colour & Size — with independent Show + common filter ─
+function StockBreakdownSection({ stateOptions }) {
+  // Common filters for both charts
+  const [filterState, setFilterState] = useState('');
+  const [filterCity,  setFilterCity]  = useState('');
+  const [cityOpts,    setCityOpts]    = useState([]);
+
+  // Independent Show per chart
+  const [showColor, setShowColor] = useState(10);
+  const [showSize,  setShowSize]  = useState(10);
+
+  // Data
+  const [colorData, setColorData] = useState([]);
+  const [sizeData,  setSizeData]  = useState([]);
+  const [loading,   setLoading]   = useState(false);
+
+  const fetchBreakdown = useCallback(async (state, city) => {
+    setLoading(true);
+    try {
+      const params = {
+        state: state || undefined,
+        city:  city  || undefined,
+      };
+      const [colorRes, sizeRes, locRes] = await Promise.all([
+        analyticsService.getColorDistribution(params),
+        analyticsService.getSizeDistribution(params),
+        locationService.list({ ...params, limit: 1 }), // just for city options
+      ]);
+      setColorData(colorRes.data.data || []);
+      setSizeData(sizeRes.data.data   || []);
+      setCityOpts(locRes.data.cities  || []);
+    } catch { /* silent */ }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchBreakdown(filterState, filterCity); }, [filterState, filterCity, fetchBreakdown]);
+
+  // Sliced rows for each chart
+  const colorRows = useMemo(() =>
+    showColor === 'All' ? colorData : colorData.slice(0, Number(showColor)),
+  [colorData, showColor]);
+
+  const sizeRows = useMemo(() =>
+    showSize === 'All' ? sizeData : sizeData.slice(0, Number(showSize)),
+  [sizeData, showSize]);
+
+  // Colour chart — horizontal bar
+  const colorChart = useMemo(() => ({
+    options: {
+      ...chartBase,
+      chart: { ...chartBase, type: 'bar' },
+      plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '65%' } },
+      xaxis: {
+        categories: colorRows.map(r => r.color_name || ''),
+        labels: { style: { colors: T.muted, fontWeight: 700, fontSize: '11px' }, formatter: v => fmtL(v) },
+        axisBorder: { show: false }, axisTicks: { show: false },
+      },
+      yaxis: { labels: { style: { colors: T.primary, fontWeight: 800, fontSize: '11px' }, maxWidth: 120 } },
+      colors: ['#2563EB'],
+      fill: { type: 'gradient', gradient: { shade: 'light', type: 'horizontal', gradientToColors: ['#6366F1'], opacityFrom: 1, opacityTo: 0.8 } },
+      dataLabels: { enabled: true, formatter: v => fmtL(v), style: { fontSize: '10px', fontWeight: 800, colors: ['#fff'] }, dropShadow: { enabled: false } },
+      grid: { borderColor: '#f1f5f9', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
+      tooltip: { y: { formatter: (v, { dataPointIndex }) => `${colorRows[dataPointIndex]?.color_name || ''}: ${fmtNum(v)} units (${colorRows[dataPointIndex]?.pct_of_total || 0}%)` }, style: { fontSize: '12px', fontWeight: 700 } },
+      legend: { show: false },
+    },
+    series: [{ name: 'Stock', data: colorRows.map(r => Number(r.total_stock || 0)) }],
+  }), [colorRows]);
+
+  // Size chart — horizontal bar
+  const sizeChart = useMemo(() => ({
+    options: {
+      ...chartBase,
+      chart: { ...chartBase, type: 'bar' },
+      plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '65%' } },
+      xaxis: {
+        categories: sizeRows.map(r => r.size || ''),
+        labels: { style: { colors: T.muted, fontWeight: 700, fontSize: '11px' }, formatter: v => fmtL(v) },
+        axisBorder: { show: false }, axisTicks: { show: false },
+      },
+      yaxis: { labels: { style: { colors: T.primary, fontWeight: 800, fontSize: '11px' }, maxWidth: 80 } },
+      colors: ['#059669'],
+      fill: { type: 'gradient', gradient: { shade: 'light', type: 'horizontal', gradientToColors: ['#34D399'], opacityFrom: 1, opacityTo: 0.8 } },
+      dataLabels: { enabled: true, formatter: v => fmtL(v), style: { fontSize: '10px', fontWeight: 800, colors: ['#fff'] }, dropShadow: { enabled: false } },
+      grid: { borderColor: '#f1f5f9', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
+      tooltip: { y: { formatter: (v, { dataPointIndex }) => `Size ${sizeRows[dataPointIndex]?.size || ''}: ${fmtNum(v)} units (${sizeRows[dataPointIndex]?.pct_of_total || 0}%)` }, style: { fontSize: '12px', fontWeight: 700 } },
+      legend: { show: false },
+    },
+    series: [{ name: 'Stock', data: sizeRows.map(r => Number(r.total_stock || 0)) }],
+  }), [sizeRows]);
+
+  const cardStyle   = { background: '#fff', border: `1px solid ${T.border}`, borderRadius: 16, overflow: 'hidden' };
+  const hdrStyle    = { padding: '12px 16px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8 };
+  const ttlStyle    = { fontSize: 11, fontWeight: 900, color: T.primary, letterSpacing: '0.08em', textTransform: 'uppercase' };
+  const skeletonH   = (showColor === 'All' ? colorData.length : Number(showColor)) * 28 + 40;
+
+  // Dynamic height: 28px per bar + padding
+  const colorH = Math.max(180, (showColor === 'All' ? colorData.length : Number(showColor)) * 32 + 40);
+  const sizeH  = Math.max(180, (showSize  === 'All' ? sizeData.length  : Number(showSize))  * 32 + 40);
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      {/* Common filter bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <BarChart2 size={15} color={T.primary} strokeWidth={2.5} />
+        <span style={{ fontSize: 13, fontWeight: 900, color: T.primary, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+          Colour &amp; Size Stock Distribution
+        </span>
+        <div style={{ flex: 1 }} />
+        {/* State */}
+        <div style={{ position: 'relative' }}>
+          <select value={filterState}
+            onChange={e => { setFilterState(e.target.value); setFilterCity(''); }}
+            style={{ ...filterSelect, minWidth: 140 }}>
+            <option value="">All States</option>
+            {(stateOptions || []).map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <ChevronIcon />
+        </div>
+        {/* City */}
+        <div style={{ position: 'relative' }}>
+          <select value={filterCity} onChange={e => setFilterCity(e.target.value)}
+            style={{ ...filterSelect, minWidth: 130 }}>
+            <option value="">All Cities</option>
+            {cityOpts.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <ChevronIcon />
+        </div>
+        {(filterState || filterCity) && (
+          <button onClick={() => { setFilterState(''); setFilterCity(''); }}
+            style={{ border: `1.5px solid ${T.border}`, borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 800, color: T.primary, background: '#fff', cursor: 'pointer' }}>
+            Clear
+          </button>
+        )}
+      </div>
+
+      {/* Two charts side by side */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+
+        {/* Colour chart */}
+        <div style={cardStyle}>
+          <div style={hdrStyle}>
+            <PieChart size={13} color='#2563EB' strokeWidth={2.5} />
+            <span style={ttlStyle}>Stock by Colour</span>
+            {!loading && colorData.length > 0 &&
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#2563EB', borderRadius: 100, padding: '2px 7px' }}>{colorData.length}</span>
+            }
+            <div style={{ flex: 1 }} />
+            {/* Show dropdown */}
+            <div style={{ position: 'relative' }}>
+              <select value={showColor} onChange={e => setShowColor(e.target.value === 'All' ? 'All' : Number(e.target.value))}
+                style={{ ...filterSelect, minWidth: 90, paddingLeft: 8, fontSize: 11 }}>
+                {SHOW_OPTS.map(o => <option key={o} value={o}>Show {o}</option>)}
+              </select>
+              <ChevronIcon />
+            </div>
+          </div>
+          <div style={{ padding: '12px 16px 8px' }}>
+            {loading
+              ? <div style={{ height: Math.max(180, skeletonH), background: T.bg, borderRadius: 8 }} />
+              : colorRows.length === 0
+                ? <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: T.muted }}>No colour data</div>
+                : <Chart options={colorChart.options} series={colorChart.series} type="bar" height={colorH} />
+            }
+          </div>
+        </div>
+
+        {/* Size chart */}
+        <div style={cardStyle}>
+          <div style={hdrStyle}>
+            <Activity size={13} color='#059669' strokeWidth={2.5} />
+            <span style={ttlStyle}>Stock by Size</span>
+            {!loading && sizeData.length > 0 &&
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#059669', borderRadius: 100, padding: '2px 7px' }}>{sizeData.length}</span>
+            }
+            <div style={{ flex: 1 }} />
+            {/* Show dropdown */}
+            <div style={{ position: 'relative' }}>
+              <select value={showSize} onChange={e => setShowSize(e.target.value === 'All' ? 'All' : Number(e.target.value))}
+                style={{ ...filterSelect, minWidth: 90, paddingLeft: 8, fontSize: 11 }}>
+                {SHOW_OPTS.map(o => <option key={o} value={o}>Show {o}</option>)}
+              </select>
+              <ChevronIcon />
+            </div>
+          </div>
+          <div style={{ padding: '12px 16px 8px' }}>
+            {loading
+              ? <div style={{ height: Math.max(180, skeletonH), background: T.bg, borderRadius: 8 }} />
+              : sizeRows.length === 0
+                ? <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: T.muted }}>No size data</div>
+                : <Chart options={sizeChart.options} series={sizeChart.series} type="bar" height={sizeH} />
+            }
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 // ── All Locations Table — server-side pagination ───────────────────────────
 const PAGE_SIZE_LOCS = 25;
 
@@ -619,6 +821,9 @@ export default function NetworkPage() {
         <SectionTitle icon={BarChart2} label="Network Analytics — Stock Distribution" />
       </div>
       <NetworkChartsSection groups={groupSummary} locations={locations} loading={loading} />
+
+      {/* ── Colour & Size Stock Distribution ── */}
+      <StockBreakdownSection stateOptions={stateOptions} />
 
       {/* ── All Locations Table ── */}
       <SectionTitle icon={Globe} label="All Locations — Full Network" />
