@@ -90,7 +90,7 @@ export const analyticsService = {
 
 // ─── AI Query ─────────────────────────────────────────────────────────────────
 export const aiService = {
-  query: (question) => api.post('/ai/query', { question }),
+  query: (question, sessionId) => api.post('/ai/query', { question, sessionId }),
   getHistory: () => api.get('/ai/history'),
   getSuggestedQueries: () => api.get('/ai/suggested-queries'),
 };
