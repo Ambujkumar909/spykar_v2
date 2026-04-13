@@ -21,7 +21,9 @@ TABLES:
 - inventory_movements(id,location_id,sku_id,movement_type ENUM[SALE,DISPATCH,RECEIPT,RETURN,TRANSFER_OUT,TRANSFER_IN,ADJUSTMENT],qty_change INT,moved_at TIMESTAMPTZ)
 - inventory_snapshot(location_id,sku_id,qty_on_hand,qty_reserved,qty_in_transit,qty_available,safety_stock,reorder_point,updated_at)
 - skus(id,sku_code,product_name,color_code,color_name,size,fit_type,mrp,is_active)
-- locations(id,code,name,type ENUM[WAREHOUSE,DISTRIBUTOR,COCO,FOFO],zone_id,city,state,is_active)
+- locations(id,code,name,type ENUM[WAREHOUSE,DISTRIBUTOR,COCO,FOFO],group_name TEXT,zone_id,city,state,is_active)
+  -- group_name has the real channel name: 'EBO - SOR','EBO - OR','Alternate - SOR','Alternate - Outright','Alternate - RT','MBO - SOR'
+  -- ALWAYS select l.group_name AS channel — NEVER use l.type for display
 - zones(id,code,name)
 - dispatch_orders(id,dispatch_no,from_location_id,to_location_id,status,total_qty,total_value,dispatched_at,expected_at,delivered_at)
 - dispatch_line_items(id,dispatch_id,sku_id,qty_ordered,qty_dispatched,qty_received)
@@ -36,6 +38,7 @@ KEY RULES:
 - Date filter: moved_at>='YYYY-MM-DD'::date AND moved_at<'YYYY-MM-DD'::date (half-open)
 - Default LIMIT 50 unless user says "all"
 - COCO=company stores, FOFO=franchise stores
+- CHANNEL DISPLAY: always use l.group_name AS channel — NEVER select l.type for display to users
 - Dead stock = qty_180_plus; Low stock = qty_available < safety_stock
 
 COLOR MATCHING:
@@ -81,7 +84,7 @@ Q:"sales analysis last 30 days"
 → {"sql":"SELECT DATE(im.moved_at) AS sale_date, COALESCE(SUM(ABS(im.qty_change)),0) AS units_sold, COALESCE(SUM(ABS(im.qty_change)*s.mrp),0) AS revenue FROM inventory_movements im JOIN skus s ON s.id=im.sku_id JOIN locations l ON l.id=im.location_id WHERE im.movement_type='SALE' AND l.is_active=true AND s.is_active=true AND im.moved_at>='${today}'::date - INTERVAL '30 days' AND im.moved_at<'${today}'::date + INTERVAL '1 day' GROUP BY DATE(im.moved_at) ORDER BY sale_date","explanation":"Daily sales for last 30 days"}
 
 Q:"top 10 stores in Bihar by sales in last 6 months"
-→ {"sql":"SELECT l.name AS store_name, l.city, l.type, COALESCE(SUM(ABS(im.qty_change)),0) AS units_sold, COALESCE(SUM(ABS(im.qty_change)*s.mrp),0) AS revenue FROM inventory_movements im JOIN skus s ON s.id=im.sku_id JOIN locations l ON l.id=im.location_id WHERE im.movement_type='SALE' AND l.is_active=true AND s.is_active=true AND l.state ILIKE 'Bihar' AND im.moved_at>='${today}'::date - INTERVAL '6 months' AND im.moved_at<'${today}'::date + INTERVAL '1 day' GROUP BY l.id, l.name, l.city, l.type ORDER BY units_sold DESC LIMIT 10","explanation":"Top 10 Bihar stores by units sold in last 6 months"}
+→ {"sql":"SELECT l.name AS store_name, l.group_name AS channel, l.city, COALESCE(SUM(ABS(im.qty_change)),0) AS units_sold, COALESCE(SUM(ABS(im.qty_change)*s.mrp),0) AS revenue FROM inventory_movements im JOIN skus s ON s.id=im.sku_id JOIN locations l ON l.id=im.location_id WHERE im.movement_type='SALE' AND l.is_active=true AND s.is_active=true AND l.state ILIKE 'Bihar' AND im.moved_at>='${today}'::date - INTERVAL '6 months' AND im.moved_at<'${today}'::date + INTERVAL '1 day' GROUP BY l.id, l.name, l.group_name, l.city ORDER BY units_sold DESC LIMIT 10","explanation":"Top 10 Bihar stores by units sold in last 6 months"}
 
 Return ONLY valid JSON. No markdown, no extra text.`;
 }
