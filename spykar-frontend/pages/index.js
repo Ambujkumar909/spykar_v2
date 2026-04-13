@@ -263,6 +263,7 @@ function SalesRankingsSection({ salesTop: initialData, loading: initialLoading }
         </button>
       </div>
 
+      <div style={{ background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 14, padding: 16 }}>
       {/* ── Colour chart — pastel green + Top N dropdown in header ── */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-header">
@@ -372,6 +373,7 @@ function SalesRankingsSection({ salesTop: initialData, loading: initialLoading }
           </div>
         </div>
       </div>
+      </div>
     </Section>
   );
 }
@@ -445,6 +447,7 @@ function ReturnsRankingsSection({ salesTop: initialSalesData }) {
           style={{ padding: '5px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, background: '#f1f5f9', color: '#475569', border: '1.5px solid #e2e8f0', cursor: 'pointer' }}>Reset</button>
       </div>
 
+      <div style={{ background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 14, padding: 16 }}>
       {/* Colour chart — orange tones */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-header">
@@ -543,6 +546,7 @@ function ReturnsRankingsSection({ salesTop: initialSalesData }) {
             }
           </div>
         </div>
+      </div>
       </div>
     </Section>
   );
@@ -660,6 +664,7 @@ function SizeColorSection({ initialSizes, initialColors, allStoresData, pageLoad
         </button>
       </div>
 
+      <div style={{ background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 14, padding: 16 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         {/* ── Size chart ── */}
         <div className="card">
@@ -759,6 +764,7 @@ function SizeColorSection({ initialSizes, initialColors, allStoresData, pageLoad
             }
           </div>
         </div>
+      </div>
       </div>
     </Section>
   );
@@ -860,6 +866,7 @@ function SkuPerformanceSection({ initialTopMoving, initialSlowMoving, allStoresD
         </button>
       </div>
 
+      <div style={{ background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 14, padding: 16 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         {/* ── Top Moving SKUs ── */}
         <div className="card">
@@ -1018,6 +1025,7 @@ function SkuPerformanceSection({ initialTopMoving, initialSlowMoving, allStoresD
             </table>
           </div>
         </div>
+      </div>
       </div>
     </Section>
   );
