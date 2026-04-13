@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import {
-  Package, DollarSign, AlertTriangle, Truck, RefreshCw,
+  Package, DollarSign, IndianRupee, AlertTriangle, Truck, RefreshCw,
   TrendingUp, TrendingDown, Layers, BarChart3, MapPin,
   CheckCircle, XCircle, AlertCircle, Info,
 } from 'lucide-react';
@@ -1220,7 +1220,7 @@ export default function Overview() {
           <KpiBox
             label="Inventory Valuation"
             value={loading ? '—' : formatCurrency(totalValue)}
-            icon={DollarSign}
+            icon={IndianRupee}
             color="#059669"
             sub="Retail value of stock on hand"
             loading={loading}
