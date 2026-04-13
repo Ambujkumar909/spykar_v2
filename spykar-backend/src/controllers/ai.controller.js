@@ -277,7 +277,8 @@ async function queryInventory(req, res, next) {
     }
 
     const sqlTrimmed = parsed.sql.trim();
-    if (!sqlTrimmed.toUpperCase().startsWith('SELECT')) {
+    const sqlUpper = sqlTrimmed.toUpperCase();
+    if (!sqlUpper.startsWith('SELECT') && !sqlUpper.startsWith('WITH')) {
       throw new AppError('AI returned a non-SELECT query. Blocked for safety.', 400);
     }
     if (FORBIDDEN_SQL.test(sqlTrimmed)) {
