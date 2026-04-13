@@ -446,20 +446,7 @@ export default function AiChatbot() {
   const [unread,      setUnread]      = useState(0);
   const [isVisible,   setIsVisible]   = useState(false);
   const [maximized,   setMaximized]   = useState(false);
-  const greetedRef        = useRef(false);
-  const lastActivityRef   = useRef(Date.now());
-  const [sessionId, setSessionId] = useState(() => `sess_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
-
-  // Reset sessionId after 30 min of inactivity (new session = fresh history context)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (Date.now() - lastActivityRef.current > 30 * 60 * 1000) {
-        setSessionId(`sess_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
-        lastActivityRef.current = Date.now();
-      }
-    }, 60_000);
-    return () => clearInterval(interval);
-  }, []);
+  const greetedRef = useRef(false);
 
   // Resize state
   const [panelW, setPanelW] = useState(DEFAULT_W);
@@ -562,8 +549,7 @@ export default function AiChatbot() {
     setInput('');
     setLoading(true);
     try {
-      lastActivityRef.current = Date.now();
-      const res    = await aiService.query(question, sessionId);
+      const res    = await aiService.query(question);
       const result = res?.data?.data;
       setMessages(p => [...p, {
         role: 'bot',
@@ -648,7 +634,7 @@ export default function AiChatbot() {
               </div>
               {/* Header buttons */}
               {hasMessages && (
-                <button onClick={() => { setMessages([]); setUnread(0); setSessionId(`sess_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`); lastActivityRef.current = Date.now(); setTimeout(() => inputRef.current?.focus(), 50); }}
+                <button onClick={() => { setMessages([]); setUnread(0); setTimeout(() => inputRef.current?.focus(), 50); }}
                   title="Clear chat"
                   style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.18s', color: 'rgba(255,255,255,0.6)' }}
                   onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; e.currentTarget.style.color = '#fff'; }}

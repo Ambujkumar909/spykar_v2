@@ -2,29 +2,6 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { query } = require('../config/database');
 const logger = require('../config/logger');
 const { AppError } = require('../middleware/errorHandler');
-const redis = require('../config/redis');
-
-// ─── Chat History Helpers (Redis, 60-min sliding TTL) ─────────────────────────
-const CHAT_HISTORY_TTL = 3600; // 60 minutes
-const MAX_HISTORY      = 20;   // max messages kept (10 exchanges)
-
-async function readHistory(userId, sessionId) {
-  try {
-    const key = `chat:history:${userId}:${sessionId}`;
-    return (await redis.get(key)) || [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeHistory(userId, sessionId, history) {
-  try {
-    const key = `chat:history:${userId}:${sessionId}`;
-    await redis.redisClient.setEx(key, CHAT_HISTORY_TTL, JSON.stringify(history));
-  } catch (err) {
-    logger.warn('Chat history write failed (non-blocking):', err.message);
-  }
-}
 
 if (!process.env.GEMINI_API_KEY) {
   throw new Error('GEMINI_API_KEY is not configured');
@@ -36,13 +13,8 @@ const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const FALLBACK_MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-pro'];
 
 // ─── Compact Schema Context (minimal tokens, maximum signal) ──────────────────
-function buildSchemaContext(history = []) {
+function buildSchemaContext() {
   const today = new Date().toISOString().split('T')[0];
-  // Inject last 3 exchanges (6 messages) for context resolution — keep tokens low
-  const recentHistory = history.slice(-6);
-  const historyBlock = recentHistory.length > 0
-    ? `\nCONVERSATION HISTORY — use ONLY to resolve references like "that", "same", "compare", "those stores", "previous period". Do NOT repeat past answers.\n${recentHistory.map(h => `[${h.role === 'user' ? 'User' : 'Assistant'}]: ${h.content}`).join('\n')}\n`
-    : '';
   return `You are a PostgreSQL expert for Spykar Jeans inventory. Convert questions to SQL and return JSON only: {"sql":"...","explanation":"..."}.
 
 TABLES:
@@ -129,7 +101,7 @@ Q:"sales analysis last 30 days"
 Q:"top 10 stores in Bihar by sales in last 6 months"
 → {"sql":"SELECT l.name AS store_name, l.group_name AS channel, l.city, COALESCE(SUM(ABS(im.qty_change)),0) AS units_sold, COALESCE(SUM(ABS(im.qty_change)*s.mrp),0) AS revenue FROM inventory_movements im JOIN skus s ON s.id=im.sku_id JOIN locations l ON l.id=im.location_id WHERE im.movement_type='SALE' AND l.is_active=true AND s.is_active=true AND l.state ILIKE 'Bihar' AND im.moved_at>='${today}'::date - INTERVAL '6 months' AND im.moved_at<'${today}'::date + INTERVAL '1 day' GROUP BY l.id, l.name, l.group_name, l.city ORDER BY units_sold DESC LIMIT 10","explanation":"Top 10 Bihar stores by units sold in last 6 months"}
 
-${historyBlock}Return ONLY valid JSON. No markdown, no extra text.`;
+Return ONLY valid JSON. No markdown, no extra text.`;
 }
 
 const FORBIDDEN_SQL = /\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|CREATE|REPLACE)\b/i;
@@ -278,21 +250,18 @@ function toUserFacingGeminiMessage(error) {
 // ─── Main Query Handler ────────────────────────────────────────────────────────
 async function queryInventory(req, res, next) {
   try {
-    const { question, sessionId } = req.body;
+    const { question } = req.body;
     logger.info(`AI Query [${req.user?.email}]: ${question}`);
-
-    // Load conversation history from Redis
-    const history = sessionId ? await readHistory(req.user.id, sessionId) : [];
 
     let parsed;
     let rawContent = '';
     let sqlModelUsed = PRIMARY_MODEL;
 
-    // Step 1: Generate SQL (with history context)
+    // Step 1: Generate SQL
     try {
       const { result: sqlResult, modelName } = await generateWithFallback(
         question,
-        buildSchemaContext(history),
+        buildSchemaContext(),
         { responseMimeType: 'application/json', temperature: 0.05, maxOutputTokens: 1200 }
       );
       sqlModelUsed = modelName;
@@ -308,8 +277,7 @@ async function queryInventory(req, res, next) {
     }
 
     const sqlTrimmed = parsed.sql.trim();
-    const sqlUpper = sqlTrimmed.toUpperCase();
-    if (!sqlUpper.startsWith('SELECT') && !sqlUpper.startsWith('WITH')) {
+    if (!sqlTrimmed.toUpperCase().startsWith('SELECT')) {
       throw new AppError('AI returned a non-SELECT query. Blocked for safety.', 400);
     }
     if (FORBIDDEN_SQL.test(sqlTrimmed)) {
@@ -325,7 +293,7 @@ async function queryInventory(req, res, next) {
       try {
         const { result: fixResult } = await generateWithFallback(
           `Fix this SQL that failed.\nError: ${sqlErr.message}\nSQL: ${sqlTrimmed}\nOriginal question: ${question}\nReturn corrected JSON only.`,
-          buildSchemaContext(history),
+          buildSchemaContext(),
           { responseMimeType: 'application/json', temperature: 0.05, maxOutputTokens: 600 }
         );
         const fixedParsed = extractJsonPayload(fixResult.response.text()?.trim() || '');
@@ -386,17 +354,7 @@ Write a sharp 3-5 sentence business insight:
       }
     }
 
-    // Step 4: Append exchange to history and persist (non-blocking)
-    if (sessionId) {
-      const updatedHistory = [
-        ...history,
-        { role: 'user',      content: question,    timestamp: Date.now() },
-        { role: 'assistant', content: humanAnswer,  timestamp: Date.now() },
-      ].slice(-MAX_HISTORY);
-      writeHistory(req.user.id, sessionId, updatedHistory); // fire-and-forget
-    }
-
-    // Step 5: Log (non-blocking)
+    // Step 4: Log (non-blocking)
     query(
       `INSERT INTO ai_query_log (user_id, question, generated_sql, row_count, answer) VALUES ($1,$2,$3,$4,$5)`,
       [req.user.id, question, parsed.sql, queryResult.rows.length, humanAnswer]
