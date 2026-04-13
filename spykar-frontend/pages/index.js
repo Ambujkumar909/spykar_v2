@@ -945,7 +945,14 @@ function SkuPerformanceSection({ initialTopMoving, initialSlowMoving, allStoresD
               <span style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>Threshold</span>
               <select
                 value={slowDays}
-                onChange={e => setSlowDays(Number(e.target.value))}
+                onChange={e => {
+                  const days = Number(e.target.value);
+                  setSlowDays(days);
+                  doFetch(
+                    { n: topN, date_from: dateFrom, date_to: dateTo, ...(selState && { state: selState }), ...(selCity && { city: selCity }) },
+                    { days, ...(selState && { state: selState }), ...(selCity && { city: selCity }) }
+                  );
+                }}
                 style={{ border: '1.5px solid #fecaca', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#991b1b', background: '#fff5f5', outline: 'none', cursor: 'pointer' }}
               >
                 {SKU_DAYS_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
