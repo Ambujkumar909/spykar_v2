@@ -1401,10 +1401,17 @@ export default function Overview() {
                           flex: pct, background: b.color,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           transition: 'flex 1s ease', minHeight: pct > 3 ? 24 : 0,
-                          position: 'relative', overflow: 'hidden',
+                          position: 'relative', overflow: 'visible',
                         }}>
-                          {pct > 8 && (
-                            <span style={{ color: '#fff', fontSize: 12, fontWeight: 700, textShadow: '0 1px 3px rgba(0,0,0,0.3)' }}>
+                          {pct >= 2 && (
+                            <span style={{
+                              color: '#fff',
+                              fontSize: pct >= 8 ? 12 : pct >= 4 ? 10 : 9,
+                              fontWeight: 700,
+                              textShadow: '0 1px 3px rgba(0,0,0,0.4)',
+                              whiteSpace: 'nowrap',
+                              pointerEvents: 'none',
+                            }}>
                               {b.label} · {Math.round(pct)}%
                             </span>
                           )}
