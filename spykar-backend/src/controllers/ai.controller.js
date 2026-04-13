@@ -21,6 +21,9 @@ TABLES:
 - inventory_movements(id,location_id,sku_id,movement_type ENUM[SALE,DISPATCH,RECEIPT,RETURN,TRANSFER_OUT,TRANSFER_IN,ADJUSTMENT],qty_change INT,moved_at TIMESTAMPTZ)
 - inventory_snapshot(location_id,sku_id,qty_on_hand,qty_reserved,qty_in_transit,qty_available,safety_stock,reorder_point,updated_at)
 - skus(id,sku_code,product_name,color_code,color_name,size,fit_type,mrp,is_active)
+  -- product_name stores internal style codes (e.g. 'ACTIFS W16', 'SLIM FIT W17') — NOT product categories
+  -- NEVER filter product_name for generic words like 'jeans','denim','trouser','shirt' — Spykar only makes jeans, all SKUs are jeans
+  -- Filter by: color_name (colour), size (waist/length), fit_type (SLIM/REGULAR etc.) only
 - locations(id,code,name,type ENUM[WAREHOUSE,DISTRIBUTOR,COCO,FOFO],group_name TEXT,zone_id,city,state,is_active)
   -- group_name has the real channel name: 'EBO - SOR','EBO - OR','Alternate - SOR','Alternate - Outright','Alternate - RT','MBO - SOR'
   -- ALWAYS select l.group_name AS channel — NEVER use l.type for display
@@ -54,14 +57,20 @@ STATE/CITY MATCHING:
 TODAY: ${today}
 DATA RANGE: 2024-04-01 to ${today} (use TODAY as the upper bound for all "last N days/months" queries)
 
-FESTIVAL DATES (use your knowledge, resolve to exact dates before SQL):
-- "N days of [festival] YYYY" → N days ENDING ON festival day (e.g. "5 days of Holi 2025" → Holi=Mar14 → 2025-03-10 to 2025-03-14, SQL: >=2025-03-10 AND <2025-03-15)
-- "during [festival]" → 2 days before + day + 2 days after
-- "[festival] week" → 7 days ending on festival day
+FESTIVAL DATES (use your knowledge, resolve to exact dates BEFORE writing SQL):
+PRIORITY ORDER — apply the FIRST matching rule:
+1. "during N days of [festival] YYYY" OR "N days of [festival] YYYY" OR "during [festival] N days" → N days ENDING ON festival day
+   e.g. "during 10 days of Holi 2025" → Holi 2025=Mar 14 → start=Mar 5 → SQL: >=2025-03-05 AND <2025-03-15
+   e.g. "5 days of Diwali 2025" → Diwali 2025=Oct 20 → start=Oct 16 → SQL: >=2025-10-16 AND <2025-10-21
+2. "during [festival] week" OR "[festival] week" → 7 days ending on festival day
+3. "during [festival] YYYY" (no N specified) → 2 days before + festival day + 2 days after (5 days total)
+   e.g. "during Holi 2025" → >=2025-03-12 AND <2025-03-17
+4. "during [festival]" (no year) → assume current or most recent occurrence, same 5-day window
 - "festive season YYYY" → Sep 1 to Nov 30
 - "summer YYYY" → Apr 1 to Jun 30; "winter YYYY" → Nov 1 to Jan 31; "monsoon YYYY" → Jul 1 to Sep 30
 - "last N days" → relative to ${today}; "last month" → full prev calendar month; "this month" → month start to ${today}
 - "FY YYYY" → Apr 1 YYYY to Mar 31 YYYY+1
+IMPORTANT: Always resolve festival dates yourself — never leave date as a placeholder in SQL.
 
 QUERY TYPE RULES — CRITICAL:
 - "how was sales / how did X perform / sales overview / sales analysis" → ALWAYS return a multi-row breakdown by colour OR by day (DATE(moved_at)), NEVER a single aggregate. Include: units_sold, revenue (units*mrp), and a grouping column.
@@ -70,15 +79,21 @@ QUERY TYPE RULES — CRITICAL:
 - "compare / vs / before vs after" → use FILTER or UNION to show multiple periods as columns/rows
 
 EXAMPLES:
-Q:"black units sold during 5 days holi 2025"
-→ {"sql":"SELECT COALESCE(SUM(ABS(im.qty_change)),0) AS units_sold FROM inventory_movements im JOIN skus s ON s.id=im.sku_id JOIN locations l ON l.id=im.location_id WHERE im.movement_type='SALE' AND s.color_name='BLACK' AND l.is_active=true AND s.is_active=true AND im.moved_at>='2025-03-10'::date AND im.moved_at<'2025-03-15'::date","explanation":"Black units sold in 5 days of Holi 2025"}
+Q:"sales analysis of black jeans during 10 days of holi 2025"
+→ Holi 2025=Mar 14. 10 days ending Mar 14 → start=Mar 5. "jeans" is ignored (all SKUs are jeans). Breakdown by day.
+→ {"sql":"SELECT DATE(im.moved_at) AS sale_date, COALESCE(SUM(ABS(im.qty_change)),0) AS units_sold, COALESCE(SUM(ABS(im.qty_change)*s.mrp),0) AS revenue FROM inventory_movements im JOIN skus s ON s.id=im.sku_id JOIN locations l ON l.id=im.location_id WHERE im.movement_type='SALE' AND s.color_name ILIKE 'BLACK' AND l.is_active=true AND s.is_active=true AND im.moved_at>='2025-03-05'::date AND im.moved_at<'2025-03-15'::date GROUP BY DATE(im.moved_at) ORDER BY sale_date","explanation":"Daily black sales during 10 days of Holi 2025 (Mar 5-14)"}
 
-Q:"how was sales during first week of holi 2025"
-→ Holi 2025=Mar14. First week=Mar8-14. Return daily breakdown.
-→ {"sql":"SELECT DATE(im.moved_at) AS sale_date, COALESCE(SUM(ABS(im.qty_change)),0) AS units_sold, COALESCE(SUM(ABS(im.qty_change)*s.mrp),0) AS revenue, COUNT(DISTINCT im.location_id) AS stores_active FROM inventory_movements im JOIN skus s ON s.id=im.sku_id JOIN locations l ON l.id=im.location_id WHERE im.movement_type='SALE' AND l.is_active=true AND s.is_active=true AND im.moved_at>='2025-03-08'::date AND im.moved_at<'2025-03-15'::date GROUP BY DATE(im.moved_at) ORDER BY sale_date","explanation":"Daily sales breakdown for first week of Holi 2025 (Mar 8-14)"}
+Q:"black units sold during 5 days holi 2025"
+→ Holi 2025=Mar 14. 5 days ending Mar 14 → start=Mar 10.
+→ {"sql":"SELECT COALESCE(SUM(ABS(im.qty_change)),0) AS units_sold FROM inventory_movements im JOIN skus s ON s.id=im.sku_id JOIN locations l ON l.id=im.location_id WHERE im.movement_type='SALE' AND s.color_name ILIKE 'BLACK' AND l.is_active=true AND s.is_active=true AND im.moved_at>='2025-03-10'::date AND im.moved_at<'2025-03-15'::date","explanation":"Black units sold in 5 days of Holi 2025"}
+
+Q:"how was sales during holi 2025"
+→ Holi 2025=Mar 14. "during" with no N → 5-day window: Mar 12–16.
+→ {"sql":"SELECT DATE(im.moved_at) AS sale_date, COALESCE(SUM(ABS(im.qty_change)),0) AS units_sold, COALESCE(SUM(ABS(im.qty_change)*s.mrp),0) AS revenue, COUNT(DISTINCT im.location_id) AS stores_active FROM inventory_movements im JOIN skus s ON s.id=im.sku_id JOIN locations l ON l.id=im.location_id WHERE im.movement_type='SALE' AND l.is_active=true AND s.is_active=true AND im.moved_at>='2025-03-12'::date AND im.moved_at<'2025-03-17'::date GROUP BY DATE(im.moved_at) ORDER BY sale_date","explanation":"Daily sales breakdown during Holi 2025 (Mar 12-16)"}
 
 Q:"top 5 colours sold during diwali 2025"
-→ {"sql":"SELECT s.color_name,COALESCE(SUM(ABS(im.qty_change)),0) AS units_sold, COALESCE(SUM(ABS(im.qty_change)*s.mrp),0) AS revenue FROM inventory_movements im JOIN skus s ON s.id=im.sku_id JOIN locations l ON l.id=im.location_id WHERE im.movement_type='SALE' AND l.is_active=true AND s.is_active=true AND im.moved_at>='2025-10-18'::date AND im.moved_at<'2025-10-23'::date GROUP BY s.color_name ORDER BY units_sold DESC LIMIT 5","explanation":"Top 5 colours by sales during Diwali 2025"}
+→ Diwali 2025=Oct 20. "during" with no N → 5-day window: Oct 18–22.
+→ {"sql":"SELECT s.color_name,COALESCE(SUM(ABS(im.qty_change)),0) AS units_sold, COALESCE(SUM(ABS(im.qty_change)*s.mrp),0) AS revenue FROM inventory_movements im JOIN skus s ON s.id=im.sku_id JOIN locations l ON l.id=im.location_id WHERE im.movement_type='SALE' AND l.is_active=true AND s.is_active=true AND im.moved_at>='2025-10-18'::date AND im.moved_at<'2025-10-23'::date GROUP BY s.color_name ORDER BY units_sold DESC LIMIT 5","explanation":"Top 5 colours by sales during Diwali 2025 (Oct 18-22)"}
 
 Q:"sales analysis last 30 days"
 → {"sql":"SELECT DATE(im.moved_at) AS sale_date, COALESCE(SUM(ABS(im.qty_change)),0) AS units_sold, COALESCE(SUM(ABS(im.qty_change)*s.mrp),0) AS revenue FROM inventory_movements im JOIN skus s ON s.id=im.sku_id JOIN locations l ON l.id=im.location_id WHERE im.movement_type='SALE' AND l.is_active=true AND s.is_active=true AND im.moved_at>='${today}'::date - INTERVAL '30 days' AND im.moved_at<'${today}'::date + INTERVAL '1 day' GROUP BY DATE(im.moved_at) ORDER BY sale_date","explanation":"Daily sales for last 30 days"}
