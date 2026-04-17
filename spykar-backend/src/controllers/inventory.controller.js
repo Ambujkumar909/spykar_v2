@@ -360,7 +360,7 @@ async function getSkuInventory(req, res, next) {
 // on avg daily sales so alerts fire even before thresholds are manually configured.
 async function getAlerts(req, res, next) {
   try {
-    const payload = await getOrSet('inventory:alerts:v3', async () => {
+    const payload = await getOrSet('inventory:alerts:v4', async () => {
       const result = await query(`
         WITH velocity AS (
           -- average daily units sold per location+SKU (last 180 days of data)
@@ -392,7 +392,7 @@ async function getAlerts(req, res, next) {
         ),
         alerts_base AS (
           SELECT
-            l.name AS location_name, COALESCE(l.group_name, l.type::text) AS location_type, l.city,
+            l.name AS location_name, COALESCE(l.group_name, l.type::text) AS location_type, l.city, l.state,
             s.sku_code, s.product_name, s.color_name, s.size,
             i.qty_on_hand,
             t.effective_safety  AS safety_stock,

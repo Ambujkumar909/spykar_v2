@@ -3,7 +3,7 @@ import DashboardLayout from '../components/layout/DashboardLayout';
 import {
   Package, DollarSign, IndianRupee, AlertTriangle, Truck, RefreshCw,
   TrendingUp, TrendingDown, Layers, BarChart3, MapPin,
-  CheckCircle, XCircle, AlertCircle, Info,
+  CheckCircle, XCircle, AlertCircle, Info, Search, Bell,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import {
@@ -1031,6 +1031,256 @@ function SkuPerformanceSection({ initialTopMoving, initialSlowMoving, allStoresD
   );
 }
 
+// ─── Stock Alerts Section — drill-down with filters, search, pagination ───────
+function StockAlertsSection({ alerts, alertSummary, pageLoading }) {
+  const [search,    setSearch]    = useState('');
+  const [selState,  setSelState]  = useState('');
+  const [selCity,   setSelCity]   = useState('');
+  const [levelTab,  setLevelTab]  = useState('ALL');
+  const [pageSize,  setPageSize]  = useState(30);
+  const [page,      setPage]      = useState(1);
+
+  const inputStyle  = { border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '5px 10px', fontSize: 12, fontWeight: 700, color: '#0f172a', outline: 'none', background: '#fff' };
+  const selectStyle = { border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '5px 28px 5px 10px', fontSize: 12, fontWeight: 700, color: '#0f172a', outline: 'none', background: '#fff', appearance: 'none', cursor: 'pointer', minWidth: 130 };
+
+  // ── Derived option lists (null-safe) ──
+  const stateList = useMemo(() =>
+    [...new Set((alerts || []).map(r => r?.state).filter(Boolean))].sort(),
+  [alerts]);
+
+  const cityList = useMemo(() => {
+    const base = selState ? alerts.filter(r => r?.state === selState) : alerts;
+    return [...new Set(base.map(r => r?.city).filter(Boolean))].sort();
+  }, [alerts, selState]);
+
+  // ── Filter pipeline ──
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (alerts || []).filter(r => {
+      if (!r) return false;
+      if (levelTab !== 'ALL' && r.alert_level !== levelTab) return false;
+      if (selState && r.state !== selState) return false;
+      if (selCity  && r.city  !== selCity)  return false;
+      if (!q) return true;
+      return (
+        (r.sku_code     || '').toLowerCase().includes(q) ||
+        (r.product_name || '').toLowerCase().includes(q) ||
+        (r.color_name   || '').toLowerCase().includes(q) ||
+        (r.location_name|| '').toLowerCase().includes(q) ||
+        (r.city         || '').toLowerCase().includes(q) ||
+        (r.state        || '').toLowerCase().includes(q)
+      );
+    });
+  }, [alerts, search, selState, selCity, levelTab]);
+
+  // ── Reset page when filters change ──
+  useEffect(() => { setPage(1); }, [search, selState, selCity, levelTab, pageSize]);
+
+  // ── Reset city when state changes ──
+  useEffect(() => { setSelCity(''); }, [selState]);
+
+  // ── Pagination math ──
+  const totalRows  = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const safePage   = Math.min(page, totalPages);
+  const offset     = (safePage - 1) * pageSize;
+  const pageRows   = filtered.slice(offset, offset + pageSize);
+
+  const hasFilter = !!(search || selState || selCity || levelTab !== 'ALL');
+  const clearAll = () => { setSearch(''); setSelState(''); setSelCity(''); setLevelTab('ALL'); setPage(1); };
+
+  // ── Alert level badge styling ──
+  const levelStyle = (lvl) => {
+    if (lvl === 'OUT_OF_STOCK') return { bg: '#FEE2E2', color: '#991B1B', border: '#FCA5A5', label: 'Out of Stock' };
+    if (lvl === 'REORDER_NOW')  return { bg: '#FED7AA', color: '#9A3412', border: '#FDBA74', label: 'Reorder Now' };
+    return { bg: '#FEF3C7', color: '#92400E', border: '#FCD34D', label: 'Low Stock' };
+  };
+
+  // ── Tab buttons ──
+  const tabs = [
+    { key: 'ALL',          label: 'All',           count: alertSummary?.total        || 0, color: '#0f172a' },
+    { key: 'OUT_OF_STOCK', label: 'Out of Stock',  count: alertSummary?.out_of_stock || 0, color: '#DC2626' },
+    { key: 'REORDER_NOW',  label: 'Reorder Now',   count: alertSummary?.reorder_now  || 0, color: '#EA580C' },
+    { key: 'LOW_STOCK',    label: 'Low Stock',     count: alertSummary?.low_stock    || 0, color: '#D97706' },
+  ];
+
+  const pageSizeOpts = [10, 30, 50, 100, 200];
+
+  return (
+    <Section title="Stock Alerts — Store × SKU" icon={Bell} color="#DC2626" mb={32}>
+      {/* ── Tabs ── */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+        {tabs.map(t => {
+          const active = levelTab === t.key;
+          return (
+            <button key={t.key} onClick={() => setLevelTab(t.key)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '6px 14px', borderRadius: 20,
+                border: `1.5px solid ${active ? t.color : '#e2e8f0'}`,
+                background: active ? t.color : '#fff',
+                color: active ? '#fff' : '#475569',
+                fontSize: 12, fontWeight: 800, cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}>
+              {t.label}
+              <span style={{
+                fontSize: 10, fontWeight: 800,
+                background: active ? 'rgba(255,255,255,0.25)' : '#f1f5f9',
+                color: active ? '#fff' : t.color,
+                padding: '1px 7px', borderRadius: 100, letterSpacing: '0.02em',
+              }}>{t.count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Filter bar ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: '1 1 240px', maxWidth: 380 }}>
+          <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.45, pointerEvents: 'none' }} color="#475569" strokeWidth={2.5} />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search SKU, product, store, city…"
+            style={{ ...inputStyle, paddingLeft: 30, width: '100%' }}
+          />
+        </div>
+
+        <div style={{ position: 'relative' }}>
+          <select value={selState} onChange={e => setSelState(e.target.value)} style={selectStyle}>
+            <option value="">All States</option>
+            {stateList.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <svg style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth={2.5}><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+
+        <div style={{ position: 'relative' }}>
+          <select value={selCity} onChange={e => setSelCity(e.target.value)} style={selectStyle} disabled={cityList.length === 0}>
+            <option value="">All Cities</option>
+            {cityList.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <svg style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth={2.5}><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+
+        {hasFilter && (
+          <button onClick={clearAll} style={{ padding: '5px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, background: '#f1f5f9', color: '#475569', border: '1.5px solid #e2e8f0', cursor: 'pointer' }}>
+            Clear
+          </button>
+        )}
+
+        {/* Page size — top right */}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#475569', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Show</span>
+          <div style={{ position: 'relative' }}>
+            <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ ...selectStyle, minWidth: 90 }}>
+              {pageSizeOpts.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <svg style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth={2.5}><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Table ── */}
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+              <tr style={{ background: '#f8fafc' }}>
+                {['#','Alert','Store','State / City','Channel','SKU','Product','Colour','Size','On Hand','Safety','Reorder','Shortfall'].map(h => (
+                  <th key={h} style={{
+                    padding: '10px 12px',
+                    textAlign: ['#','On Hand','Safety','Reorder','Shortfall'].includes(h) ? 'right' : 'left',
+                    fontSize: 10, fontWeight: 900, color: '#0f172a', letterSpacing: '0.07em', textTransform: 'uppercase',
+                    borderBottom: '2px solid #e2e8f0', whiteSpace: 'nowrap',
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {pageLoading
+                ? Array.from({ length: Math.min(pageSize, 10) }).map((_, i) => (
+                    <tr key={i}><td colSpan={13} style={{ padding: '10px 12px' }}><div style={{ height: 14, background: '#f1f5f9', borderRadius: 4 }} /></td></tr>
+                  ))
+                : pageRows.length === 0
+                  ? (
+                    <tr><td colSpan={13} style={{ padding: '40px', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#64748b' }}>
+                      {hasFilter ? 'No alerts match your filters' : 'No stock alerts — everything is healthy'}
+                    </td></tr>
+                  )
+                  : pageRows.map((r, i) => {
+                      const lvl = levelStyle(r.alert_level);
+                      const rowNum = offset + i + 1;
+                      const shortfall = r.shortfall_pct != null ? `${Number(r.shortfall_pct).toFixed(1)}%` : '—';
+                      return (
+                        <tr key={`${r.sku_code}-${r.location_name}-${i}`}
+                          style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}
+                          onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'}
+                          onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? '#fff' : '#fafafa'}>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 11, fontWeight: 800, color: '#94a3b8', width: 42 }}>{rowNum}</td>
+                          <td style={{ padding: '9px 12px' }}>
+                            <span style={{
+                              background: lvl.bg, color: lvl.color, border: `1px solid ${lvl.border}`,
+                              borderRadius: 6, padding: '2px 8px', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap', letterSpacing: '0.02em',
+                            }}>{lvl.label}</span>
+                          </td>
+                          <td style={{ padding: '9px 12px', fontSize: 12, fontWeight: 800, color: '#0f172a', maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.location_name || '—'}</td>
+                          <td style={{ padding: '9px 12px', fontSize: 11, fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>{r.state || '—'}{r.city ? ` · ${r.city}` : ''}</td>
+                          <td style={{ padding: '9px 12px', fontSize: 11, fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap' }}>{r.location_type || '—'}</td>
+                          <td style={{ padding: '9px 12px', fontSize: 11, fontWeight: 800, color: '#1d4ed8', whiteSpace: 'nowrap' }}>{r.sku_code || '—'}</td>
+                          <td style={{ padding: '9px 12px', fontSize: 11, fontWeight: 700, color: '#475569', maxWidth: 180, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.product_name || '—'}</td>
+                          <td style={{ padding: '9px 12px', fontSize: 11, fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>{r.color_name || '—'}</td>
+                          <td style={{ padding: '9px 12px', fontSize: 11, fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>{r.size || '—'}</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 12, fontWeight: 900, color: r.qty_on_hand === 0 ? '#DC2626' : '#0f172a', fontVariantNumeric: 'tabular-nums' }}>{formatNumber(Number(r.qty_on_hand || 0))}</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 11, fontWeight: 700, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{formatNumber(Number(r.safety_stock || 0))}</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 11, fontWeight: 700, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{formatNumber(Number(r.reorder_point || 0))}</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 11, fontWeight: 800, color: '#DC2626', fontVariantNumeric: 'tabular-nums' }}>{shortfall}</td>
+                        </tr>
+                      );
+                    })
+              }
+            </tbody>
+          </table>
+        </div>
+
+        {/* ── Pagination ── */}
+        {!pageLoading && totalRows > 0 && (
+          <div style={{ padding: '10px 16px', borderTop: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', flexWrap: 'wrap', gap: 10 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>
+              Showing <strong style={{ color: '#0f172a' }}>{offset + 1}–{Math.min(offset + pageRows.length, totalRows)}</strong> of <strong style={{ color: '#0f172a' }}>{formatNumber(totalRows)}</strong> alerts
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <button onClick={() => setPage(1)} disabled={safePage === 1}
+                style={{ border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '3px 9px', fontSize: 11, fontWeight: 800, color: safePage === 1 ? '#cbd5e1' : '#0f172a', background: '#fff', cursor: safePage === 1 ? 'default' : 'pointer' }}>«</button>
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
+                style={{ border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '3px 10px', fontSize: 11, fontWeight: 800, color: safePage === 1 ? '#cbd5e1' : '#0f172a', background: '#fff', cursor: safePage === 1 ? 'default' : 'pointer' }}>‹ Prev</button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 2)
+                .reduce((acc, p, idx, arr) => { if (idx > 0 && p - arr[idx-1] > 1) acc.push('…'); acc.push(p); return acc; }, [])
+                .map((p, idx) => p === '…'
+                  ? <span key={`e${idx}`} style={{ fontSize: 12, color: '#94a3b8', padding: '0 2px' }}>…</span>
+                  : <button key={p} onClick={() => setPage(p)}
+                      style={{
+                        border: `1.5px solid ${p === safePage ? '#DC2626' : '#e2e8f0'}`,
+                        borderRadius: 7, padding: '3px 10px', fontSize: 11, fontWeight: 800,
+                        color: p === safePage ? '#fff' : '#0f172a',
+                        background: p === safePage ? '#DC2626' : '#fff',
+                        cursor: 'pointer', minWidth: 30,
+                      }}>{p}</button>)
+              }
+              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
+                style={{ border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '3px 10px', fontSize: 11, fontWeight: 800, color: safePage === totalPages ? '#cbd5e1' : '#0f172a', background: '#fff', cursor: safePage === totalPages ? 'default' : 'pointer' }}>Next ›</button>
+              <button onClick={() => setPage(totalPages)} disabled={safePage === totalPages}
+                style={{ border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '3px 9px', fontSize: 11, fontWeight: 800, color: safePage === totalPages ? '#cbd5e1' : '#0f172a', background: '#fff', cursor: safePage === totalPages ? 'default' : 'pointer' }}>»</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Section>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function Overview() {
   const [summary, setSummary]       = useState(null);
@@ -1447,6 +1697,15 @@ export default function Overview() {
           </div>
         </div>
       </Section>
+
+      {/* ══════════════════════════════════════════════
+          SECTION 3.5 — STOCK ALERTS (Store × SKU drill-down)
+      ══════════════════════════════════════════════ */}
+      <StockAlertsSection
+        alerts={alerts}
+        alertSummary={alertSummary}
+        pageLoading={loading}
+      />
 
       {/* ══════════════════════════════════════════════
           SECTION 4 — SIZE & COLOUR
