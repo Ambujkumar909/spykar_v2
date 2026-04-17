@@ -1184,31 +1184,16 @@ function StockAlertsSection({ alerts, alertSummary, pageLoading }) {
 
       {/* ── Table ── */}
       <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-            <colgroup>
-              <col style={{ width: '3%'  }} />{/* # */}
-              <col style={{ width: '8%'  }} />{/* Alert */}
-              <col style={{ width: '15%' }} />{/* Store */}
-              <col style={{ width: '11%' }} />{/* Region */}
-              <col style={{ width: '8%'  }} />{/* Channel */}
-              <col style={{ width: '10%' }} />{/* SKU */}
-              <col style={{ width: '12%' }} />{/* Product */}
-              <col style={{ width: '7%'  }} />{/* Colour */}
-              <col style={{ width: '5%'  }} />{/* Size */}
-              <col style={{ width: '6%'  }} />{/* Qty */}
-              <col style={{ width: '5%'  }} />{/* Safety */}
-              <col style={{ width: '5%'  }} />{/* Reorder */}
-              <col style={{ width: '5%'  }} />{/* Short */}
-            </colgroup>
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
               <tr style={{ background: '#f8fafc' }}>
-                {['#','Alert','Store','Region','Channel','SKU','Product','Colour','Size','Qty','Safety','Reorder','Short'].map(h => (
+                {['#','Alert','Store','State / City','Channel','SKU','Product','Colour','Size','On Hand','Safety','Reorder','Shortfall'].map(h => (
                   <th key={h} style={{
-                    padding: '7px 6px',
-                    textAlign: ['#','Qty','Safety','Reorder','Short'].includes(h) ? 'right' : 'left',
-                    fontSize: 9.5, fontWeight: 900, color: '#0f172a', letterSpacing: '0.05em', textTransform: 'uppercase',
-                    borderBottom: '2px solid #e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    padding: '10px 14px',
+                    textAlign: ['#','On Hand','Safety','Reorder','Shortfall'].includes(h) ? 'right' : 'left',
+                    fontSize: 10, fontWeight: 900, color: '#0f172a', letterSpacing: '0.07em', textTransform: 'uppercase',
+                    borderBottom: '2px solid #e2e8f0', whiteSpace: 'nowrap',
                   }}>{h}</th>
                 ))}
               </tr>
@@ -1216,7 +1201,7 @@ function StockAlertsSection({ alerts, alertSummary, pageLoading }) {
             <tbody>
               {pageLoading
                 ? Array.from({ length: Math.min(pageSize, 10) }).map((_, i) => (
-                    <tr key={i}><td colSpan={13} style={{ padding: '7px 6px' }}><div style={{ height: 13, background: '#f1f5f9', borderRadius: 4 }} /></td></tr>
+                    <tr key={i}><td colSpan={13} style={{ padding: '10px 14px' }}><div style={{ height: 14, background: '#f1f5f9', borderRadius: 4 }} /></td></tr>
                   ))
                 : pageRows.length === 0
                   ? (
@@ -1227,31 +1212,30 @@ function StockAlertsSection({ alerts, alertSummary, pageLoading }) {
                   : pageRows.map((r, i) => {
                       const lvl = levelStyle(r.alert_level);
                       const rowNum = offset + i + 1;
-                      const shortfall = r.shortfall_pct != null ? `${Number(r.shortfall_pct).toFixed(0)}%` : '—';
-                      const cellBase = { padding: '6px 6px', fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+                      const shortfall = r.shortfall_pct != null ? `${Number(r.shortfall_pct).toFixed(1)}%` : '—';
                       return (
                         <tr key={`${r.sku_code}-${r.location_name}-${i}`}
                           style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}
                           onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'}
                           onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? '#fff' : '#fafafa'}>
-                          <td style={{ ...cellBase, textAlign: 'right', fontWeight: 800, color: '#94a3b8' }}>{rowNum}</td>
-                          <td style={{ ...cellBase }}>
-                            <span title={lvl.label} style={{
+                          <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 11, fontWeight: 800, color: '#94a3b8' }}>{rowNum}</td>
+                          <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
+                            <span style={{
                               background: lvl.bg, color: lvl.color, border: `1px solid ${lvl.border}`,
-                              borderRadius: 5, padding: '1px 6px', fontSize: 9, fontWeight: 800, whiteSpace: 'nowrap', letterSpacing: '0.02em', display: 'inline-block',
+                              borderRadius: 6, padding: '2px 8px', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap', letterSpacing: '0.02em',
                             }}>{lvl.label}</span>
                           </td>
-                          <td title={r.location_name} style={{ ...cellBase, fontWeight: 800, color: '#0f172a' }}>{r.location_name || '—'}</td>
-                          <td title={`${r.state || ''}${r.city ? ' · ' + r.city : ''}`} style={{ ...cellBase, fontWeight: 700, color: '#475569' }}>{r.state || '—'}{r.city ? ` · ${r.city}` : ''}</td>
-                          <td title={r.location_type} style={{ ...cellBase, fontWeight: 700, color: '#64748b' }}>{r.location_type || '—'}</td>
-                          <td title={r.sku_code} style={{ ...cellBase, fontWeight: 800, color: '#1d4ed8' }}>{r.sku_code || '—'}</td>
-                          <td title={r.product_name} style={{ ...cellBase, fontWeight: 700, color: '#475569' }}>{r.product_name || '—'}</td>
-                          <td title={r.color_name} style={{ ...cellBase, fontWeight: 700, color: '#475569' }}>{r.color_name || '—'}</td>
-                          <td style={{ ...cellBase, fontWeight: 700, color: '#475569' }}>{r.size || '—'}</td>
-                          <td style={{ ...cellBase, textAlign: 'right', fontSize: 11, fontWeight: 900, color: r.qty_on_hand === 0 ? '#DC2626' : '#0f172a', fontVariantNumeric: 'tabular-nums' }}>{formatNumber(Number(r.qty_on_hand || 0))}</td>
-                          <td style={{ ...cellBase, textAlign: 'right', fontWeight: 700, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{formatNumber(Number(r.safety_stock || 0))}</td>
-                          <td style={{ ...cellBase, textAlign: 'right', fontWeight: 700, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{formatNumber(Number(r.reorder_point || 0))}</td>
-                          <td style={{ ...cellBase, textAlign: 'right', fontWeight: 800, color: '#DC2626', fontVariantNumeric: 'tabular-nums' }}>{shortfall}</td>
+                          <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>{r.location_name || '—'}</td>
+                          <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>{r.state || '—'}{r.city ? ` · ${r.city}` : ''}</td>
+                          <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap' }}>{r.location_type || '—'}</td>
+                          <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 800, color: '#1d4ed8', whiteSpace: 'nowrap' }}>{r.sku_code || '—'}</td>
+                          <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>{r.product_name || '—'}</td>
+                          <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>{r.color_name || '—'}</td>
+                          <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>{r.size || '—'}</td>
+                          <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 12, fontWeight: 900, color: r.qty_on_hand === 0 ? '#DC2626' : '#0f172a', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatNumber(Number(r.qty_on_hand || 0))}</td>
+                          <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 11, fontWeight: 700, color: '#64748b', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatNumber(Number(r.safety_stock || 0))}</td>
+                          <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 11, fontWeight: 700, color: '#64748b', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatNumber(Number(r.reorder_point || 0))}</td>
+                          <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 11, fontWeight: 800, color: '#DC2626', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{shortfall}</td>
                         </tr>
                       );
                     })
