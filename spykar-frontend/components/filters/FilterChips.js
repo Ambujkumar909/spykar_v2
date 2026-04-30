@@ -32,7 +32,6 @@ const DIM_LABELS = {
   group_name:  'Party',
   store_code:  'Store',
   brand:       'Brand',
-  size:        'Size',
 };
 
 export default function FilterChips({ filters, setFilter, clearAll }) {

@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import DashboardLayout from '../components/layout/DashboardLayout';
+import FilterBar from '../components/filters/FilterBar';
+import FilterChips from '../components/filters/FilterChips';
+import SalesPulse from '../components/sales/SalesPulse';
+import { useFilters } from '../lib/useFilters';
 import { analyticsService } from '../lib/services';
 import { getCached, setCached, isFresh } from '../lib/dashboardCache';
 import toast from 'react-hot-toast';
@@ -9,6 +13,37 @@ import {
   Package, Store, Calendar, Filter, RefreshCw, ChevronDown,
   Award, Zap, BarChart2, PieChart, Activity,
 } from 'lucide-react';
+
+// ── Date-range presets — Stripe / Linear-grade UX ────────────────────────────
+// Click one chip and the date range jumps to that window. Custom-range stays
+// usable for irregular periods (e.g., a marketing campaign window).
+function rangeForPreset(preset) {
+  const today = new Date();
+  const fmt = d => d.toISOString().slice(0, 10);
+  const start = new Date(today); start.setHours(0,0,0,0);
+  switch (preset) {
+    case 'today':   return { from: fmt(today), to: fmt(today) };
+    case 'last_7':  { const d = new Date(start); d.setDate(d.getDate()-6); return { from: fmt(d), to: fmt(today) }; }
+    case 'last_30': { const d = new Date(start); d.setDate(d.getDate()-29); return { from: fmt(d), to: fmt(today) }; }
+    case 'last_90': { const d = new Date(start); d.setDate(d.getDate()-89); return { from: fmt(d), to: fmt(today) }; }
+    case 'mtd':     { return { from: fmt(new Date(today.getFullYear(), today.getMonth(), 1)), to: fmt(today) }; }
+    case 'qtd':     { const q = Math.floor(today.getMonth() / 3) * 3; return { from: fmt(new Date(today.getFullYear(), q, 1)), to: fmt(today) }; }
+    case 'ytd':     { return { from: fmt(new Date(today.getFullYear(), 0, 1)), to: fmt(today) }; }
+    case 'cy':      return { from: '2025-01-01', to: '2026-01-31' };  // calendar year of available ERP data
+    case 'fy':      return { from: '2025-04-01', to: '2026-01-31' };  // Indian FY 2025-26 (so far)
+    default:        return null;
+  }
+}
+const DATE_PRESETS = [
+  { key: 'today',   label: 'Today' },
+  { key: 'last_7',  label: 'Last 7 d' },
+  { key: 'last_30', label: 'Last 30 d' },
+  { key: 'last_90', label: 'Last 90 d' },
+  { key: 'mtd',     label: 'MTD' },
+  { key: 'qtd',     label: 'QTD' },
+  { key: 'ytd',     label: 'YTD' },
+  { key: 'fy',      label: 'FY 2025-26' },
+];
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
@@ -65,6 +100,52 @@ const chartBase = {
   zoom: { enabled: false },
   animations: { enabled: true, speed: 600 },
 };
+
+// ── 3-segment Sale/Return/Net lens pill (matches FilterBar mode-pill UX) ───
+function SaleModePill({ mode, onChange }) {
+  const OPTS = [
+    { key: 'sale',   label: 'Sale',   color: '#2563EB', title: 'Gross sales only (no returns deducted)' },
+    { key: 'return', label: 'Return', color: '#F43F5E', title: 'Returns only — quality & fit feedback' },
+    { key: 'net',    label: 'Net',    color: '#059669', title: 'Sales minus returns — the truer revenue figure' },
+  ];
+  const idx = Math.max(0, OPTS.findIndex(o => o.key === mode));
+  const seg = 100 / OPTS.length;
+  return (
+    <div style={{
+      display: 'inline-flex', position: 'relative',
+      background: '#f1f5f9',
+      border: '1px solid #e2e8f0',
+      borderRadius: 999, padding: 3, height: 32,
+    }}>
+      <span style={{
+        position: 'absolute', top: 3, bottom: 3,
+        left: `calc(${idx * seg}% + 3px)`,
+        width: `calc(${seg}% - 6px)`,
+        background: '#fff',
+        borderRadius: 999,
+        boxShadow: '0 1px 4px rgba(15,23,42,0.10), 0 0 0 1px #e2e8f0',
+        transition: 'left 220ms cubic-bezier(0.16,1,0.3,1), width 220ms',
+      }} />
+      {OPTS.map(opt => (
+        <button
+          key={opt.key}
+          type="button"
+          title={opt.title}
+          onClick={() => onChange(opt.key)}
+          style={{
+            position: 'relative', zIndex: 1,
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            padding: '0 14px',
+            fontFamily: 'Inter, system-ui, sans-serif',
+            fontSize: 12, fontWeight: 700, letterSpacing: '0.02em',
+            color: mode === opt.key ? opt.color : '#64748b',
+            transition: 'color 200ms',
+          }}
+        >{opt.label}</button>
+      ))}
+    </div>
+  );
+}
 
 // ── KPI Card ──────────────────────────────────────────────────────────────
 function KpiCard({ icon: Icon, label, value, sub, sub2, accent = '#0f172a', loading }) {
@@ -552,18 +633,47 @@ function AllStoresTable({ data, loading }) {
 }
 
 export default function SalesAnalyticsPage() {
-  // Filters
+  // ── v2 universal filter bar — same 15 dimensions as the Network page ──
+  // (gender, sub_product, product, category, style, shade, color, size,
+  // season, state, city, party, store) plus the Active/Inactive/All mode pill
+  // and a Sale/Return/Net lens specific to this page.
+  const { filters: v2Filters, setFilter: setV2, clearAll: clearV2, activeCount: v2Active } =
+    useFilters({ defaults: { mode: 'active', sale_mode: 'net' }, persist: ['mode', 'sale_mode'] });
+
+  // Date range stays local (sales-specific UX with presets). Default = full
+  // ERP window; user picks tighter ranges via the preset chips below.
   const [dateFrom, setDateFrom]     = useState('2025-01-01');
   const [dateTo, setDateTo]         = useState('2026-01-31');
+  const [activePreset, setActivePreset] = useState('');
+
+  // Legacy local filters retained for back-compat with the in-page filter
+  // toolbar (color/size/store dropdowns). v2 multi-select takes precedence
+  // when both are set; v1 acts as a quick single-select shortcut.
   const [colorName, setColorName]   = useState('');
   const [size, setSize]             = useState('');
   const [locationId, setLocationId] = useState('');
-  const [category, setCategory]     = useState('');
+  const category = v2Filters.category && v2Filters.category[0] || '';
+
+  // Build v2 query slug for the cache key (so each filter combo has its own
+  // memoised slot across mounts).
+  const v2Slug = useMemo(() => {
+    const csv = (v) => Array.isArray(v) ? v.slice().sort().join(',') : (v || '');
+    return [
+      `g${csv(v2Filters.gender_name)}`, `sp${csv(v2Filters.sub_product)}`,
+      `pr${csv(v2Filters.product)}`,    `c${csv(v2Filters.category)}`,
+      `sty${csv(v2Filters.style)}`,     `sh${csv(v2Filters.shade)}`,
+      `cl${csv(v2Filters.color)}`,      `sz${csv(v2Filters.size)}`,
+      `se${csv(v2Filters.season)}`,
+      `st${csv(v2Filters.state)}`,      `ct${csv(v2Filters.city)}`,
+      `gn${csv(v2Filters.group_name)}`, `sc${csv(v2Filters.store_code)}`,
+      `m${v2Filters.mode||'active'}`,   `lm${v2Filters.sale_mode||'net'}`,
+    ].join('|');
+  }, [v2Filters]);
 
   // Cache key is filter-dependent so each unique combination remembers its own
   // response. Navigating away and back with identical filters renders instantly
   // from the module-level cache instead of remounting empty.
-  const cacheKey = `sales:${dateFrom}|${dateTo}|${colorName}|${size}|${locationId}|${category}`;
+  const cacheKey = `sales:v2:${dateFrom}|${dateTo}|${colorName}|${size}|${locationId}|${v2Slug}`;
   const [data, setData]       = useState(() => getCached(cacheKey) ?? null);
   const [loading, setLoading] = useState(() => !getCached(cacheKey));
 
@@ -579,13 +689,29 @@ export default function SalesAnalyticsPage() {
     const issuedFor = cacheKey;
     if (!getCached(issuedFor)) setLoading(true);
     try {
+      const csv = (v) => Array.isArray(v) ? v.join(',') : (v || undefined);
       const res = await analyticsService.getSalesAnalytics({
         date_from:   dateFrom    || undefined,
         date_to:     dateTo      || undefined,
-        color_name:  colorName   || undefined,
-        size:        size        || undefined,
+        color_name:  colorName   || undefined,  // legacy single-value
+        size:        size        || undefined,  // legacy single-value (overrides v2 multi)
         location_id: locationId  || undefined,
-        category:    category    || undefined,
+        // v2 multi-select set — every filter narrows together
+        gender:      csv(v2Filters.gender_name) || undefined,
+        sub_product: csv(v2Filters.sub_product) || undefined,
+        product:     csv(v2Filters.product)     || undefined,
+        category:    csv(v2Filters.category)    || undefined,
+        style:       csv(v2Filters.style)       || undefined,
+        shade:       csv(v2Filters.shade)       || undefined,
+        color:       csv(v2Filters.color)       || undefined,
+        // v2 size only when no legacy size is set
+        ...(size ? {} : { size: csv(v2Filters.size) || undefined }),
+        season:      csv(v2Filters.season)      || undefined,
+        state:       csv(v2Filters.state)       || undefined,
+        city:        csv(v2Filters.city)        || undefined,
+        group_name:  csv(v2Filters.group_name)  || undefined,
+        store_code:  csv(v2Filters.store_code)  || undefined,
+        mode:        v2Filters.mode             || 'active',
       });
       const v = res.data.data;
       // Always cache under the key this fetch was issued for, so future
@@ -601,7 +727,7 @@ export default function SalesAnalyticsPage() {
       if (activeKeyRef.current === issuedFor) setLoading(false);
       toast.error('Failed to load sales analytics');
     }
-  }, [dateFrom, dateTo, colorName, size, locationId, category, cacheKey]);
+  }, [dateFrom, dateTo, colorName, size, locationId, v2Slug, cacheKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     // Sync `data` with the NEW cacheKey's entry FIRST — otherwise switching
@@ -754,10 +880,56 @@ export default function SalesAnalyticsPage() {
     };
   }, [data?.by_month]);
 
-  const hasFilters = colorName || size || locationId || category || dateFrom !== '2025-01-01' || dateTo !== '2026-01-31';
+  const hasFilters = colorName || size || locationId || category || dateFrom !== '2025-01-01' || dateTo !== '2026-01-31' || v2Active > 0;
 
   return (
     <DashboardLayout title="Sales & Returns Analytics" subtitle="Day-basis sales intelligence — units, revenue, colour, size, store">
+
+      {/* ── v2 Universal FilterBar — same 15 dimensions + Active/Inactive/All
+          mode pill that drive every other page. URL-synced, multi-select,
+          dependency-narrowing dropdowns. ────────────────────────────────── */}
+      <FilterBar
+        filters={v2Filters}
+        setFilter={setV2}
+        clearAll={clearV2}
+        activeCount={v2Active}
+      />
+      <FilterChips
+        filters={v2Filters}
+        setFilter={setV2}
+        clearAll={clearV2}
+      />
+
+      {/* ── Date-range preset chips — Stripe-grade quick selectors ────── */}
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.muted, marginRight: 6 }}>
+          Window
+        </span>
+        {DATE_PRESETS.map(p => (
+          <button
+            key={p.key}
+            type="button"
+            onClick={() => {
+              const r = rangeForPreset(p.key);
+              if (r) { setDateFrom(r.from); setDateTo(r.to); setActivePreset(p.key); }
+            }}
+            style={{
+              height: 28,
+              padding: '0 12px',
+              borderRadius: 999,
+              border: `1px solid ${activePreset === p.key ? '#0f172a' : T.border}`,
+              background: activePreset === p.key ? '#0f172a' : '#fff',
+              color:      activePreset === p.key ? '#fff'    : T.primary,
+              fontSize: 11, fontWeight: 700, letterSpacing: '0.02em',
+              cursor: 'pointer',
+              transition: 'all 140ms cubic-bezier(0.4,0,0.2,1)',
+            }}
+          >{p.label}</button>
+        ))}
+        <span style={{ fontSize: 11, fontWeight: 700, color: T.muted, marginLeft: 8 }}>
+          {dateFrom} → {dateTo}
+        </span>
+      </div>
 
       {/* ── Filter bar ──────────────────────────────────────────────────── */}
       <div style={{
@@ -780,18 +952,23 @@ export default function SalesAnalyticsPage() {
             style={{ border: `1.5px solid ${T.border}`, borderRadius: 8, padding: '7px 11px', fontSize: 13, fontWeight: 700, color: T.primary, outline: 'none', background: '#fff' }} />
         </div>
 
-        {/* Category */}
+        {/* Category — quick-pick mirror of the v2 FilterBar's Category dim.
+            Picking here writes into v2 state so the FilterBar reflects the
+            same value, and every widget on the page (incl. the v2-driven
+            charts) narrows together. ─────────────────────────────────── */}
         <div style={{ position: 'relative' }}>
-          <select value={category} onChange={e => setCategory(e.target.value)}
+          <select
+            value={category}
+            onChange={e => setV2('category', e.target.value ? [e.target.value.toUpperCase()] : [])}
             style={{ ...filterSelect, minWidth: 150 }}
-            title="Filter by product category (matched on product name)">
+            title="Quick category pick — mirrors the v2 FilterBar's Category dropdown">
             {CATEGORY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           <ChevronIcon />
         </div>
 
         {hasFilters && (
-          <button onClick={() => { setColorName(''); setSize(''); setLocationId(''); setCategory(''); setDateFrom('2025-01-01'); setDateTo('2026-01-31'); }}
+          <button onClick={() => { setColorName(''); setSize(''); setLocationId(''); clearV2(); setDateFrom('2025-01-01'); setDateTo('2026-01-31'); setActivePreset(''); }}
             style={{ border: `1.5px solid ${T.border}`, borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 800, color: T.primary, background: '#fff', cursor: 'pointer', letterSpacing: '0.03em' }}>
             Clear
           </button>
@@ -808,24 +985,73 @@ export default function SalesAnalyticsPage() {
         </span>
       </div>
 
-      {/* ── KPI Cards — Row 1: Sales ─────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 16 }}>
-        <KpiCard icon={ShoppingBag} label="Sales Transactions" accent="#2563EB"
-          value={loading ? '…' : fmtL(s.sales_txns)}
-          sub={loading ? '' : `${fmtNum(s.active_days)} active days · ${fmtNum(s.stores_with_sales)} stores`}
-          sub2={loading ? '' : `Avg ${fmtL(s.sales_txns && s.active_days ? Math.round(s.sales_txns / s.active_days) : 0)} txns/day`}
-          loading={loading} />
-        <KpiCard icon={TrendingUp} label="Units Sold" accent="#4F46E5"
-          value={loading ? '…' : fmtL(s.units_sold)}
-          sub={loading ? '' : `Net ${fmtL(s.net_units)} after returns`}
-          sub2={loading ? '' : `${fmtL(s.unique_skus_sold)} unique SKUs moved`}
-          loading={loading} />
-        <KpiCard icon={Zap} label="Net Revenue" accent="#059669"
-          value={loading ? '…' : fmtCr(s.net_value)}
-          sub={loading ? '' : `Gross ${fmtCr(s.sales_value)}`}
-          sub2={loading ? '' : `Avg ₹${fmtNum(s.avg_price)} per unit`}
-          loading={loading} />
+      {/* ── Sales Pulse — world-class hero (KPIs · Pareto · Top widgets · Action Panel)
+          Driven by the SAME filtered API response as everything below, so the
+          whole page narrows together when any filter changes. ────────────── */}
+      <SalesPulse
+        data={data}
+        loading={loading}
+        lensMode={v2Filters.sale_mode || 'net'}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+      />
+
+      {/* ── Lens pill: Sale / Return / Net ─────────────────────────────── */}
+      {/* Drives which figure the headline KPIs display:
+            sale  → gross sales (units_sold / sales_value)
+            return → returns only (return_units / return_value)
+            net   → sales − returns (net_units / net_value)
+          The full numbers are always returned by the API; the pill picks. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.muted }}>
+          Show
+        </span>
+        <SaleModePill
+          mode={v2Filters.sale_mode || 'net'}
+          onChange={(m) => setV2('sale_mode', m)}
+        />
+        {Number(s.return_rate_pct) > 0 && (
+          <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '4px 10px', borderRadius: 999,
+            background: Number(s.return_rate_pct) >= 5 ? 'rgba(220,38,38,0.07)' : 'rgba(245,158,11,0.06)',
+            border: `1px solid ${Number(s.return_rate_pct) >= 5 ? 'rgba(220,38,38,0.20)' : 'rgba(245,158,11,0.20)'}`,
+            color: Number(s.return_rate_pct) >= 5 ? '#DC2626' : '#D97706',
+            fontSize: 11, fontWeight: 800,
+          }}>
+            <RotateCcw size={11} />
+            Return rate: {s.return_rate_pct}%
+          </span>
+        )}
       </div>
+
+      {/* ── KPI Cards — Row 1: Sales (lens-aware) ────────────────────────── */}
+      {(() => {
+        const lens = v2Filters.sale_mode || 'net';
+        const lensTitle = lens === 'sale' ? 'Sales' : lens === 'return' ? 'Returns' : 'Net (Sales − Returns)';
+        const units = lens === 'sale' ? s.units_sold : lens === 'return' ? s.return_units : s.net_units;
+        const value = lens === 'sale' ? s.sales_value : lens === 'return' ? s.return_value : s.net_value;
+        const txns  = lens === 'sale' ? s.sales_txns : lens === 'return' ? s.return_txns : (Number(s.sales_txns||0) - Number(s.return_txns||0));
+        const lensColor = lens === 'sale' ? '#2563EB' : lens === 'return' ? '#F43F5E' : '#059669';
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 16 }}>
+            <KpiCard icon={ShoppingBag} label={`${lensTitle} — Transactions`} accent={lensColor}
+              value={loading ? '…' : fmtL(txns)}
+              sub={loading ? '' : `${fmtNum(s.active_days)} active days · ${fmtNum(s.stores_with_sales)} stores`}
+              sub2={loading ? '' : `Avg ${fmtL(s.sales_txns && s.active_days ? Math.round(s.sales_txns / s.active_days) : 0)} sale txns/day`}
+              loading={loading} />
+            <KpiCard icon={TrendingUp} label={`${lensTitle} — Units`} accent={lensColor}
+              value={loading ? '…' : fmtL(units)}
+              sub={loading ? '' : `Gross sold ${fmtL(s.units_sold)} · Returns ${fmtL(s.return_units)}`}
+              sub2={loading ? '' : `${fmtL(s.unique_skus_sold)} unique SKUs moved`}
+              loading={loading} />
+            <KpiCard icon={Zap} label={`${lensTitle} — Revenue`} accent={lensColor}
+              value={loading ? '…' : fmtCr(value)}
+              sub={loading ? '' : `Gross ${fmtCr(s.sales_value)} · Returns −${fmtCr(s.return_value)}`}
+              sub2={loading ? '' : `Avg ₹${fmtNum(s.avg_price)} per unit`}
+              loading={loading} />
+          </div>
+        );
+      })()}
 
       {/* ── KPI Cards — Row 2: Returns + Stock ───────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 28 }}>
