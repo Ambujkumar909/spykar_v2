@@ -6,6 +6,11 @@ services:
     image: postgres:18-alpine
     container_name: spykar_postgres
     restart: unless-stopped
+    # 1 GB shared memory — defaults to 64 MB which OOMs the 7-way parallel
+    # network-pulse queries that aggregate over 5 L+ inventory_snapshot rows
+    # joined to skus. With shm_size=1g the heaviest combo (mode=all + style
+    # filter) finishes well under the budget.
+    shm_size: 1g
     environment:
       POSTGRES_DB: spykar_inventory
       POSTGRES_USER: spykar_app

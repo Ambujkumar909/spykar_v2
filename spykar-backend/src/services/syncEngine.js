@@ -718,7 +718,11 @@ async function runDeltaSync(syncType = 'DELTA') {
       WHERE id = $7
     `, [duration, stats.fetched, stats.inserted, stats.updated, stats.failed, source, syncLogId]);
 
-    // Invalidate all Redis caches so fresh data is served immediately
+    // Invalidate all Redis caches so fresh data is served immediately.
+    // CRITICAL: also bust the v2 universal-filter caches so when tomorrow's
+    // stock lands and a SKU goes OOS at every store, the dropdown options
+    // and Network Pulse widgets update on the very next request — not 5
+    // minutes later when their TTL would naturally expire.
     await Promise.all([
       invalidatePattern('inventory:*'),
       invalidatePattern('analytics:*'),
@@ -726,6 +730,10 @@ async function runDeltaSync(syncType = 'DELTA') {
       invalidatePattern('distributors:*'),
       invalidatePattern('sku:*'),
       invalidatePattern('dispatch:*'),
+      invalidatePattern('filters:*'),       // v2 dropdown options
+      invalidatePattern('network:*'),       // network-pulse aggregations
+      invalidatePattern('skuids:*'),        // pre-resolved SKU UUID lists
+      invalidatePattern('category:*'),      // category → sku_id[] cache
     ]);
 
     const mins = Math.floor(duration / 60000);

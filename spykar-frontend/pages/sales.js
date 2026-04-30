@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { analyticsService } from '../lib/services';
+import { getCached, setCached, isFresh } from '../lib/dashboardCache';
 import toast from 'react-hot-toast';
 import {
   TrendingUp, TrendingDown, ShoppingBag, RotateCcw,
@@ -10,6 +11,21 @@ import {
 } from 'lucide-react';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
+
+// Category filter options — must match backend CATEGORY_PATTERNS keys
+const CATEGORY_OPTIONS = [
+  { value: '',            label: 'All Categories' },
+  { value: 'denim',       label: 'Denim' },
+  { value: 'shirt',       label: 'Shirt' },
+  { value: 't-shirt',     label: 'T-Shirt' },
+  { value: 'trouser',     label: 'Trouser' },
+  { value: 'innerwear',   label: 'Innerwear' },
+  { value: 'sweatshirt',  label: 'Sweatshirt' },
+  { value: 'jacket',      label: 'Jacket' },
+  { value: 'accessories', label: 'Accessories' },
+  { value: 'socks',       label: 'Socks' },
+  { value: 'fragrance',   label: 'Fragrance' },
+];
 
 // ── Typography constants — bold black everywhere ───────────────────────────
 const T = {
@@ -358,7 +374,7 @@ function AllStoresTable({ data, loading }) {
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     let r = allStores;
-    if (q)       r = r.filter(x => x.location_name?.toLowerCase().includes(q) || x.city?.toLowerCase().includes(q) || x.state?.toLowerCase().includes(q));
+    if (q)       r = r.filter(x => x.location_name?.toLowerCase().includes(q) || x.external_id?.toLowerCase().includes(q) || x.location_code?.toLowerCase().includes(q) || x.city?.toLowerCase().includes(q) || x.state?.toLowerCase().includes(q));
     if (state)   r = r.filter(x => x.state   === state);
     if (city)    r = r.filter(x => x.city    === city);
     if (channel) r = r.filter(x => x.channel === channel);
@@ -536,18 +552,32 @@ function AllStoresTable({ data, loading }) {
 }
 
 export default function SalesAnalyticsPage() {
-  const [data, setData]       = useState(null);
-  const [loading, setLoading] = useState(true);
-
   // Filters
   const [dateFrom, setDateFrom]     = useState('2025-01-01');
   const [dateTo, setDateTo]         = useState('2026-01-31');
   const [colorName, setColorName]   = useState('');
   const [size, setSize]             = useState('');
   const [locationId, setLocationId] = useState('');
+  const [category, setCategory]     = useState('');
+
+  // Cache key is filter-dependent so each unique combination remembers its own
+  // response. Navigating away and back with identical filters renders instantly
+  // from the module-level cache instead of remounting empty.
+  const cacheKey = `sales:${dateFrom}|${dateTo}|${colorName}|${size}|${locationId}|${category}`;
+  const [data, setData]       = useState(() => getCached(cacheKey) ?? null);
+  const [loading, setLoading] = useState(() => !getCached(cacheKey));
+
+  // Track the currently-active cacheKey so stale in-flight fetches (from a
+  // previous category) can detect they've been superseded and skip writing
+  // their response into `data`. Without this, switching Denim → Jacket → Denim
+  // rapidly can let the pending Jacket response land after we're already
+  // viewing Denim, "warming" the screen with the wrong category's payload.
+  const activeKeyRef = useRef(cacheKey);
+  useEffect(() => { activeKeyRef.current = cacheKey; }, [cacheKey]);
 
   const fetch = useCallback(async () => {
-    setLoading(true);
+    const issuedFor = cacheKey;
+    if (!getCached(issuedFor)) setLoading(true);
     try {
       const res = await analyticsService.getSalesAnalytics({
         date_from:   dateFrom    || undefined,
@@ -555,13 +585,43 @@ export default function SalesAnalyticsPage() {
         color_name:  colorName   || undefined,
         size:        size        || undefined,
         location_id: locationId  || undefined,
+        category:    category    || undefined,
       });
-      setData(res.data.data);
-    } catch { toast.error('Failed to load sales analytics'); }
-    finally  { setLoading(false); }
-  }, [dateFrom, dateTo, colorName, size, locationId]);
+      const v = res.data.data;
+      // Always cache under the key this fetch was issued for, so future
+      // returns to that category are instant. But only repaint `data` if the
+      // user is still viewing that same category — otherwise we'd clobber
+      // whatever is now on screen with stale foreign data.
+      setCached(issuedFor, v);
+      if (activeKeyRef.current === issuedFor) {
+        setData(v);
+        setLoading(false);
+      }
+    } catch {
+      if (activeKeyRef.current === issuedFor) setLoading(false);
+      toast.error('Failed to load sales analytics');
+    }
+  }, [dateFrom, dateTo, colorName, size, locationId, category, cacheKey]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => {
+    // Sync `data` with the NEW cacheKey's entry FIRST — otherwise switching
+    // category (Denim → Jacket → Denim) leaves `data` pointing at the
+    // previous category's payload until the network round-trip resolves.
+    // Every filter combination has its own cache slot, so we show the right
+    // slice immediately instead of stale foreign data.
+    const cached = getCached(cacheKey);
+    setData(cached ?? null);
+
+    if (cached && isFresh(cacheKey)) {
+      // Fresh hit — no refetch needed, paint instantly from cache.
+      setLoading(false);
+      return;
+    }
+    // Stale or missing — if we have a cached snapshot, show it while
+    // background-refreshing (no skeleton flash); otherwise show loading.
+    setLoading(!cached);
+    fetch();
+  }, [fetch, cacheKey]);
 
   const s   = data?.summary || {};
   const ss  = data?.stock_snapshot || {};
@@ -694,7 +754,7 @@ export default function SalesAnalyticsPage() {
     };
   }, [data?.by_month]);
 
-  const hasFilters = colorName || size || locationId || dateFrom !== '2025-01-01' || dateTo !== '2026-01-31';
+  const hasFilters = colorName || size || locationId || category || dateFrom !== '2025-01-01' || dateTo !== '2026-01-31';
 
   return (
     <DashboardLayout title="Sales & Returns Analytics" subtitle="Day-basis sales intelligence — units, revenue, colour, size, store">
@@ -720,8 +780,18 @@ export default function SalesAnalyticsPage() {
             style={{ border: `1.5px solid ${T.border}`, borderRadius: 8, padding: '7px 11px', fontSize: 13, fontWeight: 700, color: T.primary, outline: 'none', background: '#fff' }} />
         </div>
 
+        {/* Category */}
+        <div style={{ position: 'relative' }}>
+          <select value={category} onChange={e => setCategory(e.target.value)}
+            style={{ ...filterSelect, minWidth: 150 }}
+            title="Filter by product category (matched on product name)">
+            {CATEGORY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <ChevronIcon />
+        </div>
+
         {hasFilters && (
-          <button onClick={() => { setColorName(''); setSize(''); setLocationId(''); setDateFrom('2025-01-01'); setDateTo('2026-01-31'); }}
+          <button onClick={() => { setColorName(''); setSize(''); setLocationId(''); setCategory(''); setDateFrom('2025-01-01'); setDateTo('2026-01-31'); }}
             style={{ border: `1.5px solid ${T.border}`, borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 800, color: T.primary, background: '#fff', cursor: 'pointer', letterSpacing: '0.03em' }}>
             Clear
           </button>

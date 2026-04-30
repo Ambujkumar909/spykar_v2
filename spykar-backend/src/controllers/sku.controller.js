@@ -1,6 +1,7 @@
 const { query } = require('../config/database');
 const { getOrSet, TTL } = require('../config/redis');
 const { AppError } = require('../middleware/errorHandler');
+const { canonicalizeCategory, applyCategoryFilter } = require('../utils/categoryFilter');
 
 async function list(req, res, next) {
   try {
@@ -124,8 +125,9 @@ async function getColors(req, res, next) {
 
 async function getTopMoving(req, res, next) {
   try {
-    const { n = 10, days = 30, location_type, date_from, date_to, state, city } = req.query;
-    const cacheKey = `skus:top-moving:${n}:${days}:${location_type||'all'}:${date_from||''}:${date_to||''}:${state||''}:${city||''}`;
+    const { n = 10, days = 30, location_type, date_from, date_to, state, city, category } = req.query;
+    const catKey = canonicalizeCategory(category);
+    const cacheKey = `skus:top-moving:v3:${n}:${days}:${location_type||'all'}:${date_from||''}:${date_to||''}:${state||''}:${city||''}:${catKey||''}`;
     const data = await getOrSet(cacheKey, async () => {
       const conditions = ['l.is_active = true', "m.movement_type = 'SALE'"];
       const params = [];
@@ -139,6 +141,9 @@ async function getTopMoving(req, res, next) {
       if (location_type) { params.push(location_type); conditions.push(`l.type = $${params.length}`); }
       if (state) { params.push(state); conditions.push(`l.state ILIKE $${params.length}`); }
       if (city)  { params.push(city);  conditions.push(`l.city  ILIKE $${params.length}`); }
+      // Fast path: pre-resolved sku_id[] seek against inventory_movements(sku_id)
+      const catClause = await applyCategoryFilter(category, params, 'm.sku_id', query, getOrSet);
+      if (catClause) conditions.push(catClause);
       params.push(n);
       const result = await query(`
         SELECT s.sku_code, s.product_name, s.color_name, s.size,
@@ -160,15 +165,21 @@ async function getTopMoving(req, res, next) {
 
 async function getSlowMoving(req, res, next) {
   try {
-    const { days = 90, location_type, state, city } = req.query;
+    const { days = 90, location_type, state, city, category } = req.query;
+    const catKey = canonicalizeCategory(category);
+
+    const cacheKey = `skus:slow-moving:v3:${days}:${location_type||'all'}:${state||''}:${city||''}:${catKey||''}`;
+    const data = await getOrSet(cacheKey, async () => {
+    // Build params/filters lazily on cache miss so cache hits pay no work
     const params = [parseInt(days)];
     const extraFilters = [];
     if (location_type) { params.push(location_type); extraFilters.push(`AND l.type = $${params.length}`); }
     if (state) { params.push(state); extraFilters.push(`AND l.state ILIKE $${params.length}`); }
     if (city)  { params.push(city);  extraFilters.push(`AND l.city  ILIKE $${params.length}`); }
+    // Fast path: pre-resolved sku_id[] seek against inventory_snapshot(sku_id)
+    const catClause = await applyCategoryFilter(category, params, 'i.sku_id', query, getOrSet);
+    if (catClause) extraFilters.push(`AND ${catClause}`);
 
-    const cacheKey = `skus:slow-moving:${days}:${location_type||'all'}:${state||''}:${city||''}`;
-    const data = await getOrSet(cacheKey, async () => {
     const result = await query(`
       WITH ref AS (
         SELECT COALESCE(MAX(moved_at), CURRENT_TIMESTAMP) AS ref_date

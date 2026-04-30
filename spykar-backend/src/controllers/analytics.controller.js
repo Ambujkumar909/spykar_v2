@@ -1,5 +1,6 @@
 const { query } = require('../config/database');
 const { getOrSet, TTL } = require('../config/redis');
+const { canonicalizeCategory, applyCategoryFilter } = require('../utils/categoryFilter');
 
 async function getNetworkOverview(req, res, next) {
   try {
@@ -79,16 +80,61 @@ async function getStockTrend(req, res, next) {
 
 async function getSizeDistribution(req, res, next) {
   try {
-    const { location_type, zone_id, state, city } = req.query;
-    const cacheKey = `analytics:size-dist:${location_type||'all'}:${zone_id||'all'}:${state||''}:${city||''}`;
+    const {
+      location_type, zone_id, category,
+      // v2 universal-filter extensions — mode + multi-select SKU/location dims
+      state: stateRaw, city: cityRaw, group_name: groupRaw, store_code: storeCodeRaw,
+      gender, sub_product, product, style, shade, color, size: sizeMulti, season, mode = 'active',
+    } = req.query;
+
+    const multi = (v) => {
+      if (v === undefined || v === null || v === '') return [];
+      return (Array.isArray(v) ? v : String(v).split(',')).map(s => String(s).trim()).filter(Boolean);
+    };
+    const states     = multi(stateRaw),    cities    = multi(cityRaw);
+    const groups     = multi(groupRaw),    storeCodes= multi(storeCodeRaw);
+    const skuGenders = multi(gender),      skuSubProds=multi(sub_product), skuProducts=multi(product);
+    const skuStyles  = multi(style),       skuShades = multi(shade),        skuSeasons = multi(season);
+    const skuColors  = multi(color),       skuSizes  = multi(sizeMulti);
+
+    const catKey = canonicalizeCategory(category);
+    const cacheKey = `analytics:size-dist:v5:${location_type||'all'}:${zone_id||'all'}:${states.join('|')}:${cities.join('|')}:${groups.join('|')}:${storeCodes.join('|')}:${catKey||''}:g${skuGenders.join('|')}:sp${skuSubProds.join('|')}:pr${skuProducts.join('|')}:st${skuStyles.join('|')}:sh${skuShades.join('|')}:cl${skuColors.join('|')}:sz${skuSizes.join('|')}:sn${skuSeasons.join('|')}:m${mode}`;
 
     const data = await getOrSet(cacheKey, async () => {
       const conditions = ['l.is_active = true', 's.is_active = true'];
       const params = [];
+      const multiIlike = (col, arr) => {
+        if (!arr.length) return null;
+        const ors = arr.map(v => { params.push(`%${v}%`); return `${col} ILIKE $${params.length}`; });
+        return `(${ors.join(' OR ')})`;
+      };
+      const multiEq = (col, arr) => {
+        if (!arr.length) return null;
+        if (arr.length === 1) { params.push(arr[0]); return `UPPER(${col}::text) = UPPER($${params.length})`; }
+        params.push(arr.map(v => v.toUpperCase())); return `UPPER(${col}::text) = ANY($${params.length}::text[])`;
+      };
       if (location_type) { params.push(location_type); conditions.push(`l.type = $${params.length}`); }
       if (zone_id)       { params.push(zone_id);        conditions.push(`l.zone_id = $${params.length}`); }
-      if (state)         { params.push(state);           conditions.push(`l.state ILIKE $${params.length}`); }
-      if (city)          { params.push(city);            conditions.push(`l.city  ILIKE $${params.length}`); }
+      const stP = multiIlike('l.state', states); if (stP) conditions.push(stP);
+      const ctP = multiIlike('l.city',  cities); if (ctP) conditions.push(ctP);
+      const gpP = multiEq(`COALESCE(l.group_name, l.type::text)`, groups); if (gpP) conditions.push(gpP);
+      const scP = multiEq('l.code', storeCodes); if (scP) conditions.push(scP);
+      // 3-mode lens
+      const m = String(mode).toLowerCase();
+      if (m === 'active')   conditions.push('l.shop_closed = false');
+      if (m === 'inactive') conditions.push('l.shop_closed = true');
+      // SKU-side filters
+      const gP  = multiEq('s.gender_name', skuGenders);  if (gP)  conditions.push(gP);
+      const spP = multiEq('s.sub_product', skuSubProds); if (spP) conditions.push(spP);
+      const prP = multiEq('s.product',     skuProducts); if (prP) conditions.push(prP);
+      const stySP = multiEq('s.style',     skuStyles);   if (stySP) conditions.push(stySP);
+      const shP = multiEq('s.shade',       skuShades);   if (shP) conditions.push(shP);
+      const clP = multiEq('s.color_name',  skuColors);   if (clP) conditions.push(clP);
+      const szP = multiEq('s.size',        skuSizes);    if (szP) conditions.push(szP);
+      const snP = multiEq('s.season',      skuSeasons);  if (snP) conditions.push(snP);
+      // Category fast path
+      const catClause = await applyCategoryFilter(category, params, 'i.sku_id', query, getOrSet);
+      if (catClause) conditions.push(catClause);
 
       const result = await query(`
         SELECT
@@ -114,15 +160,56 @@ async function getSizeDistribution(req, res, next) {
 
 async function getColorDistribution(req, res, next) {
   try {
-    const { location_type, state, city } = req.query;
-    const cacheKey = `analytics:color-dist-v4:${location_type||'all'}:${state||''}:${city||''}`;
+    const {
+      location_type, category,
+      state: stateRaw, city: cityRaw, group_name: groupRaw, store_code: storeCodeRaw,
+      gender, sub_product, product, style, shade, color, size: sizeMulti, season, mode = 'active',
+    } = req.query;
+
+    const multi = (v) => {
+      if (v === undefined || v === null || v === '') return [];
+      return (Array.isArray(v) ? v : String(v).split(',')).map(s => String(s).trim()).filter(Boolean);
+    };
+    const states     = multi(stateRaw),    cities    = multi(cityRaw);
+    const groups     = multi(groupRaw),    storeCodes= multi(storeCodeRaw);
+    const skuGenders = multi(gender),      skuSubProds=multi(sub_product), skuProducts=multi(product);
+    const skuStyles  = multi(style),       skuShades = multi(shade),        skuSeasons = multi(season);
+    const skuColors  = multi(color),       skuSizes  = multi(sizeMulti);
+
+    const catKey = canonicalizeCategory(category);
+    const cacheKey = `analytics:color-dist:v8:${location_type||'all'}:${states.join('|')}:${cities.join('|')}:${groups.join('|')}:${storeCodes.join('|')}:${catKey||''}:g${skuGenders.join('|')}:sp${skuSubProds.join('|')}:pr${skuProducts.join('|')}:st${skuStyles.join('|')}:sh${skuShades.join('|')}:cl${skuColors.join('|')}:sz${skuSizes.join('|')}:sn${skuSeasons.join('|')}:m${mode}`;
 
     const data = await getOrSet(cacheKey, async () => {
       const locConditions = ['l.is_active = true'];
       const params = [];
+      const multiIlike = (col, arr) => {
+        if (!arr.length) return null;
+        const ors = arr.map(v => { params.push(`%${v}%`); return `${col} ILIKE $${params.length}`; });
+        return `(${ors.join(' OR ')})`;
+      };
+      const multiEq = (col, arr) => {
+        if (!arr.length) return null;
+        if (arr.length === 1) { params.push(arr[0]); return `UPPER(${col}::text) = UPPER($${params.length})`; }
+        params.push(arr.map(v => v.toUpperCase())); return `UPPER(${col}::text) = ANY($${params.length}::text[])`;
+      };
       if (location_type) { params.push(location_type); locConditions.push(`l.type = $${params.length}`); }
-      if (state)         { params.push(state);          locConditions.push(`l.state ILIKE $${params.length}`); }
-      if (city)          { params.push(city);           locConditions.push(`l.city  ILIKE $${params.length}`); }
+      const stP = multiIlike('l.state', states); if (stP) locConditions.push(stP);
+      const ctP = multiIlike('l.city',  cities); if (ctP) locConditions.push(ctP);
+      const gpP = multiEq(`COALESCE(l.group_name, l.type::text)`, groups); if (gpP) locConditions.push(gpP);
+      const scP = multiEq('l.code', storeCodes); if (scP) locConditions.push(scP);
+      const m = String(mode).toLowerCase();
+      if (m === 'active')   locConditions.push('l.shop_closed = false');
+      if (m === 'inactive') locConditions.push('l.shop_closed = true');
+      const gP  = multiEq('s.gender_name', skuGenders);  if (gP)  locConditions.push(gP);
+      const spP = multiEq('s.sub_product', skuSubProds); if (spP) locConditions.push(spP);
+      const prP = multiEq('s.product',     skuProducts); if (prP) locConditions.push(prP);
+      const stySP = multiEq('s.style',     skuStyles);   if (stySP) locConditions.push(stySP);
+      const shP = multiEq('s.shade',       skuShades);   if (shP) locConditions.push(shP);
+      const clP = multiEq('s.color_name',  skuColors);   if (clP) locConditions.push(clP);
+      const szP = multiEq('s.size',        skuSizes);    if (szP) locConditions.push(szP);
+      const snP = multiEq('s.season',      skuSeasons);  if (snP) locConditions.push(snP);
+      const catClause = await applyCategoryFilter(category, params, 'i.sku_id', query, getOrSet);
+      if (catClause) locConditions.push(catClause);
 
       const result = await query(`
         WITH color_stock AS (
@@ -227,18 +314,58 @@ async function getFillRate(req, res, next) {
 
 // ─── Sales Analytics (Premium) ────────────────────────────────────────────────
 // Single endpoint powering the full Sales & Returns analytics page.
-// Filters: date_from, date_to, color_name, size, location_id, state, city
+// Filters: date_from, date_to, color_name, size, location_id, state, city, category
 // Returns: summary, daily, by_color, by_size, by_store, by_month, stock_snapshot
 async function getSalesAnalytics(req, res, next) {
   try {
-    const { date_from, date_to, color_name, size, location_id, state, city } = req.query;
+    const {
+      date_from, date_to, color_name, size, location_id, category,
+      // v2 multi-select extensions wired through by the universal FilterBar
+      gender, sub_product, product, style, shade, color, size: sizeMulti, season,
+      state: stateRaw, city: cityRaw, group_name: groupRaw, store_code: storeCodeRaw,
+      mode = 'active',
+    } = req.query;
+    const catKey = canonicalizeCategory(category); // normalized or null
 
-    // Cache key — unique per filter combination
-    const cacheKey = `analytics:sales:${date_from||''}:${date_to||''}:${color_name||''}:${size||''}:${location_id||''}:${state||''}:${city||''}`;
+    // Multi-value parser identical to location.controller — accepts CSV or array.
+    const multi = (v) => {
+      if (v === undefined || v === null || v === '') return [];
+      if (Array.isArray(v)) return v.filter(Boolean).map(String);
+      return String(v).split(',').map(s => s.trim()).filter(Boolean);
+    };
+    const states     = multi(stateRaw);
+    const cities     = multi(cityRaw);
+    const groups     = multi(groupRaw);
+    const storeCodes = multi(storeCodeRaw);
+    const skuGenders = multi(gender);
+    const skuSubProds= multi(sub_product);
+    const skuProducts= multi(product);
+    const skuStyles  = multi(style);
+    const skuShades  = multi(shade);
+    const skuColors  = multi(color);
+    const skuSizes   = multi(sizeMulti);
+    const skuSeasons = multi(season);
+
+    // Cache key — unique per filter combination (category canonicalized so
+    // "Denim"/"denim"/"jeans" all hit the same cache slot)
+    const cacheKey = `analytics:sales:v7:${date_from||''}:${date_to||''}:${color_name||''}:${size||''}:${location_id||''}:${states.join('|')}:${cities.join('|')}:${groups.join('|')}:${storeCodes.join('|')}:${catKey||''}:g${skuGenders.join('|')}:sp${skuSubProds.join('|')}:pr${skuProducts.join('|')}:st${skuStyles.join('|')}:sh${skuShades.join('|')}:cl${skuColors.join('|')}:sz${skuSizes.join('|')}:sn${skuSeasons.join('|')}:m${mode}`;
 
     const data = await getOrSet(cacheKey, async () => {
     const conditions = [];
     const params     = [];
+
+    // Multi-value predicate helpers
+    const multiIlike = (col, arr) => {
+      if (!arr.length) return null;
+      const ors = arr.map(v => { params.push(`%${v}%`); return `${col} ILIKE $${params.length}`; });
+      return `(${ors.join(' OR ')})`;
+    };
+    const multiEq = (col, arr) => {
+      if (!arr.length) return null;
+      // Case-insensitive equality so 'jeans'/'JEANS' both match.
+      if (arr.length === 1) { params.push(arr[0]); return `UPPER(${col}::text) = UPPER($${params.length})`; }
+      params.push(arr.map(v => v.toUpperCase())); return `UPPER(${col}::text) = ANY($${params.length}::text[])`;
+    };
 
     // Date range — default to full available window (Apr 2024 → Jan 2026)
     const from = date_from || '2024-04-01';
@@ -249,8 +376,28 @@ async function getSalesAnalytics(req, res, next) {
     if (color_name)   { params.push(color_name);   conditions.push(`s.color_name ILIKE $${params.length}`); }
     if (size)         { params.push(size);          conditions.push(`s.size = $${params.length}`); }
     if (location_id)  { params.push(location_id);   conditions.push(`m.location_id = $${params.length}`); }
-    if (state)        { params.push(state);          conditions.push(`l.state ILIKE $${params.length}`); }
-    if (city)         { params.push(city);           conditions.push(`l.city ILIKE $${params.length}`); }
+    // v2 multi-select location filters
+    const stP = multiIlike('l.state',  states); if (stP) conditions.push(stP);
+    const ctP = multiIlike('l.city',   cities); if (ctP) conditions.push(ctP);
+    const gpP = multiEq(`COALESCE(l.group_name, l.type::text)`, groups); if (gpP) conditions.push(gpP);
+    const scP = multiEq('l.code', storeCodes); if (scP) conditions.push(scP);
+    if (String(mode).toLowerCase() === 'active') conditions.push('l.shop_closed = false');
+    // v2 SKU dimension filters — direct equality on the joined skus row
+    const gP  = multiEq('s.gender_name', skuGenders);  if (gP)  conditions.push(gP);
+    const spP = multiEq('s.sub_product', skuSubProds); if (spP) conditions.push(spP);
+    const prP = multiEq('s.product',     skuProducts); if (prP) conditions.push(prP);
+    const stySP = multiEq('s.style',     skuStyles);   if (stySP) conditions.push(stySP);
+    const shP = multiEq('s.shade',       skuShades);   if (shP) conditions.push(shP);
+    const clP = multiEq('s.color_name',  skuColors);   if (clP) conditions.push(clP);
+    const szP = multiEq('s.size',        skuSizes);    if (szP) conditions.push(szP);
+    const snP = multiEq('s.season',      skuSeasons);  if (snP) conditions.push(snP);
+
+    // Category filter — fast path. Pre-resolves category → sku_id[] (cached 24h in
+    // Redis) then emits `m.sku_id = ANY($n::uuid[])`, turning the scan into an
+    // indexed equality seek on inventory_movements(sku_id) rather than a per-row
+    // ILIKE over the joined skus row (10–50× faster on date-filtered windows).
+    const catClause = await applyCategoryFilter(category, params, 'm.sku_id', query, getOrSet);
+    if (catClause) conditions.push(catClause);
 
     const where = `JOIN skus s ON s.id = m.sku_id
                    JOIN locations l ON l.id = m.location_id
@@ -279,6 +426,8 @@ async function getSalesAnalytics(req, res, next) {
           s.color_name,
           s.size,
           l.name                         AS loc_name,
+          l.code                         AS loc_code,
+          COALESCE(l.external_id, '')    AS external_id,
           COALESCE(l.group_name, l.type::text) AS channel,
           l.city,
           l.state
@@ -357,13 +506,14 @@ async function getSalesAnalytics(req, res, next) {
         -- ⑦ All stores — no limit, full list respecting active filters
         (SELECT json_agg(ast ORDER BY ast.sales_value DESC) FROM (
           SELECT loc_name AS location_name, location_id::text AS location_id,
+            COALESCE(loc_code,'') AS location_code, COALESCE(external_id,'') AS external_id,
             COALESCE(channel,'') AS channel, COALESCE(city,'') AS city, COALESCE(state,'') AS state,
             COALESCE(SUM(qty) FILTER (WHERE movement_type='SALE'),0)::int    AS units_sold,
             COALESCE(SUM(val) FILTER (WHERE movement_type='SALE'),0)::bigint AS sales_value,
             COUNT(*) FILTER (WHERE movement_type='SALE')::int                AS transactions,
             COALESCE(SUM(qty) FILTER (WHERE movement_type='RETURN'),0)::int  AS return_qty
           FROM mov
-          GROUP BY loc_name, location_id, channel, city, state
+          GROUP BY loc_name, location_id, loc_code, external_id, channel, city, state
         ) ast) AS all_stores
     `, params);
 
@@ -433,8 +583,9 @@ async function getSalesAnalytics(req, res, next) {
 
 async function getReturnsAnalytics(req, res, next) {
   try {
-    const { date_from, date_to, state, city } = req.query;
-    const cacheKey = `analytics:returns:${date_from||''}:${date_to||''}:${state||''}:${city||''}`;
+    const { date_from, date_to, state, city, category } = req.query;
+    const catKey = canonicalizeCategory(category);
+    const cacheKey = `analytics:returns:v3:${date_from||''}:${date_to||''}:${state||''}:${city||''}:${catKey||''}`;
 
     const data = await getOrSet(cacheKey, async () => {
       const conditions = ["m.movement_type = 'RETURN'", 'l.is_active = true', 's.is_active = true'];
@@ -446,6 +597,9 @@ async function getReturnsAnalytics(req, res, next) {
       }
       if (state) { params.push(state); conditions.push(`l.state ILIKE $${params.length}`); }
       if (city)  { params.push(city);  conditions.push(`l.city  ILIKE $${params.length}`); }
+      // Fast path: pre-resolved sku_id[] seek against inventory_movements(sku_id)
+      const catClause = await applyCategoryFilter(category, params, 'm.sku_id', query, getOrSet);
+      if (catClause) conditions.push(catClause);
 
       const result = await query(`
         WITH mov AS (

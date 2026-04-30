@@ -19,6 +19,7 @@ const dispatchRoutes = require('./routes/dispatch.routes');
 const analyticsRoutes = require('./routes/analytics.routes');
 const aiRoutes = require('./routes/ai.routes');
 const syncRoutes = require('./routes/sync.routes');
+const filterRoutes = require('./routes/filters.routes');
 
 const app = express();
 
@@ -122,6 +123,7 @@ app.use(`${API_V1}/dispatch`, dispatchRoutes);
 app.use(`${API_V1}/analytics`, analyticsRoutes);
 app.use(`${API_V1}/ai`, aiLimiter, aiRoutes);
 app.use(`${API_V1}/sync`, syncRoutes);
+app.use(`${API_V1}/filters`, filterRoutes);
 
 // ─── Error Handling ────────────────────────────────────────────────────────────
 app.use(notFound);

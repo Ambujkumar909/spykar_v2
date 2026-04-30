@@ -34,8 +34,14 @@ async function checkRedis() {
 
 // ─── Cache Helpers ────────────────────────────────────────────────────────────
 
+// In-process single-flight map — dedupes concurrent regenerations of the same
+// key so a cache expiry on a heavy query (e.g. the 570K-row alerts payload)
+// doesn't hammer the database N times when N requests race the miss.
+const inFlight = new Map();
+
 /**
- * Get cached value, if miss: execute fn, cache result, return
+ * Get cached value, if miss: execute fn, cache result, return.
+ * Concurrent misses on the same key share a single in-flight promise.
  * @param {string} key - Cache key
  * @param {Function} fn - Async function to call on cache miss
  * @param {number} ttl - TTL in seconds (default 5 min)
@@ -48,14 +54,95 @@ async function getOrSet(key, fn, ttl = 300) {
       return JSON.parse(cached);
     }
 
+    // Single-flight: if another request is already regenerating this key,
+    // await its promise instead of running fn() a second time.
+    if (inFlight.has(key)) {
+      logger.debug(`Cache COALESCED: ${key}`);
+      return inFlight.get(key);
+    }
+
     logger.debug(`Cache MISS: ${key}`);
-    const result = await fn();
-    await redisClient.setEx(key, ttl, JSON.stringify(result));
-    return result;
+    const promise = (async () => {
+      try {
+        const result = await fn();
+        try {
+          await redisClient.setEx(key, ttl, JSON.stringify(result));
+        } catch (writeErr) {
+          logger.warn(`Cache write failed for ${key}: ${writeErr.message}`);
+        }
+        return result;
+      } finally {
+        inFlight.delete(key);
+      }
+    })();
+    inFlight.set(key, promise);
+    return promise;
   } catch (err) {
     logger.error(`Cache error for key ${key}:`, err.message);
-    // On Redis failure, fall through to DB
-    return fn();
+    // On Redis failure, fall through to DB — still honor single-flight so a
+    // Redis outage doesn't amplify concurrent DB load either.
+    if (inFlight.has(key)) return inFlight.get(key);
+    const promise = (async () => {
+      try { return await fn(); }
+      finally { inFlight.delete(key); }
+    })();
+    inFlight.set(key, promise);
+    return promise;
+  }
+}
+
+/**
+ * Like `getOrSet`, but caches the already-serialized JSON string of the
+ * builder's result. On cache hit returns the raw string — callers can stream
+ * it straight to the HTTP response without a JSON.parse + re-stringify cycle.
+ * Huge win for heavy payloads (e.g. the 570K-row stock-alerts response).
+ *
+ * @param {string} key - Cache key
+ * @param {Function} buildFn - Async function that returns the response object
+ * @param {number} ttl - TTL in seconds
+ * @returns {Promise<string>} - Serialized JSON string ready for `res.send(...)`
+ */
+async function getOrSetRawJson(key, buildFn, ttl = 300) {
+  try {
+    const cached = await redisClient.get(key);
+    if (cached) {
+      logger.debug(`Cache HIT (raw): ${key}`);
+      return cached;
+    }
+
+    if (inFlight.has(key)) {
+      logger.debug(`Cache COALESCED (raw): ${key}`);
+      return inFlight.get(key);
+    }
+
+    logger.debug(`Cache MISS (raw): ${key}`);
+    const promise = (async () => {
+      try {
+        const result = await buildFn();
+        const str = JSON.stringify(result);
+        try {
+          await redisClient.setEx(key, ttl, str);
+        } catch (writeErr) {
+          logger.warn(`Cache write failed for ${key}: ${writeErr.message}`);
+        }
+        return str;
+      } finally {
+        inFlight.delete(key);
+      }
+    })();
+    inFlight.set(key, promise);
+    return promise;
+  } catch (err) {
+    logger.error(`Cache error for key ${key}:`, err.message);
+    if (inFlight.has(key)) return inFlight.get(key);
+    const promise = (async () => {
+      try {
+        const result = await buildFn();
+        return JSON.stringify(result);
+      } finally { inFlight.delete(key); }
+    })();
+    inFlight.set(key, promise);
+    return promise;
   }
 }
 
@@ -109,9 +196,10 @@ const TTL = {
   AUTH_TOKEN_BLACKLIST: 86400,  // 24 hours
   SALES_ANALYTICS: 600,         // 10 min — heavy aggregation, read-only
   STOCK_AGEING: 600,            // 10 min — ageing buckets, static per sync
-  STOCK_ALERTS: 300,            // 5 min — alerts can change after restocks
+  STOCK_ALERTS: 1800,           // 30 min — heavy 570K-row payload, low change rate within sync window
   NETWORK_OVERVIEW: 300,        // 5 min — network KPIs
   FILL_RATE: 600,               // 10 min — fill rate analytics
+  FILTER_OPTIONS: 300,          // 5 min — drill-down filter dropdowns
 };
 
 module.exports = {
@@ -119,6 +207,7 @@ module.exports = {
   connectRedis,
   checkRedis,
   getOrSet,
+  getOrSetRawJson,
   invalidatePattern,
   set,
   get,

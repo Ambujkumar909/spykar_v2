@@ -11,26 +11,38 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const FALLBACK_MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-pro'];
+// Pro is the "big gun" used when flash stumbles (self-heal 2nd retry, hard
+// questions). Explicit ref so we don't re-derive it each call.
+const STRONG_MODEL = 'gemini-2.5-pro';
 
 // ─── Compact Schema Context (minimal tokens, maximum signal) ──────────────────
 function buildSchemaContext() {
   const today = new Date().toISOString().split('T')[0];
-  return `You are a PostgreSQL expert for Spykar Jeans inventory. Convert questions to SQL and return JSON only: {"sql":"...","explanation":"..."}.
+  return `You are a senior PostgreSQL analyst for Spykar Jeans inventory intelligence. Convert any business question about inventory, sales, returns, dispatches, distributors, stores, SKUs, colours, sizes, zones, ageing, or performance into a correct, efficient SQL query and return JSON only: {"sql":"...","explanation":"..."}.
 
-TABLES:
-- inventory_movements(id,location_id,sku_id,movement_type ENUM[SALE,DISPATCH,RECEIPT,RETURN,TRANSFER_OUT,TRANSFER_IN,ADJUSTMENT],qty_change INT,moved_at TIMESTAMPTZ)
-- inventory_snapshot(location_id,sku_id,qty_on_hand,qty_reserved,qty_in_transit,qty_available,safety_stock,reorder_point,updated_at)
-- skus(id,sku_code,product_name,color_code,color_name,size,fit_type,mrp,is_active)
-  -- product_name stores internal style codes (e.g. 'ACTIFS W16', 'SLIM FIT W17') — NOT product categories
-  -- NEVER filter product_name for generic words like 'jeans','denim','trouser','shirt' — Spykar only makes jeans, all SKUs are jeans
-  -- Filter by: color_name (colour), size (waist/length), fit_type (SLIM/REGULAR etc.) only
-- locations(id,code,name,type ENUM[WAREHOUSE,DISTRIBUTOR,COCO,FOFO],group_name TEXT,zone_id,city,state,is_active)
-  -- group_name has the real channel name: 'EBO - SOR','EBO - OR','Alternate - SOR','Alternate - Outright','Alternate - RT','MBO - SOR'
-  -- ALWAYS select l.group_name AS channel — NEVER use l.type for display
-- zones(id,code,name)
-- dispatch_orders(id,dispatch_no,from_location_id,to_location_id,status,total_qty,total_value,dispatched_at,expected_at,delivered_at)
-- dispatch_line_items(id,dispatch_id,sku_id,qty_ordered,qty_dispatched,qty_received)
-- stock_ageing(location_id,sku_id,qty_0_30,qty_31_60,qty_61_90,qty_91_180,qty_180_plus,ageing_date)
+TABLES (full column list — use any of these):
+- inventory_movements(id UUID, location_id UUID, sku_id UUID, movement_type ENUM[SALE,DISPATCH,RECEIPT,RETURN,TRANSFER_OUT,TRANSFER_IN,ADJUSTMENT], qty_change INT, qty_before INT, qty_after INT, reference_id UUID, reference_type VARCHAR, notes TEXT, moved_at TIMESTAMPTZ, synced_from VARCHAR)
+- inventory_snapshot(id, location_id, sku_id, qty_on_hand INT, qty_reserved INT, qty_in_transit INT, qty_available INT GENERATED, safety_stock INT, reorder_point INT, last_movement_at TIMESTAMPTZ, snapshot_date DATE, updated_at)
+- skus(id UUID, sku_code VARCHAR, product_name VARCHAR, category VARCHAR default 'Jeans', sub_category VARCHAR, color_code VARCHAR, color_name VARCHAR, size VARCHAR, fit_type VARCHAR [Slim/Regular/Skinny/Bootcut], fabric VARCHAR, mrp NUMERIC, cost_price NUMERIC, barcode VARCHAR, hsn_code VARCHAR, is_active BOOL, external_id VARCHAR)
+  -- product_name = internal style code (e.g. 'ACTIFS W16'), NOT category
+  -- All SKUs are jeans — NEVER filter product_name for 'jeans','denim','trouser','shirt'
+  -- Filter by color_name, size, fit_type, sub_category, fabric only
+- locations(id UUID, code VARCHAR, name VARCHAR, type ENUM[WAREHOUSE,DISTRIBUTOR,COCO,FOFO,TRANSIT], zone_id INT, city VARCHAR, state VARCHAR, pincode VARCHAR, address TEXT, gstin VARCHAR, contact_name, contact_phone, contact_email, credit_limit NUMERIC, group_name TEXT, is_active BOOL, external_id VARCHAR)
+  -- group_name = real channel: 'EBO - SOR','EBO - OR','Alternate - SOR','Alternate - Outright','Alternate - RT','MBO - SOR'
+  -- ALWAYS SELECT l.group_name AS channel for display. NEVER display l.type directly.
+  -- COCO=company-owned store, FOFO=franchise store, EBO=exclusive brand outlet, MBO=multi-brand outlet
+- zones(id INT, code VARCHAR [NORTH/SOUTH/EAST/WEST/CENTRAL], name VARCHAR, is_active)
+- dispatch_orders(id UUID, dispatch_no VARCHAR, from_location_id UUID, to_location_id UUID, status ENUM[PENDING,DISPATCHED,IN_TRANSIT,DELIVERED,CANCELLED,PARTIAL], total_skus INT, total_qty INT, total_value NUMERIC, dispatched_at, expected_at, delivered_at TIMESTAMPTZ, courier_name, tracking_no, notes, external_id)
+- dispatch_line_items(id, dispatch_id, sku_id, qty_ordered, qty_dispatched, qty_received, unit_cost NUMERIC)
+- stock_ageing(id, location_id, sku_id, qty_0_30, qty_31_60, qty_61_90, qty_91_180, qty_180_plus, ageing_date DATE)
+- users(id UUID, name, email, role ENUM[SUPER_ADMIN,ADMIN,MANAGER,VIEWER], is_active, last_login_at, created_at)
+- sync_logs(id, sync_type, status, source, records_fetched, records_inserted, records_updated, records_failed, started_at, completed_at, duration_ms)
+- ai_query_log(id, user_id, question, generated_sql, row_count, answer, created_at)
+
+VIEWS (pre-joined — use when convenient):
+- v_inventory_full — (location_id, location_code, location_name, location_type, zone_name, city, state, sku_id, sku_code, product_name, color_code, color_name, size, fit_type, mrp, qty_on_hand, qty_reserved, qty_in_transit, qty_available, safety_stock, reorder_point, is_below_safety, last_movement_at, updated_at) already filtered to active loc+sku.
+- v_executive_summary — (location_type, location_count, active_skus, total_stock, total_in_transit, total_stock_value, low_stock_alerts) grouped by location_type.
+- v_top_distributors — distributors ranked by total_stock, already filtered to DISTRIBUTOR type.
 
 KEY RULES:
 - SALE qty_change is NEGATIVE → use ABS(qty_change) for units sold
@@ -100,6 +112,30 @@ Q:"sales analysis last 30 days"
 
 Q:"top 10 stores in Bihar by sales in last 6 months"
 → {"sql":"SELECT l.name AS store_name, l.group_name AS channel, l.city, COALESCE(SUM(ABS(im.qty_change)),0) AS units_sold, COALESCE(SUM(ABS(im.qty_change)*s.mrp),0) AS revenue FROM inventory_movements im JOIN skus s ON s.id=im.sku_id JOIN locations l ON l.id=im.location_id WHERE im.movement_type='SALE' AND l.is_active=true AND s.is_active=true AND l.state ILIKE 'Bihar' AND im.moved_at>='${today}'::date - INTERVAL '6 months' AND im.moved_at<'${today}'::date + INTERVAL '1 day' GROUP BY l.id, l.name, l.group_name, l.city ORDER BY units_sold DESC LIMIT 10","explanation":"Top 10 Bihar stores by units sold in last 6 months"}
+
+Q:"dead stock older than 180 days by location"
+→ {"sql":"SELECT l.name AS store_name, l.group_name AS channel, l.city, l.state, COALESCE(SUM(sa.qty_180_plus),0) AS dead_units FROM stock_ageing sa JOIN locations l ON l.id=sa.location_id JOIN skus s ON s.id=sa.sku_id WHERE l.is_active=true AND s.is_active=true AND sa.qty_180_plus>0 GROUP BY l.id, l.name, l.group_name, l.city, l.state ORDER BY dead_units DESC LIMIT 50","explanation":"Dead stock (180+ days) aggregated by store"}
+
+Q:"ageing bucket summary across network"
+→ {"sql":"SELECT COALESCE(SUM(sa.qty_0_30),0) AS days_0_30, COALESCE(SUM(sa.qty_31_60),0) AS days_31_60, COALESCE(SUM(sa.qty_61_90),0) AS days_61_90, COALESCE(SUM(sa.qty_91_180),0) AS days_91_180, COALESCE(SUM(sa.qty_180_plus),0) AS days_180_plus FROM stock_ageing sa JOIN locations l ON l.id=sa.location_id JOIN skus s ON s.id=sa.sku_id WHERE l.is_active=true AND s.is_active=true","explanation":"Total units across ageing buckets network-wide"}
+
+Q:"pending dispatches older than 5 days"
+→ {"sql":"SELECT d.dispatch_no, fl.name AS from_location, tl.name AS to_location, tl.group_name AS channel, d.status, d.total_qty, d.total_value, d.dispatched_at, d.expected_at FROM dispatch_orders d JOIN locations fl ON fl.id=d.from_location_id JOIN locations tl ON tl.id=d.to_location_id WHERE d.status IN ('PENDING','DISPATCHED','IN_TRANSIT') AND d.dispatched_at < '${today}'::date - INTERVAL '5 days' ORDER BY d.dispatched_at ASC LIMIT 50","explanation":"Pending/in-transit dispatches older than 5 days"}
+
+Q:"fill rate by channel last 30 days"
+→ {"sql":"SELECT l.group_name AS channel, COALESCE(SUM(dli.qty_dispatched),0) AS dispatched_units, COALESCE(SUM(dli.qty_ordered),0) AS ordered_units, ROUND((COALESCE(SUM(dli.qty_dispatched),0)::numeric / NULLIF(SUM(dli.qty_ordered),0))*100, 2) AS fill_rate_pct FROM dispatch_orders d JOIN dispatch_line_items dli ON dli.dispatch_id=d.id JOIN locations l ON l.id=d.to_location_id WHERE l.is_active=true AND d.dispatched_at>='${today}'::date - INTERVAL '30 days' GROUP BY l.group_name ORDER BY fill_rate_pct DESC","explanation":"Fill rate (dispatched/ordered) by channel for last 30 days"}
+
+Q:"stock alerts — out of stock SKUs"
+→ {"sql":"SELECT l.name AS store_name, l.group_name AS channel, l.city, s.sku_code, s.product_name, s.color_name, s.size, i.qty_on_hand, i.safety_stock, i.reorder_point FROM inventory_snapshot i JOIN locations l ON l.id=i.location_id JOIN skus s ON s.id=i.sku_id WHERE l.is_active=true AND s.is_active=true AND i.qty_on_hand=0 ORDER BY l.name, s.sku_code LIMIT 50","explanation":"Out-of-stock SKUs across active locations"}
+
+Q:"top distributors by stock value"
+→ {"sql":"SELECT location_name, zone_name, city, total_stock, total_stock_value FROM v_top_distributors ORDER BY total_stock_value DESC NULLS LAST LIMIT 10","explanation":"Top distributors ranked by stock value (using pre-joined view)"}
+
+Q:"returns vs sales last 90 days by colour"
+→ {"sql":"SELECT s.color_name, COALESCE(SUM(CASE WHEN im.movement_type='SALE' THEN ABS(im.qty_change) ELSE 0 END),0) AS units_sold, COALESCE(SUM(CASE WHEN im.movement_type='RETURN' THEN im.qty_change ELSE 0 END),0) AS units_returned, ROUND((COALESCE(SUM(CASE WHEN im.movement_type='RETURN' THEN im.qty_change ELSE 0 END),0)::numeric / NULLIF(SUM(CASE WHEN im.movement_type='SALE' THEN ABS(im.qty_change) ELSE 0 END),0))*100, 2) AS return_rate_pct FROM inventory_movements im JOIN skus s ON s.id=im.sku_id JOIN locations l ON l.id=im.location_id WHERE l.is_active=true AND s.is_active=true AND im.moved_at>='${today}'::date - INTERVAL '90 days' AND im.movement_type IN ('SALE','RETURN') GROUP BY s.color_name ORDER BY units_sold DESC LIMIT 20","explanation":"Return rate per colour for last 90 days"}
+
+Q:"slim fit size 32 black stock across COCO stores"
+→ {"sql":"SELECT l.name AS store_name, l.city, l.state, COALESCE(SUM(i.qty_on_hand),0) AS units_on_hand, COALESCE(SUM(i.qty_available),0) AS units_available FROM inventory_snapshot i JOIN locations l ON l.id=i.location_id JOIN skus s ON s.id=i.sku_id WHERE l.is_active=true AND s.is_active=true AND l.type='COCO' AND s.fit_type ILIKE 'Slim' AND s.size='32' AND s.color_name ILIKE 'BLACK' GROUP BY l.id, l.name, l.city, l.state ORDER BY units_on_hand DESC LIMIT 50","explanation":"Slim fit size-32 black stock at COCO stores"}
 
 Return ONLY valid JSON. No markdown, no extra text.`;
 }
@@ -247,11 +283,85 @@ function toUserFacingGeminiMessage(error) {
   return `AI request failed: ${msg.substring(0, 100)}`;
 }
 
+// ─── Intent classification ────────────────────────────────────────────────────
+// Fast pre-filter: questions that are almost certainly NOT SQL data pulls get
+// routed to the general-knowledge path instead of wasting a Gemini call trying
+// to force a SELECT. Precision matters more than recall here — if in doubt,
+// fall through to the SQL path (the existing pipeline handles that well).
+const GENERAL_PATTERNS = [
+  /^(hi|hello|hey|namaste|good (morning|afternoon|evening))[\s!.?,]*$/i,
+  /^(thanks|thank you|thx|ok|okay|cool|great|nice)[\s!.?,]*$/i,
+  /\bwho (are|r) (you|u)\b/i,
+  /\bwhat can you (do|help)\b/i,
+  /\bhow do (i|you) use\b/i,
+  /\bwhat (is|are) (your|the) (capabilit|feature)/i,
+  /\b(explain|define|what does .* mean|meaning of)\b.*\b(reorder point|safety stock|dead stock|fill rate|ageing|sell.?through|stock turn|COCO|FOFO|EBO|MBO|SOR|outright)\b/i,
+  /\bhow (should|do|can) (i|we) (handle|reduce|manage|improve|analyz)/i,
+  /\b(best practice|recommend|suggestion|advice|tips?)\b/i,
+  /\b(spykar|platform|dashboard|system)\b.*\b(about|overview|work|does)\b/i,
+];
+
+function looksLikeGeneralQuestion(question) {
+  if (!question || typeof question !== 'string') return false;
+  const q = question.trim();
+  if (q.length < 3) return true;
+  return GENERAL_PATTERNS.some((re) => re.test(q));
+}
+
+async function answerGeneralQuestion(question) {
+  const system = `You are the Spykar Jeans Inventory Intelligence assistant — a senior retail analyst and supply-chain expert who also knows this platform inside out.
+
+Platform overview:
+- Spykar is an Indian denim brand. This platform tracks inventory, sales, dispatches, ageing, stock alerts and distributor performance across COCO (company-owned), FOFO (franchise), EBO (exclusive brand outlet) and MBO (multi-brand outlet) channels.
+- Pages available: Overview (KPIs, stock alerts, ageing drill-down), Sales (colour/day/store breakdowns), Network (store-level stock by zone/state/city), Dispatches, Distributors, SKU analytics.
+- Ask me natural-language questions about inventory, sales, dispatch, ageing, dead stock, fill rate, reorder needs, distributor rankings, colour/size/fit breakdowns, store performance, festival/seasonal analysis, etc. — I will run live SQL and return insights.
+
+Retail domain expertise you should draw on:
+- Safety stock = buffer to absorb demand variability; reorder point = when to raise a PO; dead stock = SKUs with 180+ days of no movement; fill rate = dispatched qty / ordered qty; sell-through = units sold / units received.
+- Channel economics: SOR (sale-or-return) lets retailer return unsold stock; Outright = retailer owns risk.
+
+Answer the user's question in 3-6 sentences, concrete and helpful. If they are asking what you can do, give a crisp list of 4-6 capabilities with example questions. If they are asking a retail-domain concept, explain it plainly and say how it shows up in this platform. Never mention SQL, tables, columns, JSON or internals.`;
+
+  const { result } = await generateWithFallback(
+    question,
+    system,
+    { temperature: 0.4, maxOutputTokens: 500 }
+  );
+  return result.response.text().trim();
+}
+
 // ─── Main Query Handler ────────────────────────────────────────────────────────
 async function queryInventory(req, res, next) {
   try {
     const { question } = req.body;
     logger.info(`AI Query [${req.user?.email}]: ${question}`);
+
+    // Step 0: Route greetings / meta / domain-concept questions to a tiny
+    // general-knowledge path. This skips the ~3KB schema prompt entirely for
+    // non-data questions — big token saving on the "what can you do" traffic.
+    if (looksLikeGeneralQuestion(question)) {
+      try {
+        const answer = await answerGeneralQuestion(question);
+        query(
+          `INSERT INTO ai_query_log (user_id, question, generated_sql, row_count, answer) VALUES ($1,$2,$3,$4,$5)`,
+          [req.user.id, question, '', 0, answer]
+        ).catch((err) => logger.warn('ai_query_log insert failed:', err.message));
+        return res.json({
+          success: true,
+          data: {
+            question,
+            answer,
+            explanation: '',
+            rows: [],
+            rowCount: 0,
+            model: PRIMARY_MODEL,
+          },
+        });
+      } catch (genErr) {
+        // Fall through to SQL path if general answer fails — still useful.
+        logger.warn('General-answer path failed, falling back to SQL:', genErr?.message);
+      }
+    }
 
     let parsed;
     let rawContent = '';
@@ -285,29 +395,65 @@ async function queryInventory(req, res, next) {
       throw new AppError('Query blocked for security reasons.', 403);
     }
 
-    // Step 2: Execute SQL (with self-heal on failure)
+    // Step 2: Execute SQL (with 2-attempt self-heal on failure)
+    // Attempt 1: lean retry on same model with compact "fix" prompt (no full
+    //            schema resend — just the SQL + error, which is all Gemini
+    //            actually needs for typo/column-name fixes).
+    // Attempt 2: escalate to STRONG_MODEL (Pro) with the full schema — this is
+    //            the "big gun" for structurally wrong queries.
     let queryResult;
+    let currentSql = sqlTrimmed;
+    let healedOn = null;
     try {
       queryResult = await query(sqlTrimmed);
-    } catch (sqlErr) {
-      logger.error('AI SQL execution failed', { sql: sqlTrimmed, error: sqlErr.message });
+    } catch (sqlErr1) {
+      logger.warn('AI SQL attempt-1 failed, lean retry:', sqlErr1.message);
+
+      // ── Attempt 1: lean fix, same model, NO schema resend ───────────────
       try {
-        const { result: fixResult } = await generateWithFallback(
-          `Fix this SQL that failed.\nError: ${sqlErr.message}\nSQL: ${sqlTrimmed}\nOriginal question: ${question}\nReturn corrected JSON only.`,
-          buildSchemaContext(),
-          { responseMimeType: 'application/json', temperature: 0.05, maxOutputTokens: 600 }
+        const leanPrompt = `The SQL below failed. Return ONLY {"sql":"...","explanation":"..."} with a corrected single SELECT/WITH statement.\nERROR: ${sqlErr1.message}\nSQL: ${currentSql}\nQUESTION: ${question}`;
+        const { result: fix1 } = await generateWithFallback(
+          leanPrompt,
+          'You fix broken PostgreSQL. Only output JSON {"sql","explanation"}. No markdown.',
+          { responseMimeType: 'application/json', temperature: 0.05, maxOutputTokens: 500 }
         );
-        const fixedParsed = extractJsonPayload(fixResult.response.text()?.trim() || '');
-        if (!fixedParsed.sql?.toUpperCase().startsWith('SELECT') || FORBIDDEN_SQL.test(fixedParsed.sql)) {
-          throw new Error('Fixed SQL failed safety check');
+        const fixed1 = extractJsonPayload(fix1.response.text()?.trim() || '');
+        const sql1 = (fixed1?.sql || '').trim();
+        if (!sql1 || !/^(SELECT|WITH)\b/i.test(sql1) || FORBIDDEN_SQL.test(sql1)) {
+          throw new Error('Attempt-1 output failed safety check');
         }
-        queryResult = await query(fixedParsed.sql.trim());
-        parsed = fixedParsed;
-        logger.info('AI self-healed SQL successfully');
-      } catch (fixErr) {
-        logger.error('AI self-heal failed', { error: fixErr?.message });
-        throw new AppError(`Could not execute query: ${sqlErr.message}`, 422);
+        queryResult = await query(sql1);
+        parsed = fixed1;
+        currentSql = sql1;
+        healedOn = sqlModelUsed + '+lean';
+      } catch (sqlErr2) {
+        logger.warn('AI SQL attempt-2 (escalate to Pro) after:', sqlErr2.message);
+
+        // ── Attempt 2: escalate to STRONG_MODEL with full schema ─────────
+        try {
+          const model = genAI.getGenerativeModel({
+            model: STRONG_MODEL,
+            systemInstruction: buildSchemaContext(),
+            generationConfig: { responseMimeType: 'application/json', temperature: 0.05, maxOutputTokens: 800 },
+          });
+          const escalatePrompt = `Previous attempts failed.\nATTEMPT-1 ERROR: ${sqlErr1.message}\nATTEMPT-1 SQL: ${sqlTrimmed}\nATTEMPT-2 ERROR: ${sqlErr2.message}\nATTEMPT-2 SQL: ${currentSql}\nQUESTION: ${question}\nReturn corrected JSON only.`;
+          const proResult = await model.generateContent(escalatePrompt);
+          const fixed2 = extractJsonPayload(proResult.response.text()?.trim() || '');
+          const sql2 = (fixed2?.sql || '').trim();
+          if (!sql2 || !/^(SELECT|WITH)\b/i.test(sql2) || FORBIDDEN_SQL.test(sql2)) {
+            throw new Error('Attempt-2 output failed safety check');
+          }
+          queryResult = await query(sql2);
+          parsed = fixed2;
+          currentSql = sql2;
+          sqlModelUsed = STRONG_MODEL;
+          healedOn = STRONG_MODEL + '+escalated';
+        } catch (finalErr) {
+          logger.error('AI self-heal exhausted', { error: finalErr?.message });
+          throw new AppError(`Could not execute query: ${sqlErr1.message}`, 422);
+        }
       }
+      if (healedOn) logger.info(`AI self-healed SQL via ${healedOn}`);
     }
 
     // Step 3: Generate human answer (skip Gemini call if no rows — use fallback directly)
@@ -316,36 +462,36 @@ async function queryInventory(req, res, next) {
 
     if (queryResult.rows.length > 0) {
       try {
-        const previewRows = queryResult.rows.slice(0, 15);
+        // Preview sizing: 1 row → just send it; ranking/breakdown → top 25
+        // (token-friendly vs 50) to give enough context for top/bottom calls.
+        const previewRows = queryResult.rows.slice(0, 25);
         const totalRows = queryResult.rows.length;
         const columns = Object.keys(queryResult.rows[0]).join(', ');
 
-        // Compute totals for context
+        // Compute totals for context (helps the LLM lead with the big number)
         const numericCols = Object.keys(queryResult.rows[0]).filter(k => typeof queryResult.rows[0][k] === 'number');
         const totals = numericCols.map(col => {
           const sum = queryResult.rows.reduce((s, r) => s + (Number(r[col]) || 0), 0);
           return `${col}: ${formatMetric(sum)}`;
         }).join(', ');
 
-        const answerPrompt = `You are a senior inventory analyst at Spykar Jeans.
-
-User asked: "${question}"
-Columns returned: ${columns}
-Total rows: ${totalRows} | Aggregated totals: ${totals}
-Data (top ${previewRows.length} rows): ${JSON.stringify(previewRows)}
+        const answerPrompt = `User asked: "${question}"
+Columns: ${columns}
+Rows: ${totalRows} | Totals: ${totals}
+Top ${previewRows.length}: ${JSON.stringify(previewRows)}
 
 Write a sharp 3-5 sentence business insight:
-- Lead with the single most important number (total units sold, revenue, or top performer)
-- Mention the top and bottom performers if it's a ranking/breakdown
-- Highlight any notable trend, spike, or pattern in the data
-- Use Indian number format: ≥1Cr as "X.X Cr", ≥1L as "X.X L"
-- DO NOT mention SQL, database, rows, columns, tables, JSON, or "the data shows"
-- Sound like a business analyst briefing a senior manager — confident, direct, insight-driven`;
+- Lead with the biggest number (total units, revenue, or top performer)
+- Call out top and bottom performers for rankings/breakdowns
+- Flag any notable spike, trend, concentration or anomaly
+- Indian number format: ≥1Cr → "X.X Cr", ≥1L → "X.X L"
+- Never say SQL/database/rows/columns/tables/JSON/"the data shows"
+- Tone: senior analyst briefing management — direct, insight-driven`;
 
         const { result: answerResult } = await generateWithFallback(
           answerPrompt,
-          'You are a senior business analyst for Spykar Jeans. Give sharp, data-driven insights in plain English. Never mention technical terms.',
-          { temperature: 0.3, maxOutputTokens: 350 }
+          'Senior Spykar Jeans inventory analyst. Output plain-English insights only. No technical terms.',
+          { temperature: 0.3, maxOutputTokens: 500 }
         );
         const candidate = answerResult.response.text().trim();
         humanAnswer = isWeakAnswer(candidate) ? fallbackSummary : candidate;

@@ -11,6 +11,7 @@ import {
   skuService, dispatchService,
 } from '../lib/services';
 import { formatNumber, formatCurrency, timeAgo } from '../lib/utils';
+import { getCached, setCached, isFresh } from '../lib/dashboardCache';
 import toast from 'react-hot-toast';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
@@ -179,6 +180,46 @@ function AgingRow({ label, hint, qty, total, color, emoji }) {
 // ─── Sales Rankings Section ───────────────────────────────────────────────────
 const COLOR_TOP_OPTIONS = [5, 10, 15, 20, 50, 100, 200];
 
+// Category filter options — must match backend CATEGORY_PATTERNS keys
+const CATEGORY_OPTIONS = [
+  { value: '',            label: 'All Categories' },
+  { value: 'denim',       label: 'Denim' },
+  { value: 'shirt',       label: 'Shirt' },
+  { value: 't-shirt',     label: 'T-Shirt' },
+  { value: 'trouser',     label: 'Trouser' },
+  { value: 'innerwear',   label: 'Innerwear' },
+  { value: 'sweatshirt',  label: 'Sweatshirt' },
+  { value: 'jacket',      label: 'Jacket' },
+  { value: 'accessories', label: 'Accessories' },
+  { value: 'socks',       label: 'Socks' },
+  { value: 'fragrance',   label: 'Fragrance' },
+];
+
+// Client-side category matcher — mirrors backend CATEGORY_PATTERNS exactly.
+// Used by sections that filter pre-loaded rows (e.g. Stock Alerts) without
+// re-hitting the API. Substring match is case-insensitive via toLowerCase().
+const CATEGORY_KEYWORDS = {
+  denim:       { include: ['denim', 'jean'],                                                 exclude: [] },
+  shirt:       { include: ['shirt'],                                                         exclude: ['t-shirt', 'tshirt', 't shirt', 'sweatshirt', 'sweat shirt'] },
+  't-shirt':   { include: ['t-shirt', 'tshirt', 't shirt'],                                  exclude: [] },
+  trouser:     { include: ['trouser', 'chino', 'cargo', 'pant'],                             exclude: ['innerwear', 'jogger'] },
+  innerwear:   { include: ['boxer', 'brief', 'trunk', 'innerwear', 'vest'],                  exclude: [] },
+  sweatshirt:  { include: ['sweatshirt', 'sweat shirt', 'hoodie', 'hooded', 'sweater', 'pullover'], exclude: [] },
+  jacket:      { include: ['jacket', 'blazer', 'coat'],                                      exclude: [] },
+  accessories: { include: ['belt', 'wallet', 'cap', 'bag', 'scarf', 'tie', 'glove'],         exclude: [] },
+  socks:       { include: ['sock'],                                                          exclude: [] },
+  fragrance:   { include: ['perfume', 'deo', 'fragrance', 'cologne'],                        exclude: [] },
+};
+function matchesCategory(productName, category) {
+  if (!category) return true;
+  const def = CATEGORY_KEYWORDS[category];
+  if (!def) return true;
+  const p = (productName || '').toLowerCase();
+  if (!p) return false;
+  if (def.exclude.some(k => p.includes(k))) return false;
+  return def.include.some(k => p.includes(k));
+}
+
 function SalesRankingsSection({ salesTop: initialData, loading: initialLoading }) {
   const [colorTopN,   setColorTopN]  = useState(15);
   const [sizeTopN,    setSizeTopN]   = useState(15);
@@ -187,6 +228,7 @@ function SalesRankingsSection({ salesTop: initialData, loading: initialLoading }
   const [dateTo,      setDateTo]     = useState('2026-01-31');
   const [selState,    setSelState]   = useState('');
   const [selCity,     setSelCity]    = useState('');
+  const [selCategory, setSelCategory] = useState('');
   const [rankData,    setRankData]   = useState(initialData);
   const [rankLoading, setRankLoading] = useState(false);
 
@@ -205,13 +247,14 @@ function SalesRankingsSection({ salesTop: initialData, loading: initialLoading }
     setRankLoading(true);
     try {
       const params = { date_from: dateFrom, date_to: dateTo };
-      if (selState) params.state = selState;
-      if (selCity)  params.city  = selCity;
+      if (selState)    params.state    = selState;
+      if (selCity)     params.city     = selCity;
+      if (selCategory) params.category = selCategory;
       const res = await analyticsService.getSalesAnalytics(params);
       setRankData(res.data.data);
     } catch (_) {}
     setRankLoading(false);
-  }, [dateFrom, dateTo, selState, selCity]);
+  }, [dateFrom, dateTo, selState, selCity, selCategory]);
 
   const data    = rankData;
   const loading = initialLoading || rankLoading;
@@ -246,6 +289,14 @@ function SalesRankingsSection({ salesTop: initialData, loading: initialLoading }
           <svg style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth={2.5}><polyline points="6 9 12 15 18 9"/></svg>
         </div>
 
+        {/* Category — ILIKE-powered, beside State */}
+        <div style={{ position: 'relative' }}>
+          <select value={selCategory} onChange={e => setSelCategory(e.target.value)} style={selectStyle} title="Filter by product category (matched on product name)">
+            {CATEGORY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <svg style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth={2.5}><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+
         {/* City — filtered by state */}
         <div style={{ position: 'relative' }}>
           <select value={selCity} onChange={e => setSelCity(e.target.value)} style={selectStyle}>
@@ -258,7 +309,7 @@ function SalesRankingsSection({ salesTop: initialData, loading: initialLoading }
         <button onClick={fetchRankings} style={{ padding: '5px 16px', borderRadius: 8, fontSize: 12, fontWeight: 800, background: '#2563EB', color: '#fff', border: 'none', cursor: 'pointer' }}>
           Apply
         </button>
-        <button onClick={() => { setDateFrom('2025-01-01'); setDateTo('2026-01-31'); setSelState(''); setSelCity(''); setTimeout(fetchRankings, 0); }} style={{ padding: '5px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, background: '#f1f5f9', color: '#475569', border: '1.5px solid #e2e8f0', cursor: 'pointer' }}>
+        <button onClick={() => { setDateFrom('2025-01-01'); setDateTo('2026-01-31'); setSelState(''); setSelCity(''); setSelCategory(''); setTimeout(fetchRankings, 0); }} style={{ padding: '5px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, background: '#f1f5f9', color: '#475569', border: '1.5px solid #e2e8f0', cursor: 'pointer' }}>
           Reset
         </button>
       </div>
@@ -387,6 +438,7 @@ function ReturnsRankingsSection({ salesTop: initialSalesData }) {
   const [dateTo,       setDateTo]      = useState('2026-01-31');
   const [selState,     setSelState]    = useState('');
   const [selCity,      setSelCity]     = useState('');
+  const [selCategory,  setSelCategory] = useState('');
   const [data,         setData]        = useState(null);
   const [loading,      setLoading]     = useState(true);
 
@@ -435,15 +487,21 @@ function ReturnsRankingsSection({ salesTop: initialSalesData }) {
           <svg style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth={2.5}><polyline points="6 9 12 15 18 9"/></svg>
         </div>
         <div style={{ position: 'relative' }}>
+          <select value={selCategory} onChange={e => setSelCategory(e.target.value)} style={selectStyle} title="Filter by product category (matched on product name)">
+            {CATEGORY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <svg style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth={2.5}><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div style={{ position: 'relative' }}>
           <select value={selCity} onChange={e => setSelCity(e.target.value)} style={selectStyle}>
             <option value="">All Cities</option>
             {cityList.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           <svg style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth={2.5}><polyline points="6 9 12 15 18 9"/></svg>
         </div>
-        <button onClick={() => doFetch({ date_from: dateFrom, date_to: dateTo, ...(selState && { state: selState }), ...(selCity && { city: selCity }) })}
+        <button onClick={() => doFetch({ date_from: dateFrom, date_to: dateTo, ...(selState && { state: selState }), ...(selCity && { city: selCity }), ...(selCategory && { category: selCategory }) })}
           style={{ padding: '5px 16px', borderRadius: 8, fontSize: 12, fontWeight: 800, background: '#EA580C', color: '#fff', border: 'none', cursor: 'pointer' }}>Apply</button>
-        <button onClick={() => { setDateFrom('2025-01-01'); setDateTo('2026-01-31'); setSelState(''); setSelCity(''); doFetch({ date_from: '2025-01-01', date_to: '2026-01-31' }); }}
+        <button onClick={() => { setDateFrom('2025-01-01'); setDateTo('2026-01-31'); setSelState(''); setSelCity(''); setSelCategory(''); doFetch({ date_from: '2025-01-01', date_to: '2026-01-31' }); }}
           style={{ padding: '5px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, background: '#f1f5f9', color: '#475569', border: '1.5px solid #e2e8f0', cursor: 'pointer' }}>Reset</button>
       </div>
 
@@ -557,15 +615,16 @@ const SIZE_TOP_OPTIONS   = [5, 10, 15, 20, 30, 50, 100];
 const COLOR_SIZE_OPTIONS = [5, 10, 20, 50, 100, 200];
 
 function SizeColorSection({ initialSizes, initialColors, allStoresData, pageLoading }) {
-  const [sizeTopN,   setSizeTopN]   = useState(10);
-  const [colorTopN,  setColorTopN]  = useState(10);
-  const [dateFrom,   setDateFrom]   = useState('');
-  const [dateTo,     setDateTo]     = useState('');
-  const [selState,   setSelState]   = useState('');
-  const [selCity,    setSelCity]    = useState('');
-  const [sizesData,  setSizesData]  = useState(initialSizes  || []);
-  const [colorsData, setColorsData] = useState(initialColors || []);
-  const [scLoading,  setScLoading]  = useState(false);
+  const [sizeTopN,    setSizeTopN]    = useState(10);
+  const [colorTopN,   setColorTopN]   = useState(10);
+  const [dateFrom,    setDateFrom]    = useState('');
+  const [dateTo,      setDateTo]      = useState('');
+  const [selState,    setSelState]    = useState('');
+  const [selCity,     setSelCity]     = useState('');
+  const [selCategory, setSelCategory] = useState('');
+  const [sizesData,   setSizesData]   = useState(initialSizes  || []);
+  const [colorsData,  setColorsData]  = useState(initialColors || []);
+  const [scLoading,   setScLoading]   = useState(false);
 
   useEffect(() => { if (initialSizes?.length)  setSizesData(initialSizes);  }, [initialSizes]);
   useEffect(() => { if (initialColors?.length) setColorsData(initialColors); }, [initialColors]);
@@ -592,15 +651,16 @@ function SizeColorSection({ initialSizes, initialColors, allStoresData, pageLoad
 
   const fetchSC = useCallback(() => {
     const p = {};
-    if (dateFrom) p.date_from = dateFrom;
-    if (dateTo)   p.date_to   = dateTo;
-    if (selState) p.state     = selState;
-    if (selCity)  p.city      = selCity;
+    if (dateFrom)    p.date_from = dateFrom;
+    if (dateTo)      p.date_to   = dateTo;
+    if (selState)    p.state     = selState;
+    if (selCity)     p.city      = selCity;
+    if (selCategory) p.category  = selCategory;
     doFetchSC(p);
-  }, [dateFrom, dateTo, selState, selCity, doFetchSC]);
+  }, [dateFrom, dateTo, selState, selCity, selCategory, doFetchSC]);
 
   const resetSC = useCallback(() => {
-    setDateFrom(''); setDateTo(''); setSelState(''); setSelCity('');
+    setDateFrom(''); setDateTo(''); setSelState(''); setSelCity(''); setSelCategory('');
     doFetchSC({});
   }, [doFetchSC]);
 
@@ -646,6 +706,12 @@ function SizeColorSection({ initialSizes, initialColors, allStoresData, pageLoad
           <select value={selState} onChange={e => { setSelState(e.target.value); setSelCity(''); }} style={selectStyle}>
             <option value="">All States</option>
             {stateList.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <svg style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth={2.5}><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div style={{ position: 'relative' }}>
+          <select value={selCategory} onChange={e => setSelCategory(e.target.value)} style={selectStyle} title="Filter by product category (matched on product name)">
+            {CATEGORY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           <svg style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth={2.5}><polyline points="6 9 12 15 18 9"/></svg>
         </div>
@@ -782,6 +848,7 @@ function SkuPerformanceSection({ initialTopMoving, initialSlowMoving, allStoresD
   const [dateTo,        setDateTo]        = useState('2026-01-31');
   const [selState,      setSelState]      = useState('');
   const [selCity,       setSelCity]       = useState('');
+  const [selCategory,   setSelCategory]   = useState('');
   const [topMovingData, setTopMovingData] = useState(initialTopMoving || []);
   const [slowMovingData,setSlowMovingData]= useState(initialSlowMoving || []);
   const [skuLoading,    setSkuLoading]    = useState(false);
@@ -812,16 +879,18 @@ function SkuPerformanceSection({ initialTopMoving, initialSlowMoving, allStoresD
   const fetchSku = useCallback(() => {
     const topParams  = { n: topN, date_from: dateFrom, date_to: dateTo };
     const slowParams = { days: slowDays };
-    if (selState) { topParams.state = selState; slowParams.state = selState; }
-    if (selCity)  { topParams.city  = selCity;  slowParams.city  = selCity;  }
+    if (selState)    { topParams.state    = selState;    slowParams.state    = selState;    }
+    if (selCity)     { topParams.city     = selCity;     slowParams.city     = selCity;     }
+    if (selCategory) { topParams.category = selCategory; slowParams.category = selCategory; }
     doFetch(topParams, slowParams);
-  }, [topN, slowDays, dateFrom, dateTo, selState, selCity, doFetch]);
+  }, [topN, slowDays, dateFrom, dateTo, selState, selCity, selCategory, doFetch]);
 
   const resetFilters = useCallback(() => {
     setDateFrom('2025-01-01');
     setDateTo('2026-01-31');
     setSelState('');
     setSelCity('');
+    setSelCategory('');
     doFetch(
       { n: topN, date_from: '2025-01-01', date_to: '2026-01-31' },
       { days: slowDays }
@@ -848,6 +917,12 @@ function SkuPerformanceSection({ initialTopMoving, initialSlowMoving, allStoresD
           <select value={selState} onChange={e => { setSelState(e.target.value); setSelCity(''); }} style={selectStyle}>
             <option value="">All States</option>
             {stateList.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <svg style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth={2.5}><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div style={{ position: 'relative' }}>
+          <select value={selCategory} onChange={e => setSelCategory(e.target.value)} style={selectStyle} title="Filter by product category (matched on product name)">
+            {CATEGORY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           <svg style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth={2.5}><polyline points="6 9 12 15 18 9"/></svg>
         </div>
@@ -880,8 +955,8 @@ function SkuPerformanceSection({ initialTopMoving, initialSlowMoving, allStoresD
                   const n = Number(e.target.value);
                   setTopN(n);
                   doFetch(
-                    { n, date_from: dateFrom, date_to: dateTo, ...(selState && { state: selState }), ...(selCity && { city: selCity }) },
-                    { days: slowDays, ...(selState && { state: selState }), ...(selCity && { city: selCity }) }
+                    { n, date_from: dateFrom, date_to: dateTo, ...(selState && { state: selState }), ...(selCity && { city: selCity }), ...(selCategory && { category: selCategory }) },
+                    { days: slowDays, ...(selState && { state: selState }), ...(selCity && { city: selCity }), ...(selCategory && { category: selCategory }) }
                   );
                 }}
                 style={{ border: '1.5px solid #fecaca', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#5b21b6', background: '#fff5f4', outline: 'none', cursor: 'pointer' }}
@@ -956,8 +1031,8 @@ function SkuPerformanceSection({ initialTopMoving, initialSlowMoving, allStoresD
                   const days = Number(e.target.value);
                   setSlowDays(days);
                   doFetch(
-                    { n: topN, date_from: dateFrom, date_to: dateTo, ...(selState && { state: selState }), ...(selCity && { city: selCity }) },
-                    { days, ...(selState && { state: selState }), ...(selCity && { city: selCity }) }
+                    { n: topN, date_from: dateFrom, date_to: dateTo, ...(selState && { state: selState }), ...(selCity && { city: selCity }), ...(selCategory && { category: selCategory }) },
+                    { days, ...(selState && { state: selState }), ...(selCity && { city: selCity }), ...(selCategory && { category: selCategory }) }
                   );
                 }}
                 style={{ border: '1.5px solid #fecaca', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#991b1b', background: '#fff5f5', outline: 'none', cursor: 'pointer' }}
@@ -1033,12 +1108,13 @@ function SkuPerformanceSection({ initialTopMoving, initialSlowMoving, allStoresD
 
 // ─── Stock Alerts Section — drill-down with filters, search, pagination ───────
 function StockAlertsSection({ alerts, alertSummary, pageLoading }) {
-  const [search,    setSearch]    = useState('');
-  const [selState,  setSelState]  = useState('');
-  const [selCity,   setSelCity]   = useState('');
-  const [levelTab,  setLevelTab]  = useState('ALL');
-  const [pageSize,  setPageSize]  = useState(30);
-  const [page,      setPage]      = useState(1);
+  const [search,      setSearch]      = useState('');
+  const [selState,    setSelState]    = useState('');
+  const [selCity,     setSelCity]     = useState('');
+  const [selCategory, setSelCategory] = useState('');
+  const [levelTab,    setLevelTab]    = useState('ALL');
+  const [pageSize,    setPageSize]    = useState(30);
+  const [page,        setPage]        = useState(1);
 
   const inputStyle  = { border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '5px 10px', fontSize: 12, fontWeight: 700, color: '#0f172a', outline: 'none', background: '#fff' };
   const selectStyle = { border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '5px 28px 5px 10px', fontSize: 12, fontWeight: 700, color: '#0f172a', outline: 'none', background: '#fff', appearance: 'none', cursor: 'pointer', minWidth: 130 };
@@ -1061,6 +1137,7 @@ function StockAlertsSection({ alerts, alertSummary, pageLoading }) {
       if (levelTab !== 'ALL' && r.alert_level !== levelTab) return false;
       if (selState && r.state !== selState) return false;
       if (selCity  && r.city  !== selCity)  return false;
+      if (selCategory && !matchesCategory(r.product_name, selCategory)) return false;
       if (!q) return true;
       return (
         (r.sku_code     || '').toLowerCase().includes(q) ||
@@ -1071,10 +1148,10 @@ function StockAlertsSection({ alerts, alertSummary, pageLoading }) {
         (r.state        || '').toLowerCase().includes(q)
       );
     });
-  }, [alerts, search, selState, selCity, levelTab]);
+  }, [alerts, search, selState, selCity, selCategory, levelTab]);
 
   // ── Reset page when filters change ──
-  useEffect(() => { setPage(1); }, [search, selState, selCity, levelTab, pageSize]);
+  useEffect(() => { setPage(1); }, [search, selState, selCity, selCategory, levelTab, pageSize]);
 
   // ── Reset city when state changes ──
   useEffect(() => { setSelCity(''); }, [selState]);
@@ -1086,8 +1163,8 @@ function StockAlertsSection({ alerts, alertSummary, pageLoading }) {
   const offset     = (safePage - 1) * pageSize;
   const pageRows   = filtered.slice(offset, offset + pageSize);
 
-  const hasFilter = !!(search || selState || selCity || levelTab !== 'ALL');
-  const clearAll = () => { setSearch(''); setSelState(''); setSelCity(''); setLevelTab('ALL'); setPage(1); };
+  const hasFilter = !!(search || selState || selCity || selCategory || levelTab !== 'ALL');
+  const clearAll = () => { setSearch(''); setSelState(''); setSelCity(''); setSelCategory(''); setLevelTab('ALL'); setPage(1); };
 
   // ── Alert level badge styling ──
   const levelStyle = (lvl) => {
@@ -1157,6 +1234,13 @@ function StockAlertsSection({ alerts, alertSummary, pageLoading }) {
         </div>
 
         <div style={{ position: 'relative' }}>
+          <select value={selCategory} onChange={e => setSelCategory(e.target.value)} style={selectStyle} title="Filter by product category (matched on product name)">
+            {CATEGORY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <svg style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth={2.5}><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+
+        <div style={{ position: 'relative' }}>
           <select value={selCity} onChange={e => setSelCity(e.target.value)} style={selectStyle} disabled={cityList.length === 0}>
             <option value="">All Cities</option>
             {cityList.map(c => <option key={c} value={c}>{c}</option>)}
@@ -1182,17 +1266,22 @@ function StockAlertsSection({ alerts, alertSummary, pageLoading }) {
         </div>
       </div>
 
-      {/* ── Table ── */}
-      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, overflow: 'hidden' }}>
+      {/* ── Table — overflow:hidden constrains horizontal scroll ── */}
+      <div style={{
+        background: '#fff',
+        border: '1px solid #e2e8f0',
+        borderRadius: (!pageLoading && totalRows > 0) ? '14px 14px 0 0' : 14,
+        overflow: 'hidden',
+      }}>
         <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
               <tr style={{ background: '#f8fafc' }}>
                 {['#','Alert','Store','State / City','Channel','SKU','Product','Colour','Size','On Hand','Safety','Reorder','Shortfall'].map(h => (
                   <th key={h} style={{
-                    padding: '10px 14px',
+                    padding: '11px 14px',
                     textAlign: ['#','On Hand','Safety','Reorder','Shortfall'].includes(h) ? 'right' : 'left',
-                    fontSize: 10, fontWeight: 900, color: '#0f172a', letterSpacing: '0.07em', textTransform: 'uppercase',
+                    fontSize: 11, fontWeight: 900, color: '#0f172a', letterSpacing: '0.06em', textTransform: 'uppercase',
                     borderBottom: '2px solid #e2e8f0', whiteSpace: 'nowrap',
                   }}>{h}</th>
                 ))}
@@ -1218,24 +1307,24 @@ function StockAlertsSection({ alerts, alertSummary, pageLoading }) {
                           style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}
                           onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'}
                           onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? '#fff' : '#fafafa'}>
-                          <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 11, fontWeight: 800, color: '#94a3b8' }}>{rowNum}</td>
-                          <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
+                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#94a3b8' }}>{rowNum}</td>
+                          <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
                             <span style={{
                               background: lvl.bg, color: lvl.color, border: `1px solid ${lvl.border}`,
-                              borderRadius: 6, padding: '2px 8px', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap', letterSpacing: '0.02em',
+                              borderRadius: 6, padding: '3px 9px', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', letterSpacing: '0.02em',
                             }}>{lvl.label}</span>
                           </td>
-                          <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>{r.location_name || '—'}</td>
-                          <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>{r.state || '—'}{r.city ? ` · ${r.city}` : ''}</td>
-                          <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap' }}>{r.location_type || '—'}</td>
-                          <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 800, color: '#1d4ed8', whiteSpace: 'nowrap' }}>{r.sku_code || '—'}</td>
-                          <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>{r.product_name || '—'}</td>
-                          <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>{r.color_name || '—'}</td>
-                          <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>{r.size || '—'}</td>
-                          <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 12, fontWeight: 900, color: r.qty_on_hand === 0 ? '#DC2626' : '#0f172a', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatNumber(Number(r.qty_on_hand || 0))}</td>
-                          <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 11, fontWeight: 700, color: '#64748b', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatNumber(Number(r.safety_stock || 0))}</td>
-                          <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 11, fontWeight: 700, color: '#64748b', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatNumber(Number(r.reorder_point || 0))}</td>
-                          <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 11, fontWeight: 800, color: '#DC2626', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{shortfall}</td>
+                          <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>{r.location_name || '—'}</td>
+                          <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>{r.state || '—'}{r.city ? ` · ${r.city}` : ''}</td>
+                          <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#475569', whiteSpace: 'nowrap' }}>{r.location_type || '—'}</td>
+                          <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 800, color: '#1d4ed8', whiteSpace: 'nowrap' }}>{r.sku_code || '—'}</td>
+                          <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>{r.product_name || '—'}</td>
+                          <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>{r.color_name || '—'}</td>
+                          <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: '#334155', whiteSpace: 'nowrap' }}>{r.size || '—'}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 900, color: r.qty_on_hand === 0 ? '#DC2626' : '#0f172a', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatNumber(Number(r.qty_on_hand || 0))}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#475569', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatNumber(Number(r.safety_stock || 0))}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#475569', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatNumber(Number(r.reorder_point || 0))}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 12, fontWeight: 800, color: '#DC2626', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{shortfall}</td>
                         </tr>
                       );
                     })
@@ -1243,94 +1332,135 @@ function StockAlertsSection({ alerts, alertSummary, pageLoading }) {
             </tbody>
           </table>
         </div>
-
-        {/* ── Pagination ── */}
-        {!pageLoading && totalRows > 0 && (
-          <div style={{ padding: '10px 16px', borderTop: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', flexWrap: 'wrap', gap: 10 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>
-              Showing <strong style={{ color: '#0f172a' }}>{offset + 1}–{Math.min(offset + pageRows.length, totalRows)}</strong> of <strong style={{ color: '#0f172a' }}>{formatNumber(totalRows)}</strong> alerts
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <button onClick={() => setPage(1)} disabled={safePage === 1}
-                style={{ border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '3px 9px', fontSize: 11, fontWeight: 800, color: safePage === 1 ? '#cbd5e1' : '#0f172a', background: '#fff', cursor: safePage === 1 ? 'default' : 'pointer' }}>«</button>
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
-                style={{ border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '3px 10px', fontSize: 11, fontWeight: 800, color: safePage === 1 ? '#cbd5e1' : '#0f172a', background: '#fff', cursor: safePage === 1 ? 'default' : 'pointer' }}>‹ Prev</button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1)
-                .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 2)
-                .reduce((acc, p, idx, arr) => { if (idx > 0 && p - arr[idx-1] > 1) acc.push('…'); acc.push(p); return acc; }, [])
-                .map((p, idx) => p === '…'
-                  ? <span key={`e${idx}`} style={{ fontSize: 12, color: '#94a3b8', padding: '0 2px' }}>…</span>
-                  : <button key={p} onClick={() => setPage(p)}
-                      style={{
-                        border: `1.5px solid ${p === safePage ? '#DC2626' : '#e2e8f0'}`,
-                        borderRadius: 7, padding: '3px 10px', fontSize: 11, fontWeight: 800,
-                        color: p === safePage ? '#fff' : '#0f172a',
-                        background: p === safePage ? '#DC2626' : '#fff',
-                        cursor: 'pointer', minWidth: 30,
-                      }}>{p}</button>)
-              }
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
-                style={{ border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '3px 10px', fontSize: 11, fontWeight: 800, color: safePage === totalPages ? '#cbd5e1' : '#0f172a', background: '#fff', cursor: safePage === totalPages ? 'default' : 'pointer' }}>Next ›</button>
-              <button onClick={() => setPage(totalPages)} disabled={safePage === totalPages}
-                style={{ border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '3px 9px', fontSize: 11, fontWeight: 800, color: safePage === totalPages ? '#cbd5e1' : '#0f172a', background: '#fff', cursor: safePage === totalPages ? 'default' : 'pointer' }}>»</button>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* ── Pagination — sibling of table box, never clipped ── */}
+      {!pageLoading && totalRows > 0 && (
+        <div style={{ padding: '10px 16px', border: '1px solid #e2e8f0', borderTop: 'none', borderRadius: '0 0 14px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', flexWrap: 'wrap', gap: 10 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>
+            Showing <strong style={{ color: '#0f172a' }}>{offset + 1}–{Math.min(offset + pageRows.length, totalRows)}</strong> of <strong style={{ color: '#0f172a' }}>{formatNumber(totalRows)}</strong> alerts
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <button onClick={() => setPage(1)} disabled={safePage === 1}
+              style={{ border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '3px 9px', fontSize: 11, fontWeight: 800, color: safePage === 1 ? '#cbd5e1' : '#0f172a', background: '#fff', cursor: safePage === 1 ? 'default' : 'pointer' }}>«</button>
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
+              style={{ border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '3px 10px', fontSize: 11, fontWeight: 800, color: safePage === 1 ? '#cbd5e1' : '#0f172a', background: '#fff', cursor: safePage === 1 ? 'default' : 'pointer' }}>‹ Prev</button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 2)
+              .reduce((acc, p, idx, arr) => { if (idx > 0 && p - arr[idx-1] > 1) acc.push('…'); acc.push(p); return acc; }, [])
+              .map((p, idx) => p === '…'
+                ? <span key={`e${idx}`} style={{ fontSize: 12, color: '#94a3b8', padding: '0 2px' }}>…</span>
+                : <button key={p} onClick={() => setPage(p)}
+                    style={{
+                      border: `1.5px solid ${p === safePage ? '#DC2626' : '#e2e8f0'}`,
+                      borderRadius: 7, padding: '3px 10px', fontSize: 11, fontWeight: 800,
+                      color: p === safePage ? '#fff' : '#0f172a',
+                      background: p === safePage ? '#DC2626' : '#fff',
+                      cursor: 'pointer', minWidth: 30,
+                    }}>{p}</button>)
+            }
+            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
+              style={{ border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '3px 10px', fontSize: 11, fontWeight: 800, color: safePage === totalPages ? '#cbd5e1' : '#0f172a', background: '#fff', cursor: safePage === totalPages ? 'default' : 'pointer' }}>Next ›</button>
+            <button onClick={() => setPage(totalPages)} disabled={safePage === totalPages}
+              style={{ border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '3px 9px', fontSize: 11, fontWeight: 800, color: safePage === totalPages ? '#cbd5e1' : '#0f172a', background: '#fff', cursor: safePage === totalPages ? 'default' : 'pointer' }}>»</button>
+          </div>
+        </div>
+      )}
     </Section>
   );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
+// State initializes lazily from the module-level cache (lib/dashboardCache.js)
+// so navigating away and back shows data instantly instead of remounting empty.
+// A background refresh still runs on every mount to keep values up to date.
 export default function Overview() {
-  const [summary, setSummary]       = useState(null);
-  const [sizes, setSizes]           = useState([]);
-  const [colors, setColors]         = useState([]);
-  const [salesTop, setSalesTop]     = useState(null);
-  const [topMoving, setTopMoving]   = useState([]);
-  const [slowMoving, setSlowMoving] = useState([]);
-  const [alerts, setAlerts]         = useState([]);
-  const [alertSummary, setAlertSummary] = useState({ out_of_stock: 0, reorder_now: 0, low_stock: 0, total: 0 });
-  const [ageing, setAgeing]         = useState([]);
-  const [lastSync, setLastSync]     = useState(null);
-  const [inTransit, setInTransit]   = useState([]);
-  const [loading, setLoading]       = useState(true);
+  const [summary, setSummary]       = useState(() => getCached('ov:summary')       ?? null);
+  const [sizes, setSizes]           = useState(() => getCached('ov:sizes')         ?? []);
+  const [colors, setColors]         = useState(() => getCached('ov:colors')        ?? []);
+  const [salesTop, setSalesTop]     = useState(() => getCached('ov:salesTop')      ?? null);
+  const [topMoving, setTopMoving]   = useState(() => getCached('ov:topMoving')     ?? []);
+  const [slowMoving, setSlowMoving] = useState(() => getCached('ov:slowMoving')    ?? []);
+  const [alerts, setAlerts]         = useState(() => getCached('ov:alerts')        ?? []);
+  const [alertSummary, setAlertSummary] = useState(() =>
+    getCached('ov:alertSummary') ?? { out_of_stock: 0, reorder_now: 0, low_stock: 0, total: 0 });
+  const [alertsLoading, setAlertsLoading] = useState(() => !getCached('ov:alerts'));
+  const [ageing, setAgeing]         = useState(() => getCached('ov:ageing')        ?? []);
+  const [lastSync, setLastSync]     = useState(() => getCached('ov:lastSync')      ?? null);
+  const [inTransit, setInTransit]   = useState(() => getCached('ov:inTransit')     ?? []);
+  const [loading, setLoading]       = useState(() => !getCached('ov:summary'));
   const [syncLabel, setSyncLabel]   = useState('—');
 
+  // ── Initial fast fetch: everything except the 570K-row alerts list ──────────
+  // Alert KPI counts come from the tiny /alerts/summary endpoint so the page
+  // becomes interactive instantly. The full alerts drill-down is loaded in a
+  // deferred useEffect below (no row is dropped — just loaded out-of-band).
   const fetchAll = useCallback(async () => {
-    setLoading(true);
+    // Only show skeletons if we have no cached data yet — otherwise keep the
+    // existing (possibly stale) values on screen while we refresh in-place.
+    if (!getCached('ov:summary')) setLoading(true);
     try {
-      const [sumRes, sizeRes, colorRes, topRes, slowRes, alertRes, syncRes, transitRes, ageRes, salesTopRes] =
+      const [sumRes, sizeRes, colorRes, topRes, slowRes, alertSumRes, syncRes, transitRes, ageRes, salesTopRes] =
         await Promise.allSettled([
           inventoryService.getExecutiveSummary(),
           analyticsService.getSizeDistribution(),
           analyticsService.getColorDistribution(),
           skuService.getTopMoving({ n: 12, days: 30 }),
           skuService.getSlowMoving({ days: 90 }),
-          inventoryService.getAlerts(),
+          inventoryService.getAlertsSummary(),
           syncService.getStatus(),
           dispatchService.getInTransit(),
           inventoryService.getAgeing(),
           analyticsService.getSalesAnalytics({ date_from: '2025-01-01', date_to: '2026-01-31' }),
         ]);
-      if (sumRes.status      === 'fulfilled') setSummary(sumRes.value.data.data);
-      if (sizeRes.status     === 'fulfilled') setSizes(sizeRes.value.data.data || []);
-      if (colorRes.status    === 'fulfilled') setColors(colorRes.value.data.data || []);
-      if (topRes.status      === 'fulfilled') setTopMoving(topRes.value.data.data || []);
-      if (slowRes.status     === 'fulfilled') setSlowMoving(slowRes.value.data.data || []);
-      if (alertRes.status    === 'fulfilled') {
-        setAlerts(alertRes.value.data.data || []);
-        setAlertSummary(alertRes.value.data.summary || { out_of_stock: 0, reorder_now: 0, low_stock: 0, total: 0 });
+      if (sumRes.status      === 'fulfilled') { const v = sumRes.value.data.data;          setSummary(v);   setCached('ov:summary',   v); }
+      if (sizeRes.status     === 'fulfilled') { const v = sizeRes.value.data.data || [];   setSizes(v);     setCached('ov:sizes',     v); }
+      if (colorRes.status    === 'fulfilled') { const v = colorRes.value.data.data || [];  setColors(v);    setCached('ov:colors',    v); }
+      if (topRes.status      === 'fulfilled') { const v = topRes.value.data.data || [];    setTopMoving(v); setCached('ov:topMoving', v); }
+      if (slowRes.status     === 'fulfilled') { const v = slowRes.value.data.data || [];   setSlowMoving(v);setCached('ov:slowMoving',v); }
+      if (alertSumRes.status === 'fulfilled') {
+        const v = alertSumRes.value.data.summary || { out_of_stock: 0, reorder_now: 0, low_stock: 0, total: 0 };
+        setAlertSummary(v); setCached('ov:alertSummary', v);
       }
-      if (syncRes.status     === 'fulfilled') setLastSync(syncRes.value.data.data);
-      if (transitRes.status  === 'fulfilled') setInTransit(transitRes.value.data.data || []);
-      if (ageRes.status      === 'fulfilled') setAgeing(ageRes.value.data.data || []);
-      if (salesTopRes.status === 'fulfilled') setSalesTop(salesTopRes.value.data.data);
+      if (syncRes.status     === 'fulfilled') { const v = syncRes.value.data.data;        setLastSync(v);  setCached('ov:lastSync',  v); }
+      if (transitRes.status  === 'fulfilled') { const v = transitRes.value.data.data || []; setInTransit(v); setCached('ov:inTransit', v); }
+      if (ageRes.status      === 'fulfilled') { const v = ageRes.value.data.data || [];   setAgeing(v);    setCached('ov:ageing',    v); }
+      if (salesTopRes.status === 'fulfilled') { const v = salesTopRes.value.data.data;    setSalesTop(v);  setCached('ov:salesTop',  v); }
     } catch { toast.error('Failed to load dashboard'); }
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => {
+    // Skip refetch if cache is fresh (<1 min old) — mount shows cached data
+    // instantly and we don't redo a 570K-row transfer on rapid tab-switches.
+    if (isFresh('ov:summary')) { setLoading(false); return; }
+    fetchAll();
+  }, [fetchAll]);
+
+  // ── Deferred fetch for the full 570K-row alerts drill-down ──────────────────
+  // Runs in parallel with the initial fetchAll so nothing is blocked waiting on
+  // the heavy payload. Every row still loads — just out of the critical path.
+  // Skipped entirely when cache is still fresh so rapid tab-switches don't
+  // retransfer the 30-80MB JSON payload.
+  useEffect(() => {
+    if (isFresh('ov:alerts')) { setAlertsLoading(false); return; }
+    let cancelled = false;
+    if (!getCached('ov:alerts')) setAlertsLoading(true);
+    inventoryService.getAlerts()
+      .then(res => {
+        if (cancelled) return;
+        const data = res.data.data || [];
+        setAlerts(data);
+        setCached('ov:alerts', data);
+        if (res.data.summary) {
+          setAlertSummary(res.data.summary);
+          setCached('ov:alertSummary', res.data.summary);
+        }
+      })
+      .catch(() => { /* toast already handled in fetchAll for top-level errors */ })
+      .finally(() => { if (!cancelled) setAlertsLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   // Sync timer
   useEffect(() => {
@@ -1704,7 +1834,7 @@ export default function Overview() {
       <StockAlertsSection
         alerts={alerts}
         alertSummary={alertSummary}
-        pageLoading={loading}
+        pageLoading={alertsLoading}
       />
 
       {/* ══════════════════════════════════════════════

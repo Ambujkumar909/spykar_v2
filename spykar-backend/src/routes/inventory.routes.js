@@ -44,6 +44,11 @@ router.get('/sku/:skuId',
   inventoryController.getSkuInventory
 );
 
+// GET /api/v1/inventory/alerts/summary
+// Tiny payload: just the 4 alert counts — used by Overview KPI cards so the
+// page never waits on the 570K-row /alerts response.
+router.get('/alerts/summary', inventoryController.getAlertsSummary);
+
 // GET /api/v1/inventory/alerts
 // Low stock and critical alerts
 router.get('/alerts', inventoryController.getAlerts);

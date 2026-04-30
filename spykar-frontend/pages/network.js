@@ -1,14 +1,36 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import DashboardLayout from '../components/layout/DashboardLayout';
+import FilterBar from '../components/filters/FilterBar';
+import FilterChips from '../components/filters/FilterChips';
+import PremiumKpi from '../components/ui/PremiumKpi';
+import NetworkPulse from '../components/network/NetworkPulse';
+import { useFilters } from '../lib/useFilters';
 import { locationService, analyticsService } from '../lib/services';
+import { getCached, setCached, isFresh } from '../lib/dashboardCache';
 import toast from 'react-hot-toast';
 import {
-  Globe, Package, MapPin, PieChart, BarChart2,
-  RefreshCw, TrendingUp, Layers, Activity,
+  Globe, Package, MapPin, PieChart, BarChart2, IndianRupee,
+  RefreshCw, TrendingUp, Layers, Activity, Skull, AlertTriangle, Zap, Target,
+  Building2, Calendar, Sparkles,
 } from 'lucide-react';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
+
+// Category filter options — must match backend CATEGORY_PATTERNS keys
+const CATEGORY_OPTIONS = [
+  { value: '',            label: 'All Categories' },
+  { value: 'denim',       label: 'Denim' },
+  { value: 'shirt',       label: 'Shirt' },
+  { value: 't-shirt',     label: 'T-Shirt' },
+  { value: 'trouser',     label: 'Trouser' },
+  { value: 'innerwear',   label: 'Innerwear' },
+  { value: 'sweatshirt',  label: 'Sweatshirt' },
+  { value: 'jacket',      label: 'Jacket' },
+  { value: 'accessories', label: 'Accessories' },
+  { value: 'socks',       label: 'Socks' },
+  { value: 'fragrance',   label: 'Fragrance' },
+];
 
 // ── Typography — identical to sales page ───────────────────────────────────
 const T = {
@@ -348,11 +370,16 @@ function NetworkChartsSection({ groups, filteredGroups, locations, loading }) {
 const SHOW_OPTS = [5, 10, 15, 20, 25, 30, 50, 'All'];
 
 // ── Stock Breakdown by Colour & Size — with independent Show + common filter ─
-function StockBreakdownSection({ stateOptions }) {
-  // Common filters for both charts
-  const [filterState, setFilterState] = useState('');
-  const [filterCity,  setFilterCity]  = useState('');
-  const [cityOpts,    setCityOpts]    = useState([]);
+// Now also respects the v2 universal filter bar via the `v2Filters` prop —
+// every dropdown pick re-fetches both charts so the entire page narrows to
+// one consistent slice of the data.
+function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
+  // Common filters for both charts (local — kept for backward compat with the
+  // section's own state/city/category dropdowns)
+  const [filterState,    setFilterState]    = useState('');
+  const [filterCity,     setFilterCity]     = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [cityOpts,       setCityOpts]       = useState([]);
 
   // Independent Show per chart
   const [showColor, setShowColor] = useState(10);
@@ -363,26 +390,49 @@ function StockBreakdownSection({ stateOptions }) {
   const [sizeData,  setSizeData]  = useState([]);
   const [loading,   setLoading]   = useState(false);
 
-  const fetchBreakdown = useCallback(async (state, city) => {
+  // Build v2 query params from the universal filter bar — these are AND-ed
+  // with the section's own dropdowns so picking "Mens" globally + "Pune"
+  // locally narrows to Mens × Pune, exactly as the user expects.
+  const csv = (v) => Array.isArray(v) ? v.join(',') : (v || '');
+  const v2Params = useMemo(() => ({
+    gender:      csv(v2Filters.gender_name) || undefined,
+    sub_product: csv(v2Filters.sub_product) || undefined,
+    product:     csv(v2Filters.product)     || undefined,
+    style:       csv(v2Filters.style)       || undefined,
+    shade:       csv(v2Filters.shade)       || undefined,
+    color:       csv(v2Filters.color)       || undefined,
+    size:        csv(v2Filters.size)        || undefined,
+    season:      csv(v2Filters.season)      || undefined,
+    group_name:  csv(v2Filters.group_name)  || undefined,
+    store_code:  csv(v2Filters.store_code)  || undefined,
+    mode:        v2Filters.mode             || 'active',
+  }), [JSON.stringify(v2Filters)]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fetchBreakdown = useCallback(async (state, city, category, v2) => {
     setLoading(true);
     try {
       const params = {
-        state: state || undefined,
-        city:  city  || undefined,
+        state:    state    || csv(v2Filters.state) || undefined,
+        city:     city     || csv(v2Filters.city)  || undefined,
+        category: category || csv(v2Filters.category) || undefined,
+        ...v2,
       };
+      // locationService.list doesn't understand category — strip it for city opts
+      const locParams = { state: params.state, city: params.city, limit: 1 };
       const [colorRes, sizeRes, locRes] = await Promise.all([
         analyticsService.getColorDistribution(params),
         analyticsService.getSizeDistribution(params),
-        locationService.list({ ...params, limit: 1 }), // just for city options
+        locationService.list(locParams), // just for city options
       ]);
       setColorData(colorRes.data.data || []);
       setSizeData(sizeRes.data.data   || []);
       setCityOpts(locRes.data.cities  || []);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(v2Filters)]);
 
-  useEffect(() => { fetchBreakdown(filterState, filterCity); }, [filterState, filterCity, fetchBreakdown]);
+  useEffect(() => { fetchBreakdown(filterState, filterCity, filterCategory, v2Params); }, [filterState, filterCity, filterCategory, v2Params, fetchBreakdown]);
 
   // Sliced rows for each chart
   const colorRows = useMemo(() =>
@@ -405,8 +455,8 @@ function StockBreakdownSection({ stateOptions }) {
         axisBorder: { show: false }, axisTicks: { show: false },
       },
       yaxis: { labels: { style: { colors: T.primary, fontWeight: 800, fontSize: '11px' }, maxWidth: 120 } },
-      colors: ['#2563EB'],
-      fill: { type: 'gradient', gradient: { shade: 'light', type: 'horizontal', gradientToColors: ['#6366F1'], opacityFrom: 1, opacityTo: 0.8 } },
+      colors: ['#7C3AED'],
+      fill: { type: 'gradient', gradient: { shade: 'light', type: 'horizontal', gradientToColors: ['#C4B5FD'], opacityFrom: 1, opacityTo: 0.85 } },
       dataLabels: { enabled: true, formatter: v => fmtL(v), style: { fontSize: '10px', fontWeight: 800, colors: ['#fff'] }, dropShadow: { enabled: false } },
       grid: { borderColor: '#f1f5f9', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
       tooltip: { y: { formatter: (v, { dataPointIndex }) => `${colorRows[dataPointIndex]?.color_name || ''}: ${fmtNum(v)} units (${colorRows[dataPointIndex]?.pct_of_total || 0}%)` }, style: { fontSize: '12px', fontWeight: 700 } },
@@ -427,8 +477,8 @@ function StockBreakdownSection({ stateOptions }) {
         axisBorder: { show: false }, axisTicks: { show: false },
       },
       yaxis: { labels: { style: { colors: T.primary, fontWeight: 800, fontSize: '11px' }, maxWidth: 80 } },
-      colors: ['#059669'],
-      fill: { type: 'gradient', gradient: { shade: 'light', type: 'horizontal', gradientToColors: ['#34D399'], opacityFrom: 1, opacityTo: 0.8 } },
+      colors: ['#DC2626'],
+      fill: { type: 'gradient', gradient: { shade: 'light', type: 'horizontal', gradientToColors: ['#F87171'], opacityFrom: 1, opacityTo: 0.8 } },
       dataLabels: { enabled: true, formatter: v => fmtL(v), style: { fontSize: '10px', fontWeight: 800, colors: ['#fff'] }, dropShadow: { enabled: false } },
       grid: { borderColor: '#f1f5f9', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
       tooltip: { y: { formatter: (v, { dataPointIndex }) => `Size ${sizeRows[dataPointIndex]?.size || ''}: ${fmtNum(v)} units (${sizeRows[dataPointIndex]?.pct_of_total || 0}%)` }, style: { fontSize: '12px', fontWeight: 700 } },
@@ -465,6 +515,14 @@ function StockBreakdownSection({ stateOptions }) {
           </select>
           <ChevronIcon />
         </div>
+        {/* Category */}
+        <div style={{ position: 'relative' }}>
+          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
+            style={{ ...filterSelect, minWidth: 150 }} title="Filter by product category (matched on product name)">
+            {CATEGORY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <ChevronIcon />
+        </div>
         {/* City */}
         <div style={{ position: 'relative' }}>
           <select value={filterCity} onChange={e => setFilterCity(e.target.value)}
@@ -474,8 +532,8 @@ function StockBreakdownSection({ stateOptions }) {
           </select>
           <ChevronIcon />
         </div>
-        {(filterState || filterCity) && (
-          <button onClick={() => { setFilterState(''); setFilterCity(''); }}
+        {(filterState || filterCity || filterCategory) && (
+          <button onClick={() => { setFilterState(''); setFilterCity(''); setFilterCategory(''); }}
             style={{ border: `1.5px solid ${T.border}`, borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 800, color: T.primary, background: '#fff', cursor: 'pointer' }}>
             Clear
           </button>
@@ -555,12 +613,13 @@ function AllLocationsTable({
   loading,
   onFilterChange,
 }) {
-  const [search,  setSearch]  = useState('');
-  const [state,   setState]   = useState('');
-  const [city,    setCity]    = useState('');
-  const [channel, setChannel] = useState('');
-  const [sortBy,  setSortBy]  = useState('total_stock');
-  const [page,    setPage]    = useState(1);
+  const [search,   setSearch]   = useState('');
+  const [state,    setState]    = useState('');
+  const [city,     setCity]     = useState('');
+  const [channel,  setChannel]  = useState('');
+  const [category, setCategory] = useState('');
+  const [sortBy,   setSortBy]   = useState('total_stock');
+  const [page,     setPage]     = useState(1);
 
   const availableChannels = useMemo(() =>
     (groups || []).map(g => g.group_name).filter(Boolean).sort(),
@@ -568,18 +627,18 @@ function AllLocationsTable({
 
   // Notify parent to re-fetch whenever filters / page / sort change
   useEffect(() => {
-    onFilterChange({ search, state, city, group_name: channel, page, sort_by: sortBy });
+    onFilterChange({ search, state, city, group_name: channel, category, page, sort_by: sortBy });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, state, city, channel, page, sortBy]);
+  }, [search, state, city, channel, category, page, sortBy]);
 
   const totalRecords = Number(pagination?.total || 0);
   const totalPages   = Number(pagination?.totalPages || 1);
   const safePage     = Math.min(page, totalPages);
 
-  const hasFilter = search || state || city || channel;
+  const hasFilter = search || state || city || channel || category;
 
   const clearAll = () => {
-    setSearch(''); setState(''); setCity(''); setChannel(''); setPage(1);
+    setSearch(''); setState(''); setCity(''); setChannel(''); setCategory(''); setPage(1);
   };
 
   const globalOffset = (safePage - 1) * PAGE_SIZE_LOCS;
@@ -637,10 +696,21 @@ function AllLocationsTable({
           <ChevronIcon />
         </div>
 
+        {/* Category — filters total_stock per location to the selected category */}
+        <div style={{ position: 'relative' }}>
+          <select value={category} onChange={e => { setCategory(e.target.value); setPage(1); }}
+            style={{ ...filterSelect, minWidth: 150 }}
+            title="Filter stock by product category (matched on product name)">
+            {CATEGORY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <ChevronIcon />
+        </div>
+
         {/* Sort */}
         <div style={{ position: 'relative' }}>
           <select value={sortBy} onChange={e => { setSortBy(e.target.value); setPage(1); }} style={{ ...filterSelect, minWidth: 150 }}>
             <option value="total_stock">Sort: Total Stock</option>
+            <option value="total_value">Sort: Total Value</option>
             <option value="name">Sort: Name A–Z</option>
           </select>
           <ChevronIcon />
@@ -658,15 +728,15 @@ function AllLocationsTable({
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: T.bg }}>
-              {['#','Location Name','Channel / Group','Billing','State','City','Total Stock'].map(h => (
-                <th key={h} style={{ padding: '10px 14px', textAlign: ['Total Stock','#'].includes(h) ? 'right' : 'left', fontSize: 10, fontWeight: 900, color: T.primary, letterSpacing: '0.07em', textTransform: 'uppercase', borderBottom: `2px solid ${T.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+              {['#','Location Name','Channel / Group','Billing','State','City','Total Stock','Total Value'].map(h => (
+                <th key={h} style={{ padding: '10px 14px', textAlign: ['Total Stock','Total Value','#'].includes(h) ? 'right' : 'left', fontSize: 10, fontWeight: 900, color: T.primary, letterSpacing: '0.07em', textTransform: 'uppercase', borderBottom: `2px solid ${T.border}`, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading
               ? Array.from({ length: 12 }).map((_, i) => (
-                  <tr key={i}><td colSpan={7} style={{ padding: '10px 14px' }}><div style={{ height: 14, background: T.bg, borderRadius: 4 }} /></td></tr>
+                  <tr key={i}><td colSpan={8} style={{ padding: '10px 14px' }}><div style={{ height: 14, background: T.bg, borderRadius: 4 }} /></td></tr>
                 ))
               : locations.map((r, i) => {
                   const globalIdx = globalOffset + i;
@@ -690,12 +760,13 @@ function AllLocationsTable({
                       <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: T.muted, whiteSpace: 'nowrap' }}>{r.state || '—'}</td>
                       <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: T.muted, whiteSpace: 'nowrap' }}>{r.city || '—'}</td>
                       <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 900, color: T.primary, whiteSpace: 'nowrap' }}>{fmtNum(r.total_stock)}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 900, color: '#059669', whiteSpace: 'nowrap' }}>₹{fmtL(r.total_value)}</td>
                     </tr>
                   );
                 })
             }
             {!loading && locations.length === 0 && (
-              <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', fontSize: 13, fontWeight: 700, color: T.muted }}>No locations match your filters</td></tr>
+              <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', fontSize: 13, fontWeight: 700, color: T.muted }}>No locations match your filters</td></tr>
             )}
           </tbody>
         </table>
@@ -733,30 +804,64 @@ function AllLocationsTable({
 
 // ── Main Page ─────────────────────────────────────────────────────────────
 export default function NetworkPage() {
+  // ── v2 universal filter bar — URL-synced, drives the All Locations table ──
+  // Multi-select on every dimension. Active mode (default) hides the 350
+  // closed stores; All mode includes them. Location-side filters (state/city/
+  // group_name/store_code) are piped to locationService.list directly. SKU
+  // dimensions (gender/sub_product/style/...) flow through too but only
+  // narrow the per-location stock total — the table still shows every
+  // location matching the location-side filters with total_stock = 0 when
+  // no SKUs match.
+  const { filters: v2Filters, setFilter: setV2, clearAll: clearV2, activeCount: v2Active } =
+    useFilters({ defaults: { mode: 'active' }, persist: ['mode'] });
+
   // ── Table state (affected by filters) ─────────────────────────────────────
-  const [locations,     setLocations]     = useState([]);
-  const [pagination,    setPagination]    = useState(null);
-  const [cityOptions,   setCityOptions]   = useState([]);
-  const [filteredGroups,setFilteredGroups]= useState([]);
-  const [tableLoading,  setTableLoading]  = useState(true);
+  // Initialized from module-level cache so tab-switches don't refetch / flash.
+  const [locations,     setLocations]     = useState(() => getCached('net:table:locations') ?? []);
+  const [pagination,    setPagination]    = useState(() => getCached('net:table:pagination') ?? null);
+  const [cityOptions,   setCityOptions]   = useState(() => getCached('net:table:cities')    ?? []);
+  const [filteredGroups,setFilteredGroups]= useState(() => getCached('net:table:groups')    ?? []);
+  const [tableLoading,  setTableLoading]  = useState(() => !getCached('net:table:locations'));
 
   // ── Summary state (always unfiltered — KPIs + Channel Breakdown) ──────────
-  const [groupSummary,   setGroupSummary]   = useState([]);
-  const [networkSummary, setNetworkSummary] = useState(null);
-  const [stateOptions,   setStateOptions]   = useState([]);
-  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [groupSummary,   setGroupSummary]   = useState(() => getCached('net:sum:groups')   ?? []);
+  const [networkSummary, setNetworkSummary] = useState(() => getCached('net:sum:summary')  ?? null);
+  const [stateOptions,   setStateOptions]   = useState(() => getCached('net:sum:states')   ?? []);
+  const [summaryLoading, setSummaryLoading] = useState(() => !getCached('net:sum:summary'));
 
   // Server-side filters — driven by AllLocationsTable
   const [tableFilters, setTableFilters] = useState({ sort_by: 'total_stock', page: 1 });
 
-  // Fetch KPIs + Channel Breakdown — NO filters, always full network
-  const fetchSummaryData = useCallback(async () => {
-    setSummaryLoading(true);
+  // Fetch summary + groupSummary (drives ChannelBreakdownSection +
+  // NetworkChartsSection + StockBreakdownSection state list).
+  // Now accepts the full v2 filter set so the legacy chart sections also
+  // narrow with every dropdown pick — the WHOLE page speaks one filter.
+  const fetchSummaryData = useCallback(async (filters = {}) => {
+    if (!getCached('net:sum:summary')) setSummaryLoading(true);
     try {
-      const res = await locationService.list({ page: 1, limit: PAGE_SIZE_LOCS, sort_by: 'total_stock' });
-      setGroupSummary(res.data.groups    || []);
-      setNetworkSummary(res.data.summary || null);
-      setStateOptions(res.data.states    || []);
+      const res = await locationService.list({
+        page: 1, limit: PAGE_SIZE_LOCS, sort_by: 'total_stock',
+        mode:        filters.mode        || 'active',
+        state:       filters.state       || undefined,
+        city:        filters.city        || undefined,
+        group_name:  filters.group_name  || undefined,
+        store_code:  filters.store_code  || undefined,
+        gender:      filters.gender      || undefined,
+        sub_product: filters.sub_product || undefined,
+        product:     filters.product     || undefined,
+        style:       filters.style       || undefined,
+        shade:       filters.shade       || undefined,
+        color:       filters.color       || undefined,
+        size:        filters.size        || undefined,
+        season:      filters.season      || undefined,
+        category:    filters.category    || undefined,
+      });
+      const groups  = res.data.groups    || [];
+      const summary = res.data.summary   || null;
+      const states  = res.data.states    || [];
+      setGroupSummary(groups);     setCached('net:sum:groups',  groups);
+      setNetworkSummary(summary);  setCached('net:sum:summary', summary);
+      setStateOptions(states);     setCached('net:sum:states',  states);
     } catch (err) {
       toast.error('Failed to load network summary');
     } finally {
@@ -764,24 +869,73 @@ export default function NetworkPage() {
     }
   }, []);
 
-  // Fetch table rows only — passes all active filters, updates ONLY table state
+  // Fetch table rows AND piggy-back the summary/groups/states from the same
+  // /locations response. Eliminates the redundant fetchSummaryData call that
+  // was firing in parallel on every filter change (it hit the same endpoint
+  // with slightly different params, doubling backend load and adding ~1.5s
+  // of cold latency to every filter switch).
   const fetchTableData = useCallback(async (filters = {}) => {
-    setTableLoading(true);
+    const tableKey = `net:table:v4:${filters.sort_by || 'total_stock'}|${filters.page || 1}|m${filters.mode||'active'}|gn${filters.group_name||''}|st${filters.state||''}|ct${filters.city||''}|sc${filters.store_code||''}|q${filters.search||''}|cat${filters.category||''}|g${filters.gender||''}|sp${filters.sub_product||''}|pr${filters.product||''}|sty${filters.style||''}|sh${filters.shade||''}|cl${filters.color||''}|sz${filters.size||''}|se${filters.season||''}`;
+    const cached = getCached(tableKey);
+    if (cached) {
+      setLocations(cached.data);
+      setPagination(cached.pagination);
+      setCityOptions(cached.cities);
+      setFilteredGroups(cached.groups);
+      // Hydrate summary too — these came from the same /locations response.
+      if (cached.groups)   setGroupSummary(cached.groups);
+      if (cached.summary)  setNetworkSummary(cached.summary);
+      if (cached.states?.length) setStateOptions(cached.states);
+      setSummaryLoading(false);
+      setCached('net:table:locations', cached.data);
+      setCached('net:table:pagination', cached.pagination);
+      setCached('net:table:cities',     cached.cities);
+      setCached('net:table:groups',     cached.groups);
+      if (isFresh(tableKey)) { setTableLoading(false); return; }
+    } else {
+      setTableLoading(true);
+    }
     try {
       const params = {
-        page:       filters.page       || 1,
-        limit:      PAGE_SIZE_LOCS,
-        group_name: filters.group_name || undefined,
-        state:      filters.state      || undefined,
-        city:       filters.city       || undefined,
-        search:     filters.search     || undefined,
-        sort_by:    filters.sort_by    || 'total_stock',
+        page:        filters.page        || 1,
+        limit:       PAGE_SIZE_LOCS,
+        group_name:  filters.group_name  || undefined,
+        state:       filters.state       || undefined,
+        city:        filters.city        || undefined,
+        search:      filters.search      || undefined,
+        category:    filters.category    || undefined,
+        sort_by:     filters.sort_by     || 'total_stock',
+        // ── v2 SKU + lifecycle filters threaded through ──
+        gender:      filters.gender      || undefined,
+        sub_product: filters.sub_product || undefined,
+        product:     filters.product     || undefined,
+        style:       filters.style       || undefined,
+        shade:       filters.shade       || undefined,
+        color:       filters.color       || undefined,
+        size:        filters.size        || undefined,
+        season:      filters.season      || undefined,
+        store_code:  filters.store_code  || undefined,
+        mode:        filters.mode        || 'active',
       };
       const res = await locationService.list(params);
-      setLocations(res.data.data        || []);
-      setPagination(res.data.pagination || null);
-      setCityOptions(res.data.cities    || []);
-      setFilteredGroups(res.data.groups || []);
+      const data       = res.data.data        || [];
+      const pag        = res.data.pagination  || null;
+      const cities     = res.data.cities      || [];
+      const groupsR    = res.data.groups      || [];
+      const summaryR   = res.data.summary     || null;
+      const statesR    = res.data.states      || [];
+      setLocations(data);        setCached('net:table:locations',  data);
+      setPagination(pag);        setCached('net:table:pagination', pag);
+      setCityOptions(cities);    setCached('net:table:cities',     cities);
+      setFilteredGroups(groupsR);setCached('net:table:groups',     groupsR);
+      // Piggy-back the summary block from the SAME response so we don't fire
+      // a second /locations call (fetchSummaryData) on every filter change.
+      // Eliminates the duplicate ~1.5s cold call that was driving the 2-3s lag.
+      setGroupSummary(groupsR);    setCached('net:sum:groups',  groupsR);
+      if (summaryR) setNetworkSummary(summaryR), setCached('net:sum:summary', summaryR);
+      if (statesR.length) setStateOptions(statesR), setCached('net:sum:states', statesR);
+      setSummaryLoading(false);
+      setCached(tableKey, { data, pagination: pag, cities, groups: groupsR, summary: summaryR, states: statesR });
     } catch (err) {
       toast.error('Failed to load locations');
     } finally {
@@ -789,11 +943,50 @@ export default function NetworkPage() {
     }
   }, []);
 
-  // Initial load — both in parallel
+  // Initial load — both in parallel, skipped if cache is fresh
   useEffect(() => {
-    fetchSummaryData();
+    if (isFresh('net:sum:summary')) {
+      setSummaryLoading(false);
+    } else {
+      fetchSummaryData();
+    }
     fetchTableData({ sort_by: 'total_stock' });
   }, [fetchSummaryData, fetchTableData]);
+
+  // ── v2 FilterBar → re-fetch EVERYTHING on the page ──────────────────────
+  // When the universal filter bar changes, refetch BOTH summary (KPIs +
+  // ChannelBreakdown + NetworkCharts) AND table — so the entire page speaks
+  // one consistent filter. Pulse component re-fetches independently via its
+  // own effect on `filters` prop. Multi-select arrays joined as CSV strings
+  // — backend's location.controller accepts CSV for every dimension.
+  const v2FiltersJson = JSON.stringify(v2Filters); // deps key
+  useEffect(() => {
+    const csv = (v) => Array.isArray(v) ? v.join(',') : (v || '');
+    const merged = {
+      ...tableFilters,
+      page:        1,
+      state:       csv(v2Filters.state)       || undefined,
+      city:        csv(v2Filters.city)        || undefined,
+      group_name:  csv(v2Filters.group_name)  || undefined,
+      gender:      csv(v2Filters.gender_name) || undefined,
+      sub_product: csv(v2Filters.sub_product) || undefined,
+      product:     csv(v2Filters.product)     || undefined,
+      style:       csv(v2Filters.style)       || undefined,
+      shade:       csv(v2Filters.shade)       || undefined,
+      color:       csv(v2Filters.color)       || undefined,
+      size:        csv(v2Filters.size)        || undefined,
+      season:      csv(v2Filters.season)      || undefined,
+      category:    csv(v2Filters.category)    || undefined,
+      store_code:  csv(v2Filters.store_code)  || undefined,
+      mode:        v2Filters.mode             || 'active',
+    };
+    setTableFilters(prev => ({ ...prev, ...merged }));
+    // ONE call to /locations: returns rows + groups + summary + states + cities.
+    // fetchSummaryData no longer fires on filter change (it duplicated the
+    // backend work; that's now piggy-backed onto fetchTableData's response).
+    fetchTableData(merged);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v2FiltersJson]);
 
   // Table filter changes → only re-fetch table, never touch summary
   const handleFilterChange = useCallback((filters) => {
@@ -801,11 +994,18 @@ export default function NetworkPage() {
     fetchTableData(filters);
   }, [fetchTableData]);
 
-  // Summary KPIs — always from unfiltered summary data
-  const totalLocations = Number(networkSummary?.total_locations || 0);
-  const totalStock     = Number(networkSummary?.total_stock     || 0);
-  const totalGroups    = groupSummary.length;
-  const totalStates    = stateOptions.length;
+  // ── KPI source values ─────────────────────────────────────────────────────
+  // Backend now returns Active/Closed splits inline (one query, no extra
+  // round-trip), so users always see the full picture and the active share.
+  const totalLocations  = Number(networkSummary?.total_locations  || 0);
+  const activeLocations = Number(networkSummary?.active_locations || 0);
+  const closedLocations = Number(networkSummary?.closed_locations || 0);
+  const totalStock      = Number(networkSummary?.total_stock      || 0);
+  const activeStock     = Number(networkSummary?.active_stock     || 0);
+  const closedStock     = Number(networkSummary?.closed_stock     || 0);
+  const uniqueSkus      = Number(networkSummary?.unique_skus      || 0);
+  const totalGroups     = groupSummary.length;
+  const totalStates     = stateOptions.length;
 
   // Top group by stock
   const topGroup = useMemo(() => {
@@ -816,13 +1016,32 @@ export default function NetworkPage() {
   return (
     <DashboardLayout title="Network" subtitle="Retail network — inventory positions across all locations and channels">
 
-      {/* ── KPI Cards — always unfiltered ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 28 }}>
+      {/* ── v2 Universal FilterBar + active-filter chips ──────────────────
+          Sticky glass surface with 13 multi-select dimensions, mode toggle
+          (Active vs All), and a chips bar that materialises every active
+          filter as a removable pill — the single biggest UX win over Power
+          BI/Tableau/Zoho where filters hide in side panels. ─────────────── */}
+      <FilterBar
+        filters={v2Filters}
+        setFilter={setV2}
+        clearAll={clearV2}
+        activeCount={v2Active}
+      />
+      <FilterChips
+        filters={v2Filters}
+        setFilter={setV2}
+        clearAll={clearV2}
+      />
+
+      {/* ── Network Pulse — god-tier hero section ──
+          Hero KPI strip with current-status splits · Pareto reveal ·
+          Top stores · Top states · Channel mix · Action panel.
+          One round-trip, all 13 v2 filters narrow every widget. ─────────────*/}
+      <NetworkPulse filters={v2Filters} />
+
+      {/* ── Legacy KPI mini-row (unfiltered, retained for back-compat) ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 28, opacity: 0 /* hidden — replaced by NetworkPulse above */, height: 0, overflow: 'hidden' }}>
         <KpiCard icon={Globe}      label="Total Locations" value={fmtNum(totalLocations)} sub={`${totalStates} states covered`}                                                       accent="#0f172a" loading={summaryLoading} />
-        <KpiCard icon={Package}    label="Network Stock"   value={fmtL(totalStock)}        sub="total units on hand"                                                                   accent="#2563EB" loading={summaryLoading} />
-        <KpiCard icon={Layers}     label="Channels"        value={fmtNum(totalGroups)}      sub="distinct channel groups"                                                              accent="#7C3AED" loading={summaryLoading} />
-        <KpiCard icon={MapPin}     label="States"          value={fmtNum(totalStates)}      sub="geographic coverage"                                                                  accent="#059669" loading={summaryLoading} />
-        <KpiCard icon={TrendingUp} label="Top Channel"     value={topGroup?.group_name || '—'} sub={topGroup ? `${fmtL(topGroup.stock)} units · ${fmtNum(topGroup.count)} stores` : 'loading…'} accent="#D97706" loading={summaryLoading} />
       </div>
 
       {/* ── Refresh — refreshes both summary and table ── */}
@@ -846,8 +1065,8 @@ export default function NetworkPage() {
       </div>
       <NetworkChartsSection groups={groupSummary} filteredGroups={filteredGroups} locations={locations} loading={summaryLoading} />
 
-      {/* ── Colour & Size Stock Distribution ── */}
-      <StockBreakdownSection stateOptions={stateOptions} />
+      {/* ── Colour & Size Stock Distribution — narrows with v2 filter bar ── */}
+      <StockBreakdownSection stateOptions={stateOptions} v2Filters={v2Filters} />
 
       {/* ── All Locations Table ── */}
       <SectionTitle icon={Globe} label="All Locations — Full Network" />

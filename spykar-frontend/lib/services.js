@@ -17,6 +17,7 @@ export const inventoryService = {
   getExecutiveSummary: () => api.get('/inventory/executive-summary'),
   getSnapshot: (params = {}) => api.get('/inventory/snapshot', { params }),
   getAlerts: () => api.get('/inventory/alerts'),
+  getAlertsSummary: () => api.get('/inventory/alerts/summary'),
   getMovements: (params = {}) => api.get('/inventory/movements', { params }),
   getAgeing: (params = {}) => api.get('/inventory/ageing', { params }),
   exportSnapshot: (params = {}) => api.get('/inventory/snapshot/export', {
@@ -49,6 +50,8 @@ export const locationService = {
   getSummary: (id) => api.get(`/locations/${id}/summary`),
   create: (data) => api.post('/locations', data),
   update: (id, data) => api.patch(`/locations/${id}`, data),
+  // v2 god-tier network analytics — single round-trip for every hero widget
+  getNetworkPulse: (params = {}) => api.get('/locations/network-pulse', { params }),
 };
 
 // ─── SKUs ─────────────────────────────────────────────────────────────────────
@@ -100,4 +103,14 @@ export const syncService = {
   getStatus: () => api.get('/sync/status'),
   getLogs: () => api.get('/sync/logs'),
   trigger: () => api.post('/sync/trigger'),
+};
+
+// ─── Filters (universal v2 dashboard filter bar) ──────────────────────────────
+// Bulk fetches every drill-down dropdown in one round-trip; single-dimension
+// fetch is used when the user re-opens a dropdown so we can re-narrow under
+// the latest cross-filter state.
+export const filterService = {
+  getAllOptions:    (params = {}) => api.get('/filters/options', { params }),
+  getDimensionOptions: (dimension, params = {}) =>
+    api.get(`/filters/options/${dimension}`, { params }),
 };

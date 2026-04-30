@@ -1,5 +1,48 @@
+import { useEffect, useRef, useState } from 'react';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { formatNumber, formatCurrency } from '../../lib/utils';
+
+// ── CountUp — smooth animated number transitions ─────────────────────────────
+// World-class dashboards (Stripe, Linear, Vercel) animate KPI numbers when
+// they change so the user can SEE that the metric updated. Static jumps feel
+// dead. We use a 700ms ease-out curve — slow enough to track with the eye,
+// fast enough to feel snappy. Respects prefers-reduced-motion.
+//
+// First mount: snaps directly to the value (no count-up from zero on every
+// page load — that's annoying). Only animates when the underlying number
+// actually changes after mount.
+function useCountUp(value, duration = 700) {
+  const [shown, setShown] = useState(value);
+  const fromRef = useRef(value);
+  const rafRef  = useRef(null);
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    if (typeof value !== 'number' || isNaN(value)) { setShown(value); return; }
+    if (!mounted.current) { mounted.current = true; setShown(value); fromRef.current = value; return; }
+
+    const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) { setShown(value); fromRef.current = value; return; }
+
+    const from   = Number(fromRef.current) || 0;
+    const to     = Number(value) || 0;
+    const start  = performance.now();
+    const ease   = (t) => 1 - Math.pow(1 - t, 3); // cubic-out
+
+    const tick = (now) => {
+      const t = Math.min((now - start) / duration, 1);
+      const v = from + (to - from) * ease(t);
+      setShown(v);
+      if (t < 1) rafRef.current = requestAnimationFrame(tick);
+      else { setShown(to); fromRef.current = to; }
+    };
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [value, duration]);
+
+  return shown;
+}
 
 // Color presets — each card gets a personality
 export const KPI_COLORS = {
@@ -32,9 +75,13 @@ export default function KpiCard({
   const resolvedColor = iconColor || preset.color;
   const resolvedBg    = iconBg    || preset.bg;
 
+  // Animate numeric KPI values; pass strings through untouched. Format AFTER
+  // the animated number lands in `shown` so commas/units recompute every frame.
+  const animatable = !loading && (format === 'number' || format === 'currency') && typeof value === 'number';
+  const shown = useCountUp(animatable ? value : null, 700);
   const displayValue = loading ? null
-    : format === 'currency' ? formatCurrency(value)
-    : format === 'number'   ? formatNumber(value)
+    : format === 'currency' ? formatCurrency(animatable ? Math.round(shown) : value)
+    : format === 'number'   ? formatNumber(animatable ? Math.round(shown) : value)
     : value;
 
   const isUp   = change > 0;

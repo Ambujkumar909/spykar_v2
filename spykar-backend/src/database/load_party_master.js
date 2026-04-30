@@ -115,7 +115,7 @@ function col(row, ...names) {
 }
 
 // ─── Upsert a single row into PostgreSQL locations table ─────────────────────
-async function upsertRow(pgClient, row, zoneCache) {
+async function upsertRow(pgClient, row, zoneCache, lastMovementCache) {
   // Adjust these field names to match actual AIgetParty column names if needed.
   // Running with --force will print the first row's column names for reference.
   const storeNumber = String(col(row, 'STORENUMBER', 'StoreNumber', 'store_number', 'STORE_NO') || '').trim();
@@ -128,6 +128,15 @@ async function upsertRow(pgClient, row, zoneCache) {
   const phone       = col(row, 'PHONE', 'Phone', 'CONTACTNO', 'ContactNo', 'MOBILE');
   const email       = col(row, 'EMAIL', 'Email');
   const externalId  = storeNumber;
+
+  // ── Store lifecycle (ShopClosed flag from AIgetParty) ───────────────────────
+  // ShopClosed comes through as boolean true/false (or 1/0). Closed stores get
+  // closed_on = MAX(moved_at) from inventory_movements as the most reliable
+  // proxy for "when did this store stop trading" — populated lazily in main()
+  // and threaded in through lastMovementCache (Map: external_id → ISO date).
+  const shopClosedRaw = col(row, 'ShopClosed', 'SHOPCLOSED', 'shopclosed', 'shop_closed');
+  const shopClosed    = shopClosedRaw === true || shopClosedRaw === 1 || String(shopClosedRaw).toLowerCase() === 'true';
+  const closedOn      = shopClosed ? (lastMovementCache?.get(externalId) || null) : null;
 
   if (!externalId) return { ok: false }; // skip rows with no identifier
 
@@ -158,8 +167,9 @@ async function upsertRow(pgClient, row, zoneCache) {
   const res = await pgClient.query(`
     INSERT INTO locations
       (code, name, type, group_name, zone_id, city, state, pincode,
-       contact_phone, contact_email, gstin, external_id, is_active)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, true)
+       contact_phone, contact_email, gstin, external_id, is_active,
+       shop_closed, closed_on)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, true, $13, $14)
     ON CONFLICT (external_id) DO UPDATE SET
       code          = EXCLUDED.code,
       name          = EXCLUDED.name,
@@ -173,6 +183,8 @@ async function upsertRow(pgClient, row, zoneCache) {
       contact_email = EXCLUDED.contact_email,
       gstin         = EXCLUDED.gstin,
       is_active     = true,
+      shop_closed   = EXCLUDED.shop_closed,
+      closed_on     = EXCLUDED.closed_on,
       updated_at    = NOW()
     RETURNING (xmax = 0) AS is_new
   `, [
@@ -188,9 +200,11 @@ async function upsertRow(pgClient, row, zoneCache) {
     email   || null,
     gstin   || null,
     externalId,
+    shopClosed,
+    closedOn,
   ]);
 
-  return { ok: true, isNew: res.rows[0]?.is_new === true };
+  return { ok: true, isNew: res.rows[0]?.is_new === true, closed: shopClosed };
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -242,18 +256,41 @@ async function main() {
     console.log(' ', Object.keys(rows[0]).join(', '));
     console.log('');
 
+    // ── Build lastMovementCache: external_id → MAX(moved_at)::date ─────────────
+    // Used to populate `closed_on` for stores flagged ShopClosed=true. The last
+    // movement is the most reliable proxy for "when did this store stop trading"
+    // — better than a hardcoded date and better than NULL (which would lose the
+    // ability to filter "stores closed in 2025" in the dashboard's mode toggle).
+    console.log('Resolving last-movement-date per store (for closed_on)...');
+    const pg2 = await pgPool.connect();
+    const lastMovementCache = new Map();
+    try {
+      const lm = await pg2.query(`
+        SELECT l.external_id, MAX(m.moved_at)::date AS last_moved
+        FROM locations l
+        LEFT JOIN inventory_movements m ON m.location_id = l.id
+        WHERE l.external_id IS NOT NULL
+        GROUP BY l.external_id
+      `);
+      lm.rows.forEach(r => { if (r.last_moved) lastMovementCache.set(r.external_id, r.last_moved); });
+      console.log(`  ✓ ${lastMovementCache.size} stores have movement history`);
+    } finally {
+      pg2.release();
+    }
+
     // Upsert into PostgreSQL
     const pg       = await pgPool.connect();
     const zoneCache = new Map();
-    let newCount = 0, updCount = 0, skipCount = 0;
+    let newCount = 0, updCount = 0, skipCount = 0, closedCount = 0;
 
     try {
       for (let i = 0; i < rows.length; i++) {
         try {
-          const { ok, isNew } = await upsertRow(pg, rows[i], zoneCache);
+          const { ok, isNew, closed } = await upsertRow(pg, rows[i], zoneCache, lastMovementCache);
           if (!ok)      { skipCount++; continue; }
           if (isNew)    newCount++;
           else          updCount++;
+          if (closed)   closedCount++;
         } catch (err) {
           console.error(`\nRow ${i} error:`, err.message);
           skipCount++;
@@ -269,12 +306,37 @@ async function main() {
       pg.release();
     }
 
+    // ── Reconcile orphans: stores in PG but not in this AIgetParty refresh ──
+    // Soft-archive them (is_active=false) so dashboard queries hide them but
+    // their inventory_movements / inventory_snapshot history is preserved for
+    // historical reports. Without this step, stale ERP rows would inflate the
+    // "active" count beyond what the user sees in their source system.
+    const erpExternalIds = new Set(rows.map(r => String(col(r, 'STORENUMBER', 'StoreNumber') || '').trim()).filter(Boolean));
+    const reconcile = await pgPool.connect();
+    try {
+      const orphan = await reconcile.query(`
+        UPDATE locations
+           SET is_active = false,
+               shop_closed = false,
+               closed_on  = NULL,
+               updated_at = NOW()
+         WHERE external_id IS NOT NULL
+           AND is_active = true
+           AND NOT (external_id = ANY($1::text[]))
+      `, [[...erpExternalIds]]);
+      if (orphan.rowCount > 0) {
+        console.log(`  Orphaned   : ${orphan.rowCount} (in PG but not in AIgetParty — soft-archived)`);
+      }
+    } finally { reconcile.release(); }
+
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log('\n' + '─'.repeat(60));
     console.log(`Done in ${elapsed}s`);
-    console.log(`  New      : ${newCount}`);
-    console.log(`  Updated  : ${updCount}`);
-    console.log(`  Skipped  : ${skipCount}`);
+    console.log(`  New        : ${newCount}`);
+    console.log(`  Updated    : ${updCount}`);
+    console.log(`  Skipped    : ${skipCount}`);
+    console.log(`  Closed     : ${closedCount}`);
+    console.log(`  Active     : ${(newCount + updCount) - closedCount}`);
     console.log('─'.repeat(60));
 
   } finally {

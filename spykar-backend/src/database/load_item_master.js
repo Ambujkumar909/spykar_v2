@@ -127,6 +127,26 @@ function buildSkuCode(row) {
   return { barcode, skuCode };
 }
 
+// HSN → GST rate (apparel + accessories rules current as of FY26)
+//   Apparel HSN 6101-6217 / 5208 / 5407: 5% if MRP ≤ ₹1000, else 12%
+//   Accessories / footwear (HSN 4202, 6403, 6404, 9404): flat 18%
+//   Personal-care / fragrance (HSN 33xx): 18%
+//   Default fallback: 12% (median for the catalog)
+function deriveGstRate(hsn, mrp) {
+  if (!hsn) return 12.0;
+  const code = String(hsn).replace(/[^0-9]/g, '');
+  if (!code) return 12.0;
+  // Apparel HSN family
+  if (/^(61|62|52|54)/.test(code)) return (mrp && mrp <= 1000) ? 5.0 : 12.0;
+  // Footwear / accessories / bags
+  if (/^(64|42|94)/.test(code))    return 18.0;
+  // Personal care / fragrance
+  if (/^33/.test(code))            return 18.0;
+  // Electronics (the headphone HSN 8518)
+  if (/^85/.test(code))            return 18.0;
+  return 12.0;
+}
+
 function transformRow(row, skuCodeCounts) {
   const barcode      = String(row.Barcode      || '').trim();
   const mrpRaw       = row.MRP;
@@ -137,6 +157,7 @@ function transformRow(row, skuCodeCounts) {
   const product      = String(row.product      || '').trim();   // e.g. PROMOTIONAL ITEMS
   const category     = String(row.Category     || '').trim();   // e.g. ACCESSORIES / DENIM
   const hsnCode      = String(row.HSN          || '').trim();
+  const hitName      = String(row.hitname      || '').trim();   // composite display name
   const brand        = String(row.BRANDNAME    || 'SPYKAR').trim();
   const gender       = String(row.GENDERNAME   || '').trim();
   const fitType      = String(row.FITNAME      || '').replace(/<+/g, '').trim();
@@ -155,6 +176,7 @@ function transformRow(row, skuCodeCounts) {
     : baseSkuCode;
   const mrp       = mrpRaw ? parseFloat(mrpRaw) : null;
   const costPrice = mrp    ? mrp * 0.45          : null;
+  const gstRate   = deriveGstRate(hsnCode, mrp);
 
   // productName: prefer subproduct, fallback to product
   const productName = subproduct || product || category;
@@ -175,6 +197,18 @@ function transformRow(row, skuCodeCounts) {
     styleCode,
     brand,
     styleVariant, // InforItemCode — critical for SalesAI SKU lookup
+    // ── New v2 dashboard columns (matched 1:1 to Item_spykar source columns) ──
+    style:         styleCode,        // mirrors style_code for the new filter dropdowns
+    shade:         color,
+    subProduct:    subproduct,
+    product,
+    categoryNorm:  category,
+    hitName,
+    genderName:    gender,
+    fitName:       fitType,
+    inforItemCode: styleVariant,
+    inforStyle:    styleBase,
+    gstRate,
   };
 }
 
@@ -183,40 +217,62 @@ function transformRow(row, skuCodeCounts) {
 async function upsertBatch(client, rows) {
   if (!rows.length) return { newRows: 0, updated: 0 };
 
-  // 15 columns per row
+  // 26 columns per row (15 legacy + 11 new v2 columns)
+  const COLS = 26;
   const placeholders = rows.map((_, i) => {
-    const base = i * 15;
-    return `($${base+1},$${base+2},$${base+3},$${base+4},$${base+5},$${base+6},$${base+7},$${base+8},$${base+9},$${base+10},$${base+11},$${base+12},$${base+13},$${base+14},$${base+15})`;
+    const base = i * COLS;
+    const slots = [];
+    for (let k = 1; k <= COLS; k++) slots.push(`$${base+k}`);
+    return `(${slots.join(',')})`;
   }).join(',\n  ');
 
   const values = rows.flatMap(r => [
+    // Legacy columns
     r.skuCode, r.barcode, r.productName, r.colorCode, r.colorName,
     r.size, r.fitType, r.mrp, r.costPrice, r.hsnCode,
     r.gender, r.season, r.styleCode, r.brand, r.styleVariant,
+    // New v2 columns (1:1 from Item_spykar)
+    r.style, r.shade, r.subProduct, r.product, r.categoryNorm,
+    r.hitName, r.genderName, r.fitName, r.inforItemCode, r.inforStyle,
+    r.gstRate,
   ]);
 
   const text = `
     INSERT INTO skus
       (sku_code, external_id, product_name, color_code, color_name,
        size, fit_type, mrp, cost_price, hsn_code,
-       gender, season, style_code, brand, style_variant)
+       gender, season, style_code, brand, style_variant,
+       style, shade, sub_product, product, category_norm,
+       hit_name, gender_name, fit_name, infor_item_code, infor_style,
+       gst_rate)
     VALUES
       ${placeholders}
     ON CONFLICT (external_id) DO UPDATE SET
-      product_name   = EXCLUDED.product_name,
-      color_code     = EXCLUDED.color_code,
-      color_name     = EXCLUDED.color_name,
-      size           = EXCLUDED.size,
-      fit_type       = EXCLUDED.fit_type,
-      mrp            = EXCLUDED.mrp,
-      cost_price     = EXCLUDED.cost_price,
-      hsn_code       = EXCLUDED.hsn_code,
-      gender         = EXCLUDED.gender,
-      season         = EXCLUDED.season,
-      style_code     = EXCLUDED.style_code,
-      brand          = EXCLUDED.brand,
-      style_variant  = EXCLUDED.style_variant,
-      updated_at     = NOW()
+      product_name    = EXCLUDED.product_name,
+      color_code      = EXCLUDED.color_code,
+      color_name      = EXCLUDED.color_name,
+      size            = EXCLUDED.size,
+      fit_type        = EXCLUDED.fit_type,
+      mrp             = EXCLUDED.mrp,
+      cost_price      = EXCLUDED.cost_price,
+      hsn_code        = EXCLUDED.hsn_code,
+      gender          = EXCLUDED.gender,
+      season          = EXCLUDED.season,
+      style_code      = EXCLUDED.style_code,
+      brand           = EXCLUDED.brand,
+      style_variant   = EXCLUDED.style_variant,
+      style           = EXCLUDED.style,
+      shade           = EXCLUDED.shade,
+      sub_product     = EXCLUDED.sub_product,
+      product         = EXCLUDED.product,
+      category_norm   = EXCLUDED.category_norm,
+      hit_name        = EXCLUDED.hit_name,
+      gender_name     = EXCLUDED.gender_name,
+      fit_name        = EXCLUDED.fit_name,
+      infor_item_code = EXCLUDED.infor_item_code,
+      infor_style     = EXCLUDED.infor_style,
+      gst_rate        = EXCLUDED.gst_rate,
+      updated_at      = NOW()
     RETURNING (xmax = 0) AS is_new
   `;
 

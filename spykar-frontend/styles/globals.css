@@ -138,6 +138,55 @@ body {
 ::-webkit-scrollbar-thumb { background: #FCA5A5; border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: #F87171; }
 
+/* ─── Premium focus ring — accessible and elegant ──────────────────────── */
+/* Visible only on keyboard navigation (`:focus-visible`) — clean for mouse,
+   crisp ring for keyboard. The ring inherits the brand accent so every
+   interactive surface speaks the same visual language. */
+*:focus { outline: none; }
+*:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+  transition: outline-offset 120ms ease;
+}
+button:focus-visible, a:focus-visible {
+  outline-offset: 3px;
+}
+
+/* ─── Selection — branded and clean ────────────────────────────────────── */
+::selection {
+  background: var(--accent-glow);
+  color: var(--text-primary);
+}
+
+/* ─── Skeleton — elite shimmer (left → right wave, not a flat pulse) ──── */
+/* The Stripe/Linear shimmer: a soft gradient sweeps across the surface so
+   loading content feels ALIVE, not paused. Critical for "perceived perf". */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 0%,
+    rgba(255,255,255,0.85) 50%,
+    var(--bg-elevated) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeletonWave 1.5s ease-in-out infinite;
+  border-radius: 6px;
+}
+@keyframes skeletonWave {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ─── Smooth FOUC-free font swap ─────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* ─── Headings ───────────────────────────────────────────────────────────── */
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
@@ -152,11 +201,13 @@ h1, h2, h3, h4, h5, h6 {
 
 .main-content {
   flex: 1;
+  min-width: 0;
   margin-left: var(--sidebar-width);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   background: var(--bg-canvas);
+  overflow-x: hidden;
 }
 
 .page-content {
@@ -618,3 +669,256 @@ aside {
   color: var(--text-muted);
   font-family: var(--font-body);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BARS — PREMIUM MINIMALIST (reference-matched)
+   ────────────────────────────────────────────────────────────────────────
+   Principle: each chart keeps its OWN native colour from its config — we
+   never override `fill`. Within a chart, bars cycle between 3 subtle
+   *depth treatments* (deep / standard / soft) so every bar feels
+   considered without the chart ever becoming a rainbow. This is the
+   "single-hue premium dashboard" look from the reference.
+
+   Scope: strictly `.apexcharts-bar-series .apexcharts-series path`.
+   No fill colour is set. No font / tooltip / label / legend touched.
+═══════════════════════════════════════════════════════════════════════════ */
+
+/* Base: buttery transitions for style/opacity changes and hover */
+.apexcharts-bar-series .apexcharts-series path {
+  transition:
+    filter 300ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform-box: fill-box;
+  transform-origin: left center;
+}
+
+/* ── VARIANT A ── Anchor — crisp presence, refined single floor shadow */
+.apexcharts-bar-series .apexcharts-series path:nth-child(3n+1) {
+  filter:
+    drop-shadow(0 1px 2px rgba(15, 23, 42, 0.10))
+    drop-shadow(0 4px 10px rgba(15, 23, 42, 0.08));
+}
+
+/* ── VARIANT B ── Lift — subtle brightness & double-layer depth */
+.apexcharts-bar-series .apexcharts-series path:nth-child(3n+2) {
+  filter:
+    drop-shadow(0 2px 4px rgba(15, 23, 42, 0.12))
+    drop-shadow(0 8px 18px rgba(15, 23, 42, 0.08))
+    brightness(1.04);
+}
+
+/* ── VARIANT C ── Soft — restrained opacity, widened diffuse shadow */
+.apexcharts-bar-series .apexcharts-series path:nth-child(3n) {
+  opacity: 0.88;
+  filter:
+    drop-shadow(0 1px 2px rgba(15, 23, 42, 0.08))
+    drop-shadow(0 6px 20px rgba(15, 23, 42, 0.07));
+}
+
+/* ── Hover ── sibling bars recede, hovered bar takes centre stage
+             — no colour shift, just elegant depth + lift         */
+.apexcharts-bar-series:hover .apexcharts-series path { opacity: 0.45; }
+.apexcharts-bar-series .apexcharts-series path:hover {
+  opacity: 1 !important;
+  transform: scaleY(1.035);
+  filter:
+    drop-shadow(0 4px 10px rgba(15, 23, 42, 0.18))
+    drop-shadow(0 12px 28px rgba(15, 23, 42, 0.14))
+    brightness(1.06) saturate(1.08) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   END BARS — PREMIUM MINIMALIST
+═══════════════════════════════════════════════════════════════════════════ */
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CHART SURROUND — designer polish layer
+   ────────────────────────────────────────────────────────────────────────
+   50-year-veteran brief: the bar IS the hero — everything around it must
+   disappear just enough to let the hero sing, yet reveal itself as
+   impossibly refined on close inspection. Pixel-precise. No detail
+   shouted, every detail felt.
+
+   Strict boundaries:
+     • Bars  → NOT touched (ruled by the block above)
+     • Data  → NOT touched (no content / value / label text changed)
+     • Fonts → NOT touched (no font-family, font-size, font-weight changes)
+     • Only visual scaffolding: grid, axis lines, tooltip surfaces, legend
+       chips, pie/line/area aesthetics, markers, mount reveal.
+═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Chart reveal — cinematic lift-in ──────────────────────────────── */
+@keyframes chartEntrance {
+  0%   { opacity: 0; transform: translateY(10px) scale(0.98); filter: blur(8px); }
+  55%  { opacity: 1; filter: blur(0); }
+  100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .apexcharts-canvas {
+    animation: chartEntrance 780ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+.apexcharts-canvas svg { overflow: visible; }
+
+/* ── 2. Grid lines — whisper-soft dashed guides ───────────────────────── */
+.apexcharts-grid line,
+.apexcharts-gridline {
+  stroke: rgba(15, 23, 42, 0.055) !important;
+  stroke-dasharray: 3 6;
+}
+.apexcharts-grid-borders line { stroke: rgba(15, 23, 42, 0.07) !important; }
+
+/* ── 3. Axis baseline — barely there, but there ───────────────────────── */
+.apexcharts-xaxis line,
+.apexcharts-yaxis line { stroke: rgba(15, 23, 42, 0.09) !important; }
+.apexcharts-xaxis-tick,
+.apexcharts-yaxis-tick { stroke: rgba(15, 23, 42, 0.12) !important; }
+
+/* ── 4. Pie / Donut — glass enamel slices, cinematic hover isolation ── */
+.apexcharts-pie-series path,
+.apexcharts-pie .apexcharts-slices path {
+  filter:
+    drop-shadow(0 2px 4px rgba(15, 23, 42, 0.10))
+    drop-shadow(0 8px 22px rgba(15, 23, 42, 0.10));
+  transition:
+    filter 320ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 420ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 280ms ease;
+  transform-origin: center center;
+  transform-box: fill-box;
+}
+.apexcharts-pie:hover .apexcharts-pie-series path { opacity: 0.55; }
+.apexcharts-pie-series path:hover {
+  opacity: 1 !important;
+  filter:
+    drop-shadow(0 6px 14px rgba(15, 23, 42, 0.20))
+    drop-shadow(0 14px 36px rgba(192, 57, 43, 0.30))
+    brightness(1.10) saturate(1.18);
+  transform: translate(0, -3px) scale(1.04);
+}
+
+/* ── 5. Line / Area — precision stroke with soft aura ─────────────────── */
+.apexcharts-line .apexcharts-series path[stroke]:not([stroke="none"]),
+.apexcharts-area .apexcharts-series path[stroke]:not([stroke="none"]) {
+  filter: drop-shadow(0 2px 6px rgba(192, 57, 43, 0.18));
+  transition: stroke-width 220ms ease, filter 280ms ease;
+}
+.apexcharts-line:hover .apexcharts-series path[stroke]:not([stroke="none"]),
+.apexcharts-area:hover .apexcharts-series path[stroke]:not([stroke="none"]) {
+  filter: drop-shadow(0 4px 14px rgba(192, 57, 43, 0.32));
+}
+
+/* ── 6. Markers / data points — concentric halo, grows on hover ───────── */
+.apexcharts-marker {
+  transition: r 200ms ease, filter 220ms ease, stroke-width 200ms ease;
+  filter: drop-shadow(0 1px 3px rgba(15, 23, 42, 0.22));
+}
+.apexcharts-marker:hover {
+  filter: drop-shadow(0 0 10px rgba(192, 57, 43, 0.55))
+          drop-shadow(0 4px 10px rgba(15, 23, 42, 0.22));
+}
+
+/* ── 7. Tooltip — glassmorphism, pop-in, colour-block title ───────────── */
+.apexcharts-tooltip {
+  background: rgba(255, 255, 255, 0.86) !important;
+  backdrop-filter: blur(16px) saturate(185%);
+  -webkit-backdrop-filter: blur(16px) saturate(185%);
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  border-radius: 14px !important;
+  box-shadow:
+    0 1px 3px rgba(15, 23, 42, 0.05),
+    0 10px 34px rgba(15, 23, 42, 0.16),
+    0 22px 70px rgba(192, 57, 43, 0.10) !important;
+  overflow: hidden;
+  transform-origin: top left;
+  animation: tipPop 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes tipPop {
+  from { opacity: 0; transform: translateY(-5px) scale(0.94); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.apexcharts-tooltip-title {
+  background: linear-gradient(135deg, #FFF5F4 0%, #FFE4E1 60%, #FECACA 100%) !important;
+  border-bottom: 1px solid rgba(192, 57, 43, 0.16) !important;
+  padding: 9px 13px !important;
+}
+.apexcharts-tooltip-series-group { padding: 6px 13px !important; }
+.apexcharts-tooltip-marker {
+  box-shadow:
+    0 0 0 2px rgba(255,255,255,0.95),
+    0 2px 6px rgba(15, 23, 42, 0.22);
+  border-radius: 3px !important;
+}
+
+/* Crosshair xaxis/yaxis tooltips — dark premium pill */
+.apexcharts-xaxistooltip,
+.apexcharts-yaxistooltip {
+  background: rgba(15, 23, 42, 0.93) !important;
+  backdrop-filter: blur(8px);
+  color: #fff !important;
+  border: none !important;
+  border-radius: 10px !important;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.28) !important;
+  padding: 5px 10px !important;
+}
+.apexcharts-xaxistooltip::before,
+.apexcharts-xaxistooltip::after,
+.apexcharts-yaxistooltip::before,
+.apexcharts-yaxistooltip::after { border-color: transparent !important; }
+
+/* ── 8. Legend — chip-style with hover lift, coloured marker glow ───── */
+.apexcharts-legend-series {
+  padding: 4px 10px !important;
+  border-radius: 100px;
+  transition:
+    background 180ms ease,
+    transform 180ms ease,
+    box-shadow 180ms ease;
+  cursor: pointer;
+  margin: 2px 3px !important;
+}
+.apexcharts-legend-series:hover {
+  background: rgba(192, 57, 43, 0.08);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(192, 57, 43, 0.14);
+}
+.apexcharts-legend-marker {
+  border-radius: 4px !important;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.95),
+    0 2px 6px rgba(15, 23, 42, 0.20);
+  transition: transform 180ms ease, box-shadow 200ms ease;
+}
+.apexcharts-legend-series:hover .apexcharts-legend-marker {
+  transform: scale(1.2);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.95),
+    0 4px 10px rgba(15, 23, 42, 0.26);
+}
+
+/* ── 9. Radial / Gauge — velvet track + glow slice ────────────────────── */
+.apexcharts-radialbar-track path { opacity: 0.45; }
+.apexcharts-radialbar-slice {
+  filter: drop-shadow(0 2px 8px rgba(192, 57, 43, 0.26))
+          drop-shadow(0 6px 18px rgba(15, 23, 42, 0.14));
+  transition: filter 300ms ease;
+}
+.apexcharts-radialbar-hollow { filter: drop-shadow(inset 0 2px 6px rgba(15, 23, 42, 0.06)); }
+
+/* ── 10. Zero-line / baseline subtle emphasis ─────────────────────────── */
+.apexcharts-zero-line { stroke: rgba(15, 23, 42, 0.18) !important; stroke-dasharray: 0 !important; }
+
+/* ── 11. Inner chart container — soft vignette seats the hero ────────── */
+.apexcharts-inner {
+  border-radius: 12px;
+}
+
+/* ── 12. Toolbar (if ever shown) — graceful fade ─────────────────────── */
+.apexcharts-toolbar { opacity: 0.40; transition: opacity 200ms ease; }
+.apexcharts-canvas:hover .apexcharts-toolbar { opacity: 0.95; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   END CHART SURROUND
+═══════════════════════════════════════════════════════════════════════════ */

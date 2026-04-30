@@ -77,6 +77,18 @@ async function bootstrap() {
     const server = app.listen(PORT, HOST, () => {
       logger.info(`✅ Server running at http://${HOST}:${PORT}`);
       logger.info(`✅ Environment: ${process.env.NODE_ENV}`);
+
+      // ─── Cache warm-up: pre-populate heavy endpoints in the background ──────
+      // Fires after server is listening so it never blocks readiness.
+      // Any warm-up failure is logged and swallowed — user traffic still serves cold.
+      setImmediate(async () => {
+        try {
+          const { warmCaches } = require('./services/cacheWarmup');
+          await warmCaches();
+        } catch (e) {
+          logger.warn('Cache warm-up skipped:', e.message);
+        }
+      });
     });
 
     // ─── Graceful Shutdown ──────────────────────────────────────────────────────

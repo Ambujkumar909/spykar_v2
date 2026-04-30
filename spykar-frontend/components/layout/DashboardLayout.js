@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import AiChatbot from '../AiChatbot';
+import CommandPalette from '../ui/CommandPalette';
 import { useAuth } from '../../lib/auth-context';
 
 export default function DashboardLayout({ children, title, subtitle, allowedRoles }) {
@@ -59,6 +60,10 @@ export default function DashboardLayout({ children, title, subtitle, allowedRole
         </main>
       </div>
       <AiChatbot />
+      {/* ⌘K command palette — elite-tier keyboard-first navigation, available
+          on every page. The single biggest UX leap over Power BI/Zoho/Tableau
+          and matches the bar set by Linear / Stripe / Notion / Vercel. */}
+      <CommandPalette />
     </div>
   );
 }

@@ -1,0 +1,6 @@
+
+echo "node_modules" > .dockerignore
+echo "npm-debug.log" >> .dockerignore
+echo ".env" >> .dockerignore
+echo "logs" >> .dockerignore
+

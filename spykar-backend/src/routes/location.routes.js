@@ -5,10 +5,16 @@ const { query, param, body } = require('express-validator');
 const { authenticate, authorize } = require('../middleware/auth');
 const { validate, paginationRules } = require('../middleware/validate');
 const locationController = require('../controllers/location.controller');
+const { getNetworkPulse } = require('../controllers/networkPulse.controller');
 
 router.use(authenticate);
 
 router.get('/zones', locationController.listZones);
+
+// Network pulse — god-tier overview: hero KPIs, dead capital, top stores/
+// states, channels, Pareto reveal, stock ageing, action lists. Same v2
+// filter set as locations.list so every widget narrows together.
+router.get('/network-pulse', getNetworkPulse);
 
 router.get('/', [
   ...paginationRules,
