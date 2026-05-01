@@ -20,6 +20,7 @@ import PremiumKpi from '../components/ui/PremiumKpi';
 import CrossPivotTables from '../components/overview/CrossPivotTables';
 import DrilldownDrawer from '../components/sales/DrilldownDrawer';
 import toast from 'react-hot-toast';
+import { notifyApiError } from '../lib/notifyApiError';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
@@ -1653,7 +1654,7 @@ export default function Overview() {
         setCached(mk('ov:salesTop'), v);
         if (stillCurrentMode) setSalesTop(v);
       }
-    } catch { toast.error('Failed to load dashboard'); }
+    } catch (err) { notifyApiError(err, 'Failed to load dashboard'); }
     finally { setLoading(false); }
     // Dep key EXCLUDES `mode`, `sale_mode`, and `valuation`:
     //   • mode      → handled by fetchModeOnly (dedicated fast path)

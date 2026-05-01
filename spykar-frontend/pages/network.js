@@ -9,6 +9,7 @@ import { useFilters } from '../lib/useFilters';
 import { locationService, analyticsService } from '../lib/services';
 import { getCached, setCached, isFresh } from '../lib/dashboardCache';
 import toast from 'react-hot-toast';
+import { notifyApiError } from '../lib/notifyApiError';
 import {
   Globe, Package, MapPin, PieChart, BarChart2, IndianRupee,
   RefreshCw, TrendingUp, Layers, Activity, Skull, AlertTriangle, Zap, Target,
@@ -934,7 +935,7 @@ export default function NetworkPage() {
       setNetworkSummary(summary);  setCached('net:sum:summary', summary);
       setStateOptions(states);     setCached('net:sum:states',  states);
     } catch (err) {
-      toast.error('Failed to load network summary');
+      notifyApiError(err, 'Failed to load network summary');
     } finally {
       setSummaryLoading(false);
     }
@@ -1008,7 +1009,7 @@ export default function NetworkPage() {
       setSummaryLoading(false);
       setCached(tableKey, { data, pagination: pag, cities, groups: groupsR, summary: summaryR, states: statesR });
     } catch (err) {
-      toast.error('Failed to load locations');
+      notifyApiError(err, 'Failed to load locations');
     } finally {
       setTableLoading(false);
     }

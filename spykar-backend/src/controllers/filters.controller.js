@@ -160,4 +160,33 @@ async function getAllOptions(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { getOptionsForDimension, getAllOptions };
+/**
+ * Pre-warm the default (no-filter) cache key for `/filters/options`.
+ * Called from services/cacheWarmup at startup so the FIRST user landing on
+ * /network or /sales doesn't pay the ~2 s cold-path cost of running 14
+ * parallel SELECT DISTINCTs against the movements/skus/locations tables.
+ *
+ * Hits the exact same cache key the HTTP handler uses (`filters:all:v1:{}`),
+ * so the first request reads pre-warmed Redis.
+ */
+async function warmAllOptionsDefault() {
+  // Match the params the FilterBar sends on first mount.  v2 universal filter
+  // bar always emits mode/sale_mode/valuation regardless of user input, so
+  // the empty-filters cache key includes those three.
+  const filters = { mode: 'active', sale_mode: 'net', valuation: 'gross' };
+  const key     = cacheKey('filters:all', filters);
+  return getOrSet(key, async () => {
+    const out = {};
+    const dims = Object.entries(dimensions);
+    const results = await Promise.all(dims.map(async ([dim, def]) => {
+      try {
+        const v = await fetchOptions(dim, def.table, def.col, filters);
+        return [dim, v];
+      } catch { return [dim, []]; }
+    }));
+    results.forEach(([dim, values]) => { out[dim] = values; });
+    return out;
+  }, OPTIONS_TTL);
+}
+
+module.exports = { getOptionsForDimension, getAllOptions, warmAllOptionsDefault };

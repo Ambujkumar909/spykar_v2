@@ -11,6 +11,7 @@ import { useFilters } from '../lib/useFilters';
 import { analyticsService } from '../lib/services';
 import { getCached, setCached, isFresh } from '../lib/dashboardCache';
 import toast from 'react-hot-toast';
+import { notifyApiError } from '../lib/notifyApiError';
 import {
   TrendingUp, TrendingDown, ShoppingBag, RotateCcw,
   Package, Store, Calendar, Filter, RefreshCw, ChevronDown,
@@ -865,9 +866,9 @@ export default function SalesAnalyticsPage() {
         setData(v);
         setLoading(false);
       }
-    } catch {
+    } catch (err) {
       if (activeKeyRef.current === issuedFor) setLoading(false);
-      toast.error('Failed to load sales analytics');
+      notifyApiError(err, 'Failed to load sales analytics');
     }
   }, [dateFrom, dateTo, colorName, size, locationId, v2Slug, cacheKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -894,56 +895,12 @@ export default function SalesAnalyticsPage() {
     fetch();
   }, [fetch, cacheKey]);
 
-  // ── Idle prefetch of the OTHER two modes ─────────────────────────────
-  // After the current mode finishes loading, quietly warm the cache for the
-  // remaining modes (active/inactive/all) so the next toggle is a 80 µs Map
-  // hit instead of a 2-5 s mega-CTE scan. Runs after first paint so it never
-  // competes with the visible request, and only when nothing is in-flight.
-  useEffect(() => {
-    if (loading || !data) return;
-    const currentMode = v2Filters.mode || 'active';
-    const otherModes = ['active', 'inactive', 'all'].filter(m => m !== currentMode);
-    const csv = (v) => Array.isArray(v) ? v.join(',') : (v || undefined);
-    const baseParams = {
-      date_from:   dateFrom    || undefined,
-      date_to:     dateTo      || undefined,
-      color_name:  colorName   || undefined,
-      size:        size        || undefined,
-      location_id: locationId  || undefined,
-      gender:      csv(v2Filters.gender_name) || undefined,
-      sub_product: csv(v2Filters.sub_product) || undefined,
-      product:     csv(v2Filters.product)     || undefined,
-      category:    csv(v2Filters.category)    || undefined,
-      style:       csv(v2Filters.style)       || undefined,
-      shade:       csv(v2Filters.shade)       || undefined,
-      color:       csv(v2Filters.color)       || undefined,
-      ...(size ? {} : { size: csv(v2Filters.size) || undefined }),
-      season:      csv(v2Filters.season)      || undefined,
-      state:       csv(v2Filters.state)       || undefined,
-      city:        csv(v2Filters.city)        || undefined,
-      group_name:  csv(v2Filters.group_name)  || undefined,
-      store_code:  csv(v2Filters.store_code)  || undefined,
-    };
-    let cancelled = false;
-    const tick = (window.requestIdleCallback || ((f) => setTimeout(f, 1500)));
-    const handles = otherModes.map((m, i) => tick(async () => {
-      if (cancelled) return;
-      // Build the sibling key explicitly — same v2Slug, only the `m{mode}`
-      // segment differs. Avoids fragile regex on a key that mixes user data.
-      const v2SlugForMode = v2Slug.replace(`m${currentMode}|`, `m${m}|`);
-      const otherKey = `sales:v6:${dateFrom}|${dateTo}|${colorName}|${size}|${locationId}|${v2SlugForMode}`;
-      if (getCached(otherKey)) return;
-      try {
-        const r = await analyticsService.getSalesAnalytics({ ...baseParams, mode: m });
-        if (!cancelled) setCached(otherKey, r.data.data);
-      } catch { /* prefetch is best-effort, swallow errors */ }
-    }, { timeout: 3000 + i * 1000 }));
-    return () => {
-      cancelled = true;
-      if (window.cancelIdleCallback) handles.forEach(h => window.cancelIdleCallback(h));
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, data, cacheKey]);
+  // Mode-toggle prefetch removed (cold-load fix #A).  Eagerly fetching the
+  // other two modes via requestIdleCallback after the visible call landed
+  // was firing two more cold 8 s mega-CTE scans on every page entry, pinning
+  // the connection pool and bloating Redis with unused entries.  Mode toggles
+  // now fetch lazily on click — slight one-time wait the first time the user
+  // flips Active/Inactive/All, but the page entry is dramatically faster.
 
   const s   = data?.summary || {};
   const ss  = data?.stock_snapshot || {};

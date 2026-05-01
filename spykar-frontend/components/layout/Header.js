@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { RefreshCw, Bell, Clock, Zap } from 'lucide-react';
-import { inventoryService, syncService } from '../../lib/services';
+import { syncService } from '../../lib/services';
+import { useAlerts } from '../../lib/useAlerts';
 import { timeAgo } from '../../lib/utils';
 import { useAuth } from '../../lib/auth-context';
 
@@ -11,19 +12,20 @@ export default function Header({ title, subtitle }) {
   const isAdmin = user && ['SUPER_ADMIN', 'ADMIN'].includes(user.role);
   const [syncStatus, setSyncStatus]           = useState(null);
   const [syncing, setSyncing]                 = useState(false);
-  const [criticalAlertCount, setCriticalCount] = useState(0);
   const [now, setNow]                          = useState(new Date());
+
+  // Shared fetch — ExceptionAlertStrip uses the same hook, so the network
+  // request fires once per page load (was 2× before, plus dev StrictMode).
+  const { alerts } = useAlerts();
+  const criticalAlertCount = useMemo(
+    () => alerts.filter(a => a.alert_level === 'OUT_OF_STOCK').length,
+    [alerts]
+  );
 
   useEffect(() => {
     if (isAdmin) {
       syncService.getStatus().then(r => setSyncStatus(r.data.data)).catch(() => {});
     }
-    inventoryService.getAlerts()
-      .then(r => {
-        const alerts = r.data.data || [];
-        setCriticalCount(alerts.filter(a => a.alert_level === 'OUT_OF_STOCK').length);
-      })
-      .catch(() => {});
   }, [isAdmin]);
 
   // Live clock

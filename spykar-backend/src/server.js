@@ -83,8 +83,11 @@ async function bootstrap() {
       // Any warm-up failure is logged and swallowed — user traffic still serves cold.
       setImmediate(async () => {
         try {
-          const { warmCaches } = require('./services/cacheWarmup');
+          const { warmCaches, startPeriodicRewarm } = require('./services/cacheWarmup');
           await warmCaches();
+          // Keep the heavy endpoints (network-pulse, analytics/sales) warm
+          // every 4 min so business-hour cold paths never reach a real user.
+          startPeriodicRewarm();
         } catch (e) {
           logger.warn('Cache warm-up skipped:', e.message);
         }

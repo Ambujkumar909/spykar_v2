@@ -65,8 +65,13 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active' } = {}) {
     const lyTo   = shiftYear(toISO, 1);
 
     Promise.all([
-      analyticsService.getSalesAnalytics({ date_from: fromISO, date_to: toISO, mode }),
-      analyticsService.getSalesAnalytics({ date_from: lyFrom, date_to: lyTo, mode }).catch(() => null),
+      // Slim endpoint — returns ONLY summary + daily + by_channel (the three
+      // blocks v2 consumes).  ~240 ms cold vs ~8 s for /analytics/sales.
+      analyticsService.getSalesSummary({ date_from: fromISO, date_to: toISO, mode }),
+      // LY data for a closed window doesn't change — bump TTL to 24h.
+      analyticsService.getSalesSummary({
+        date_from: lyFrom, date_to: lyTo, mode, ttl_override: 86400,
+      }).catch(() => null),
       inventoryService.getExecutiveSummary({ mode }),
       syncService.getStatus().catch(() => null),
       inventoryService.getAgeing({ mode }).catch(() => null),

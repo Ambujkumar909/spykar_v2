@@ -1,6 +1,6 @@
-import { useEffect, useState, useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { AlertTriangle, XCircle, CheckCircle, Zap } from 'lucide-react';
-import { inventoryService } from '../../lib/services';
+import { useAlerts } from '../../lib/useAlerts';
 
 /* Maps alert_level → visual config */
 const LEVEL_CONFIG = {
@@ -11,23 +11,17 @@ const LEVEL_CONFIG = {
 };
 
 export default function ExceptionAlertStrip() {
-  const [alerts, setAlerts]       = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const trackRef                  = useRef(null);
+  // Shared with Header — single fetch per page load, deduped at module scope.
+  const { alerts: rawAlerts, loading } = useAlerts();
+  const trackRef = useRef(null);
 
-  useEffect(() => {
-    inventoryService.getAlerts()
-      .then(r => {
-        const raw = r.data.data || [];
-        // Only show critical + low stock in the strip
-        const filtered = raw
-          .filter(a => ['OUT_OF_STOCK', 'LOW_STOCK'].includes(a.alert_level))
-          .slice(0, 40);
-        setAlerts(filtered);
-      })
-      .catch(() => setAlerts([]))
-      .finally(() => setLoading(false));
-  }, []);
+  // Strip only shows critical + low stock — same filter as before.
+  const alerts = useMemo(
+    () => rawAlerts
+      .filter(a => ['OUT_OF_STOCK', 'LOW_STOCK'].includes(a.alert_level))
+      .slice(0, 40),
+    [rawAlerts]
+  );
 
   const criticalCount = alerts.filter(a => a.alert_level === 'OUT_OF_STOCK').length;
   const lowCount      = alerts.filter(a => a.alert_level === 'LOW_STOCK').length;

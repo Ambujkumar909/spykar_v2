@@ -119,7 +119,28 @@ async function getOrSetRawJson(key, buildFn, ttl = 300) {
     const promise = (async () => {
       try {
         const result = await buildFn();
-        const str = JSON.stringify(result);
+        let str;
+        try {
+          str = JSON.stringify(result);
+        } catch (stringifyErr) {
+          // V8 caps string length at ~512 MB. JSON.stringify throws
+          // RangeError("Invalid string length") if the serialized payload
+          // exceeds it. Fall back to a truncated, still-valid JSON
+          // response so the request doesn't 500. The controller is the
+          // right place to fix the underlying size — but here we just
+          // make sure the user sees a graceful answer instead of a crash.
+          logger.error(`Cache stringify failed for ${key} (${stringifyErr.message}); returning truncated payload`);
+          const safe = {
+            success: true,
+            data: [],
+            count: 0,
+            error: 'Response exceeded server max payload size; please apply a tighter filter.',
+            _truncated: true,
+          };
+          // Try to preserve summary if the builder produced one
+          if (result && typeof result === 'object' && 'summary' in result) safe.summary = result.summary;
+          return JSON.stringify(safe);
+        }
         try {
           await redisClient.setEx(key, ttl, str);
         } catch (writeErr) {
@@ -138,7 +159,11 @@ async function getOrSetRawJson(key, buildFn, ttl = 300) {
     const promise = (async () => {
       try {
         const result = await buildFn();
-        return JSON.stringify(result);
+        try { return JSON.stringify(result); }
+        catch (stringifyErr) {
+          logger.error(`Stringify fallback failed for ${key}: ${stringifyErr.message}`);
+          return JSON.stringify({ success: false, error: 'Response too large', _truncated: true });
+        }
       } finally { inFlight.delete(key); }
     })();
     inFlight.set(key, promise);
@@ -194,12 +219,12 @@ const TTL = {
   DISPATCH_STATUS: 120,         // 2 min — frequently changing
   LOCATION_MASTER: 3600,        // 1 hour — rarely changes
   AUTH_TOKEN_BLACKLIST: 86400,  // 24 hours
-  SALES_ANALYTICS: 600,         // 10 min — heavy aggregation, read-only
-  STOCK_AGEING: 600,            // 10 min — ageing buckets, static per sync
+  SALES_ANALYTICS: 1800,        // 30 min — heavy mega-CTE; data refreshes only at daily sync, so 30 min is safe and well within the 4-min re-warm cycle
+  STOCK_AGEING: 1800,           // 30 min — ageing buckets, static per sync; matches re-warm cycle
   STOCK_ALERTS: 1800,           // 30 min — heavy 570K-row payload, low change rate within sync window
-  NETWORK_OVERVIEW: 300,        // 5 min — network KPIs
-  FILL_RATE: 600,               // 10 min — fill rate analytics
-  FILTER_OPTIONS: 300,          // 5 min — drill-down filter dropdowns
+  NETWORK_OVERVIEW: 1800,       // 30 min — network KPIs; data refreshes at sync only
+  FILL_RATE: 1800,              // 30 min — same daily-sync refresh model
+  FILTER_OPTIONS: 1800,         // 30 min — distinct values barely change within a day
 };
 
 module.exports = {

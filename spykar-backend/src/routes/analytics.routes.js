@@ -31,6 +31,14 @@ router.get('/fill-rate', [
 ], validate, analyticsController.getFillRate);
 
 router.get('/sales', analyticsController.getSalesAnalytics);
+// v2 dashboard — slim sales endpoint (summary + daily + by_channel only).
+// ~125 ms cold vs 8 s for /analytics/sales.  Used by useDashboardMetrics.
+router.get('/sales/summary', [
+  query('date_from').optional().isISO8601(),
+  query('date_to').optional().isISO8601(),
+  query('mode').optional().isIn(['active', 'inactive', 'all']),
+  query('ttl_override').optional().isInt({ min: 60, max: 86400 }).toInt(),
+], validate, analyticsController.getSalesSummary);
 // Sales drilldown — store-level OR sku-level pivot (`?type=store|sku&id=…`).
 // Same v2 filter set composes; same 10-min Redis TTL via getOrSet.
 router.get('/sales/drilldown', analyticsController.getSalesDrilldown);

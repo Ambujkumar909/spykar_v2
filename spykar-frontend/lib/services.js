@@ -88,6 +88,9 @@ export const analyticsService = {
   getZoneHeatmap: () => api.get('/analytics/zone-heatmap'),
   getFillRate: (params = {}) => api.get('/analytics/fill-rate', { params }),
   getSalesAnalytics: (params = {}) => api.get('/analytics/sales', { params }),
+  // v2 dashboard — slim version: only summary + daily + by_channel.  ~240 ms
+  // cold vs ~8 s for /analytics/sales.  See backend controller for the why.
+  getSalesSummary:  (params = {}) => api.get('/analytics/sales/summary', { params }),
   // Sales drilldown — store-level OR sku-level pivot. Pass ?type=store|sku
   // and ?id=<uuid>, plus the same v2 filter set as getSalesAnalytics so the
   // drill scopes to whatever window the user is viewing.
