@@ -39,23 +39,54 @@ function filterOptionsCacheKey(params) {
   return `flt:opts:${JSON.stringify(norm)}`;
 }
 
-// Dimension catalog — controls render order, label text, and which key is
-// bound to which API filter. Keys here MUST match useFilters.ARRAY_DIMS.
-const DIMS = [
-  { key: 'gender_name', label: 'Gender',      apiKey: 'gender' },
-  { key: 'sub_product', label: 'Sub-product', apiKey: 'sub_product' },
-  { key: 'product',     label: 'Product',     apiKey: 'product' },
-  { key: 'category',    label: 'Category',    apiKey: 'category' },
-  { key: 'style',       label: 'Style',       apiKey: 'style' },
-  { key: 'shade',       label: 'Shade',       apiKey: 'shade' },
-  { key: 'color',       label: 'Colour',      apiKey: 'color' },
-  { key: 'size',        label: 'Size',        apiKey: 'size' },
-  { key: 'season',      label: 'Season',      apiKey: 'season' },
-  { key: 'state',       label: 'State',       apiKey: 'state' },
-  { key: 'city',        label: 'City',        apiKey: 'city' },
-  { key: 'group_name',  label: 'Party',       apiKey: 'group_name' },
-  { key: 'store_code',  label: 'Store',       apiKey: 'store_code' },
+// Filter groups — four taxonomic buckets the FilterBar renders side-by-side.
+//   • Product    — what the merchandise IS (gender, category, product, sub-product)
+//   • Attributes — how it LOOKS / FITS (size, colour, shade, style)
+//   • Location   — WHERE it lives (state, city, store)
+//   • Business   — partnership / seasonality lenses (season, party)
+//
+// Order inside each group is reading-priority: the dimension a user is most
+// likely to reach for first sits leftmost.  Keys MUST match useFilters
+// .ARRAY_DIMS so URL-sync works unchanged.
+const FILTER_GROUPS = [
+  {
+    name: 'Product',
+    dims: [
+      { key: 'gender_name', label: 'Gender',      apiKey: 'gender'      },
+      { key: 'category',    label: 'Category',    apiKey: 'category'    },
+      { key: 'product',     label: 'Product',     apiKey: 'product'     },
+      { key: 'sub_product', label: 'Sub-product', apiKey: 'sub_product' },
+    ],
+  },
+  {
+    name: 'Attributes',
+    dims: [
+      { key: 'size',        label: 'Size',   apiKey: 'size'  },
+      { key: 'color',       label: 'Colour', apiKey: 'color' },
+      { key: 'shade',       label: 'Shade',  apiKey: 'shade' },
+      { key: 'style',       label: 'Style',  apiKey: 'style' },
+    ],
+  },
+  {
+    name: 'Location',
+    dims: [
+      { key: 'state',       label: 'State', apiKey: 'state'      },
+      { key: 'city',        label: 'City',  apiKey: 'city'       },
+      { key: 'store_code',  label: 'Store', apiKey: 'store_code' },
+    ],
+  },
+  {
+    name: 'Business',
+    dims: [
+      { key: 'season',      label: 'Season', apiKey: 'season'      },
+      { key: 'group_name',  label: 'Party',  apiKey: 'group_name'  },
+    ],
+  },
 ];
+
+// Flat catalog kept for backwards compatibility with anything that still
+// reads DIMS (e.g. dropdown-options pre-fetch loops).
+const DIMS = FILTER_GROUPS.flatMap(g => g.dims);
 
 export default function FilterBar({ filters, setFilter, clearAll, activeCount }) {
   // Module-cached options bundle — toggling Active/Inactive/All (or picking
@@ -211,25 +242,75 @@ export default function FilterBar({ filters, setFilter, clearAll, activeCount })
         )}
       </div>
 
-      {/* Filter row — horizontally scrollable on narrow screens */}
+      {/* Grouped filter sections — Product / Attributes / Location / Business.
+          Each group renders as a tight column with a labelled header and an
+          active-count badge when any of its dimensions are populated.  Groups
+          wrap responsively: 4-up on wide screens, 2-up on tablet, stacked on
+          mobile.  Inline divider between groups uses the existing border var. */}
       <div
         style={{
-          display: 'flex', flexWrap: 'wrap', gap: 8,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+          columnGap: 18,
+          rowGap: 14,
+          alignItems: 'flex-start',
         }}
       >
-        {DIMS.map(d => (
-          <div key={d.key} data-filterbar-trigger-wrap>
-            <MultiSelect
-              label={d.label}
-              options={optionsByDim[d.apiKey] || []}
-              value={filters[d.key] || []}
-              onChange={(v) => setFilter(d.key, v)}
-              loading={loading && !optionsByDim[d.apiKey]}
-              placeholder="All"
-              compact
-            />
-          </div>
-        ))}
+        {FILTER_GROUPS.map((group, gi) => {
+          const groupActive = group.dims.reduce((n, d) => {
+            const v = filters[d.key];
+            return n + ((Array.isArray(v) ? v.length : (v ? 1 : 0)) > 0 ? 1 : 0);
+          }, 0);
+          return (
+            <div
+              key={group.name}
+              style={{
+                display: 'flex', flexDirection: 'column', gap: 8,
+                paddingLeft: gi === 0 ? 0 : 14,
+                borderLeft: gi === 0 ? 'none' : '1px solid rgba(255,255,255,0.05)',
+                minWidth: 0,
+              }}
+            >
+              {/* Group header — uppercase eyebrow + active-count chip */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                <span style={{
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 10, fontWeight: 800,
+                  letterSpacing: '0.10em', textTransform: 'uppercase',
+                  color: 'var(--text-muted)',
+                }}>
+                  {group.name}
+                </span>
+                {groupActive > 0 && (
+                  <span style={{
+                    padding: '1px 6px', borderRadius: 999,
+                    background: 'var(--accent-glow)',
+                    color: 'var(--accent-primary)',
+                    border: '1px solid var(--accent-border)',
+                    fontSize: 9, fontWeight: 800, letterSpacing: '0.04em',
+                  }}>{groupActive}</span>
+                )}
+              </div>
+
+              {/* Group controls — same horizontal flow, just bounded to its row */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {group.dims.map(d => (
+                  <div key={d.key} data-filterbar-trigger-wrap>
+                    <MultiSelect
+                      label={d.label}
+                      options={optionsByDim[d.apiKey] || []}
+                      value={filters[d.key] || []}
+                      onChange={(v) => setFilter(d.key, v)}
+                      loading={loading && !optionsByDim[d.apiKey]}
+                      placeholder="All"
+                      compact
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <style jsx>{`
