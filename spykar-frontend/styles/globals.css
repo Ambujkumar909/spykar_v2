@@ -1,59 +1,58 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
 
-/* ─── Design System — Premium Pearl Light ──────────────────────────────────
-   Philosophy:  Clean, airy, warm white. Easy on the eyes. Professional.
-   Brand:       Spykar Red #C0392B
+/* ─── Design System — Executive Dark Command Center ────────────────────────
+   Philosophy:  Deep navy canvas. Numbers pop. Decisions happen fast.
+   Brand:       Spykar Red #EF4444 on dark (brighter than light-mode value)
    Typography:  Plus Jakarta Sans (display/numbers) + Inter (body/UI)
-   Sizes:       Generous — nothing squint-worthy
-   Mode:        Light ONLY — no dark backgrounds anywhere
+   Mode:        Dark ONLY — built for boardrooms and long sessions
 ──────────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* ── Surfaces — pure, airy light ── */
-  --bg-canvas:      #F6F7FB;
-  --bg-surface:     #FAFBFE;
-  --bg-card:        #FFFFFF;
-  --bg-card-hover:  #FAFBFF;
-  --bg-elevated:    #EEF1FA;
-  --bg-input:       #FFFFFF;
+  /* ── Surfaces ── */
+  --bg-canvas:      #070C18;
+  --bg-surface:     #0D1525;
+  --bg-card:        #111827;
+  --bg-card-hover:  #162038;
+  --bg-elevated:    #1A2540;
+  --bg-input:       #0F1928;
 
-  /* ── Borders — whisper-light ── */
-  --border-subtle:  rgba(15, 23, 42, 0.07);
-  --border-default: rgba(15, 23, 42, 0.11);
-  --border-strong:  rgba(15, 23, 42, 0.20);
+  /* ── Borders — dark glass ── */
+  --border-subtle:  rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.10);
+  --border-strong:  rgba(255, 255, 255, 0.18);
 
-  /* ── Text — bold, high-contrast, premium ── */
-  --text-primary:   #0F172A;   /* deep slate — crisp and readable */
-  --text-secondary: #1e293b;   /* near-black — bold supporting text */
-  --text-muted:     #334155;   /* dark slate — still bold/readable, no washed-out grey */
-  --text-disabled:  #94A3B8;
+  /* ── Text ── */
+  --text-primary:   #F1F5F9;
+  --text-secondary: #CBD5E1;
+  --text-muted:     #94A3B8;
+  --text-disabled:  #475569;
 
-  /* ── Brand — deep violet ── */
-  --lavender:        #C0392B;
-  --lavender-glow:   rgba(192, 57, 43, 0.07);
-  --lavender-border: rgba(192, 57, 43, 0.18);
+  /* ── Brand ── */
+  --lavender:        #EF4444;
+  --lavender-glow:   rgba(239, 68, 68, 0.12);
+  --lavender-border: rgba(239, 68, 68, 0.28);
 
-  /* ── Semantic — data only ── */
-  --mint:            #059669;
-  --mint-glow:       rgba(5, 150, 105, 0.08);
+  /* ── Semantic ── */
+  --mint:            #10B981;
+  --mint-glow:       rgba(16, 185, 129, 0.12);
 
-  --amber:           #D97706;
-  --amber-glow:      rgba(217, 119, 6, 0.08);
+  --amber:           #F59E0B;
+  --amber-glow:      rgba(245, 158, 11, 0.12);
 
-  --coral:           #DC2626;
-  --coral-glow:      rgba(220, 38, 38, 0.08);
+  --coral:           #EF4444;
+  --coral-glow:      rgba(239, 68, 68, 0.12);
 
-  --sky:             #0284C7;
-  --sky-glow:        rgba(2, 132, 199, 0.08);
+  --sky:             #3B82F6;
+  --sky-glow:        rgba(59, 130, 246, 0.12);
 
-  --fuchsia:         #E74C3C;
-  --fuchsia-glow:    rgba(231, 76, 60, 0.08);
+  --fuchsia:         #A855F7;
+  --fuchsia-glow:    rgba(168, 85, 247, 0.12);
 
-  --tangerine:       #EA580C;
-  --tangerine-glow:  rgba(234, 88, 12, 0.08);
+  --tangerine:       #F97316;
+  --tangerine-glow:  rgba(249, 115, 22, 0.12);
 
-  --teal:            #0D9488;
-  --teal-glow:       rgba(13, 148, 136, 0.08);
+  --teal:            #14B8A6;
+  --teal-glow:       rgba(20, 184, 166, 0.12);
 
   /* ── Aliases ── */
   --accent-primary:  var(--lavender);
@@ -77,33 +76,32 @@
   --orange:          var(--tangerine);
   --orange-glow:     var(--tangerine-glow);
 
-  /* ── Shadows — soft, warm, layered ── */
-  --shadow-card:     0 1px 3px rgba(15,23,42,0.04), 0 4px 16px rgba(15,23,42,0.05);
-  --shadow-elevated: 0 4px 20px rgba(15,23,42,0.08), 0 1px 4px rgba(15,23,42,0.04);
-  --shadow-deep:     0 12px 40px rgba(15,23,42,0.12), 0 4px 12px rgba(15,23,42,0.06);
+  /* ── Shadows — dark ambient glow ── */
+  --shadow-card:     0 1px 3px rgba(0,0,0,0.30), 0 4px 16px rgba(0,0,0,0.20);
+  --shadow-elevated: 0 4px 20px rgba(0,0,0,0.40), 0 1px 4px rgba(0,0,0,0.20);
+  --shadow-deep:     0 12px 40px rgba(0,0,0,0.50), 0 4px 12px rgba(0,0,0,0.30);
 
   /* ── Charts ── */
-  --chart-1: #C0392B;
-  --chart-2: #059669;
-  --chart-3: #D97706;
-  --chart-4: #DC2626;
-  --chart-5: #0284C7;
-  --chart-6: #E74C3C;
-  --chart-7: #EA580C;
-  --chart-8: #0D9488;
+  --chart-1: #EF4444;
+  --chart-2: #10B981;
+  --chart-3: #F59E0B;
+  --chart-4: #3B82F6;
+  --chart-5: #A855F7;
+  --chart-6: #F97316;
+  --chart-7: #14B8A6;
+  --chart-8: #EC4899;
 
   /* ── Layout ── */
-  --sidebar-width: 272px;
-  --header-height: 70px;
+  --sidebar-width:       64px;
+  --sidebar-width-open:  240px;
+  --header-height:       64px;
+  --alert-strip-height:  40px;
   --radius-sm:     8px;
   --radius-md:     12px;
   --radius-lg:     16px;
   --radius-xl:     22px;
 
-  /* ── Typography ──
-     Plus Jakarta Sans — Display & KPI numbers — warm, geometric, ultra-premium at large sizes
-     Inter            — All body & UI text — best screen font on Earth
-  ── */
+  /* ── Typography ── */
   --font-display: 'Plus Jakarta Sans', 'Inter', sans-serif;
   --font-body:    'Inter', sans-serif;
 
@@ -132,45 +130,38 @@ body {
   overflow-x: hidden;
 }
 
-/* ─── Scrollbar — refined ──────────────────────────────────────────────── */
-::-webkit-scrollbar       { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #F1F5F9; border-radius: 10px; }
-::-webkit-scrollbar-thumb { background: #FCA5A5; border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: #F87171; }
+/* ─── Scrollbar ─────────────────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
 
-/* ─── Premium focus ring — accessible and elegant ──────────────────────── */
-/* Visible only on keyboard navigation (`:focus-visible`) — clean for mouse,
-   crisp ring for keyboard. The ring inherits the brand accent so every
-   interactive surface speaks the same visual language. */
+/* ─── Focus ring ────────────────────────────────────────────────────────── */
 *:focus { outline: none; }
 *:focus-visible {
-  outline: 2px solid var(--accent-primary);
+  outline: 2px solid var(--sky);
   outline-offset: 2px;
   border-radius: 4px;
   transition: outline-offset 120ms ease;
 }
-button:focus-visible, a:focus-visible {
-  outline-offset: 3px;
-}
+button:focus-visible, a:focus-visible { outline-offset: 3px; }
 
-/* ─── Selection — branded and clean ────────────────────────────────────── */
+/* ─── Selection ─────────────────────────────────────────────────────────── */
 ::selection {
-  background: var(--accent-glow);
+  background: rgba(59,130,246,0.25);
   color: var(--text-primary);
 }
 
-/* ─── Skeleton — elite shimmer (left → right wave, not a flat pulse) ──── */
-/* The Stripe/Linear shimmer: a soft gradient sweeps across the surface so
-   loading content feels ALIVE, not paused. Critical for "perceived perf". */
+/* ─── Skeleton shimmer (dark) ──────────────────────────────────────────── */
 .skeleton {
   background: linear-gradient(
     90deg,
-    var(--bg-elevated) 0%,
-    rgba(255,255,255,0.85) 50%,
-    var(--bg-elevated) 100%
+    rgba(255,255,255,0.04) 0%,
+    rgba(255,255,255,0.10) 50%,
+    rgba(255,255,255,0.04) 100%
   );
   background-size: 200% 100%;
-  animation: skeletonWave 1.5s ease-in-out infinite;
+  animation: skeletonWave 1.6s ease-in-out infinite;
   border-radius: 6px;
 }
 @keyframes skeletonWave {
@@ -178,7 +169,6 @@ button:focus-visible, a:focus-visible {
   100% { background-position: -200% 0; }
 }
 
-/* ─── Smooth FOUC-free font swap ─────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -208,12 +198,13 @@ h1, h2, h3, h4, h5, h6 {
   flex-direction: column;
   background: var(--bg-canvas);
   overflow-x: hidden;
+  transition: margin-left 280ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .page-content {
   flex: 1;
-  padding: 32px 36px;
-  margin-top: var(--header-height);
+  padding: 28px 32px;
+  margin-top: calc(var(--header-height) + var(--alert-strip-height));
   animation: pageEnter 0.40s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -265,18 +256,17 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .kpi-card:hover {
-  border-color: var(--lavender-border);
+  border-color: var(--border-default);
   box-shadow: var(--shadow-elevated);
   transform: translateY(-2px);
 }
 
-/* Violet top accent line */
 .kpi-card::before {
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--lavender), #E74C3C);
+  height: 2px;
+  background: linear-gradient(90deg, var(--lavender), #F97316);
   opacity: 0;
   transition: opacity var(--transition-base);
   border-radius: 16px 16px 0 0;
@@ -353,12 +343,12 @@ h1, h2, h3, h4, h5, h6 {
   white-space: nowrap;
 }
 
-.badge-success { background: #ECFDF5; color: #065F46; border: 1px solid #A7F3D0; }
-.badge-warning { background: #FFFBEB; color: #92400E; border: 1px solid #FDE68A; }
-.badge-danger  { background: #FFF1F2; color: #9F1239; border: 1px solid #FECDD3; }
-.badge-info    { background: #F0F9FF; color: #075985; border: 1px solid #BAE6FD; }
-.badge-violet  { background: #FFF5F4; color: #4C1D95; border: 1px solid #FECACA; }
-.badge-neutral { background: #F8FAFC; color: var(--text-secondary); border: 1px solid var(--border-default); }
+.badge-success { background: rgba(16,185,129,0.15); color: #6EE7B7; border: 1px solid rgba(16,185,129,0.25); }
+.badge-warning { background: rgba(245,158,11,0.15); color: #FCD34D; border: 1px solid rgba(245,158,11,0.25); }
+.badge-danger  { background: rgba(239,68,68,0.15);  color: #FCA5A5; border: 1px solid rgba(239,68,68,0.25); }
+.badge-info    { background: rgba(59,130,246,0.15); color: #93C5FD; border: 1px solid rgba(59,130,246,0.25); }
+.badge-violet  { background: rgba(168,85,247,0.15); color: #C4B5FD; border: 1px solid rgba(168,85,247,0.25); }
+.badge-neutral { background: var(--bg-elevated);    color: var(--text-secondary); border: 1px solid var(--border-default); }
 
 /* ─── Table ──────────────────────────────────────────────────────────────── */
 .data-table {
@@ -373,12 +363,12 @@ h1, h2, h3, h4, h5, h6 {
   text-align: left;
   font-size: 10px;
   font-weight: 900;
-  color: var(--text-primary);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  border-bottom: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-subtle);
   white-space: nowrap;
-  background: #FAFBFE;
+  background: var(--bg-elevated);
 }
 
 .data-table tbody tr {
@@ -386,12 +376,12 @@ h1, h2, h3, h4, h5, h6 {
   transition: background var(--transition-fast);
 }
 
-.data-table tbody tr:hover { background: #FFF5F4; }
+.data-table tbody tr:hover { background: rgba(255,255,255,0.03); }
 .data-table tbody tr:last-child { border-bottom: none; }
 
 .data-table tbody td {
   padding: 13px 18px;
-  color: var(--text-primary);
+  color: var(--text-secondary);
   vertical-align: middle;
   line-height: 1.5;
   font-size: 13px;
@@ -421,21 +411,19 @@ h1, h2, h3, h4, h5, h6 {
 .btn-primary {
   background: var(--lavender);
   color: #fff;
-  box-shadow: 0 1px 8px rgba(192,57,43,0.22);
+  box-shadow: 0 1px 8px rgba(239,68,68,0.30);
 }
-
 .btn-primary:hover {
-  background: #5B21B6;
-  box-shadow: 0 4px 16px rgba(192,57,43,0.30);
+  background: #DC2626;
+  box-shadow: 0 4px 16px rgba(239,68,68,0.40);
   transform: translateY(-1px);
 }
 
 .btn-ghost {
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   border-color: var(--border-default);
 }
-
 .btn-ghost:hover {
   background: var(--bg-elevated);
   color: var(--text-primary);
@@ -443,14 +431,14 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .btn-danger {
-  background: #FFF1F2;
-  color: #9F1239;
-  border-color: #FECDD3;
+  background: rgba(239,68,68,0.12);
+  color: #FCA5A5;
+  border-color: rgba(239,68,68,0.25);
 }
 
 /* ─── Input ──────────────────────────────────────────────────────────────── */
 .input {
-  background: #FFFFFF;
+  background: var(--bg-input);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   color: var(--text-primary);
@@ -462,17 +450,15 @@ h1, h2, h3, h4, h5, h6 {
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   line-height: 1.5;
 }
-
 .input:focus {
-  border-color: var(--lavender);
-  box-shadow: 0 0 0 3px rgba(192,57,43,0.09);
+  border-color: var(--sky);
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
 }
-
-.input::placeholder { color: var(--text-muted); }
+.input::placeholder { color: var(--text-disabled); }
 select.input { cursor: pointer; }
 
 /* ─── Page Header ────────────────────────────────────────────────────────── */
-.page-header { margin-bottom: 28px; }
+.page-header { margin-bottom: 24px; }
 
 .page-title {
   font-family: var(--font-display);
@@ -487,34 +473,27 @@ select.input { cursor: pointer; }
 .page-subtitle {
   font-family: var(--font-body);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 500;
   color: var(--text-muted);
   line-height: 1.5;
 }
 
 /* ─── Grid ───────────────────────────────────────────────────────────────── */
-.grid-4   { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
-.grid-3   { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
-.grid-2   { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
-.grid-2-1 { display: grid; grid-template-columns: 2fr 1fr;        gap: 18px; }
-.grid-1-2 { display: grid; grid-template-columns: 1fr 2fr;        gap: 18px; }
+.grid-4   { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.grid-3   { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.grid-2   { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.grid-2-1 { display: grid; grid-template-columns: 2fr 1fr;        gap: 16px; }
+.grid-1-2 { display: grid; grid-template-columns: 1fr 2fr;        gap: 16px; }
 
 /* ─── Stat indicators ────────────────────────────────────────────────────── */
-.change-up   { color: #059669; display: flex; align-items: center; gap: 3px; font-weight: 600; }
-.change-down { color: #DC2626; display: flex; align-items: center; gap: 3px; font-weight: 600; }
+.change-up   { color: #34D399; display: flex; align-items: center; gap: 3px; font-weight: 600; }
+.change-down { color: #F87171; display: flex; align-items: center; gap: 3px; font-weight: 600; }
 .change-flat { color: var(--text-muted); }
 
 /* ─── Skeleton loading ───────────────────────────────────────────────────── */
 @keyframes shimmer {
   0%   { background-position: -700px 0; }
   100% { background-position:  700px 0; }
-}
-
-.skeleton {
-  background: linear-gradient(90deg, #F1F5F9 0%, #E8EEF8 45%, #F1F5F9 100%);
-  background-size: 700px 100%;
-  animation: shimmer 1.8s ease infinite;
-  border-radius: var(--radius-md);
 }
 
 /* ─── Alert ──────────────────────────────────────────────────────────────── */
@@ -530,20 +509,20 @@ select.input { cursor: pointer; }
   line-height: 1.55;
 }
 
-.alert-danger  { background: #FFF1F2; border-color: #FECDD3; color: #9F1239; }
-.alert-warning { background: #FFFBEB; border-color: #FDE68A; color: #92400E; }
-.alert-success { background: #ECFDF5; border-color: #A7F3D0; color: #065F46; }
+.alert-danger  { background: rgba(239,68,68,0.12);  border-color: rgba(239,68,68,0.25);  color: #FCA5A5; }
+.alert-warning { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.25); color: #FCD34D; }
+.alert-success { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.25); color: #6EE7B7; }
 
 /* ─── Divider ────────────────────────────────────────────────────────────── */
 .divider { border: none; border-top: 1px solid var(--border-subtle); margin: 22px 0; }
 
 /* ─── Dot ────────────────────────────────────────────────────────────────── */
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-.dot-success { background: #059669; }
-.dot-warning { background: #D97706; }
-.dot-danger  { background: #DC2626; }
-.dot-info    { background: #0284C7; }
-.dot-violet  { background: #C0392B; }
+.dot-success { background: #10B981; }
+.dot-warning { background: #F59E0B; }
+.dot-danger  { background: #EF4444; }
+.dot-info    { background: #3B82F6; }
+.dot-violet  { background: #A855F7; }
 
 /* ─── Entry animations ───────────────────────────────────────────────────── */
 @keyframes fadeUp {
@@ -571,7 +550,7 @@ select.input { cursor: pointer; }
 }
 
 .rank-1 { background: linear-gradient(135deg, #FDE68A, #F59E0B); color: #78350F; }
-.rank-2 { background: #E2E8F0; color: #475569; }
+.rank-2 { background: rgba(255,255,255,0.10); color: #94A3B8; }
 .rank-3 { background: linear-gradient(135deg, #FCA5A5, #EF4444); color: #fff; }
 .rank-n { background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border-default); }
 
@@ -589,7 +568,7 @@ select.input { cursor: pointer; }
 
 .heatmap-cell:hover {
   transform: scale(1.08);
-  box-shadow: 0 4px 14px rgba(15,23,42,0.10);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.40);
   z-index: 1;
   position: relative;
 }
@@ -609,7 +588,7 @@ select.input { cursor: pointer; }
   gap: 12px;
 }
 
-.empty-state svg { opacity: 0.22; color: var(--lavender); }
+.empty-state svg { opacity: 0.18; color: var(--sky); }
 .empty-state p { font-family: var(--font-body); font-size: 14px; line-height: 1.5; }
 
 /* ─── Page enter animation ───────────────────────────────────────────────── */
@@ -620,7 +599,7 @@ select.input { cursor: pointer; }
 
 /* ─── Gradient text ──────────────────────────────────────────────────────── */
 .gradient-text {
-  background: linear-gradient(135deg, #C0392B, #E74C3C);
+  background: linear-gradient(135deg, #EF4444, #F97316);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -649,41 +628,29 @@ select.input { cursor: pointer; }
 
 /* ─── Sidebar ────────────────────────────────────────────────────────────── */
 aside {
-  background: #FFFFFF !important;
+  background: var(--bg-surface) !important;
 }
 
-/* ─── Sidebar nav item label ─────────────────────────────────────────────── */
 .nav-label {
   font-family: var(--font-body);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   letter-spacing: 0;
 }
 
-/* ─── Sidebar section heading ────────────────────────────────────────────── */
 .nav-section {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.10em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-disabled);
   font-family: var(--font-body);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   BARS — PREMIUM MINIMALIST (reference-matched)
-   ────────────────────────────────────────────────────────────────────────
-   Principle: each chart keeps its OWN native colour from its config — we
-   never override `fill`. Within a chart, bars cycle between 3 subtle
-   *depth treatments* (deep / standard / soft) so every bar feels
-   considered without the chart ever becoming a rainbow. This is the
-   "single-hue premium dashboard" look from the reference.
-
-   Scope: strictly `.apexcharts-bar-series .apexcharts-series path`.
-   No fill colour is set. No font / tooltip / label / legend touched.
+   BARS — DARK PREMIUM
 ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Base: buttery transitions for style/opacity changes and hover */
 .apexcharts-bar-series .apexcharts-series path {
   transition:
     filter 300ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -693,63 +660,30 @@ aside {
   transform-origin: left center;
 }
 
-/* ── VARIANT A ── Anchor — crisp presence, refined single floor shadow */
 .apexcharts-bar-series .apexcharts-series path:nth-child(3n+1) {
-  filter:
-    drop-shadow(0 1px 2px rgba(15, 23, 42, 0.10))
-    drop-shadow(0 4px 10px rgba(15, 23, 42, 0.08));
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.40)) drop-shadow(0 4px 12px rgba(0,0,0,0.30));
 }
 
-/* ── VARIANT B ── Lift — subtle brightness & double-layer depth */
 .apexcharts-bar-series .apexcharts-series path:nth-child(3n+2) {
-  filter:
-    drop-shadow(0 2px 4px rgba(15, 23, 42, 0.12))
-    drop-shadow(0 8px 18px rgba(15, 23, 42, 0.08))
-    brightness(1.04);
+  filter: drop-shadow(0 2px 5px rgba(0,0,0,0.45)) drop-shadow(0 8px 20px rgba(0,0,0,0.30)) brightness(1.06);
 }
 
-/* ── VARIANT C ── Soft — restrained opacity, widened diffuse shadow */
 .apexcharts-bar-series .apexcharts-series path:nth-child(3n) {
   opacity: 0.88;
-  filter:
-    drop-shadow(0 1px 2px rgba(15, 23, 42, 0.08))
-    drop-shadow(0 6px 20px rgba(15, 23, 42, 0.07));
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.35)) drop-shadow(0 6px 22px rgba(0,0,0,0.28));
 }
 
-/* ── Hover ── sibling bars recede, hovered bar takes centre stage
-             — no colour shift, just elegant depth + lift         */
-.apexcharts-bar-series:hover .apexcharts-series path { opacity: 0.45; }
+.apexcharts-bar-series:hover .apexcharts-series path { opacity: 0.40; }
 .apexcharts-bar-series .apexcharts-series path:hover {
   opacity: 1 !important;
   transform: scaleY(1.035);
-  filter:
-    drop-shadow(0 4px 10px rgba(15, 23, 42, 0.18))
-    drop-shadow(0 12px 28px rgba(15, 23, 42, 0.14))
-    brightness(1.06) saturate(1.08) !important;
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.55)) drop-shadow(0 12px 30px rgba(0,0,0,0.45)) brightness(1.10) saturate(1.12) !important;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   END BARS — PREMIUM MINIMALIST
+   CHART SURROUND — Dark theme
 ═══════════════════════════════════════════════════════════════════════════ */
 
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   CHART SURROUND — designer polish layer
-   ────────────────────────────────────────────────────────────────────────
-   50-year-veteran brief: the bar IS the hero — everything around it must
-   disappear just enough to let the hero sing, yet reveal itself as
-   impossibly refined on close inspection. Pixel-precise. No detail
-   shouted, every detail felt.
-
-   Strict boundaries:
-     • Bars  → NOT touched (ruled by the block above)
-     • Data  → NOT touched (no content / value / label text changed)
-     • Fonts → NOT touched (no font-family, font-size, font-weight changes)
-     • Only visual scaffolding: grid, axis lines, tooltip surfaces, legend
-       chips, pie/line/area aesthetics, markers, mount reveal.
-═══════════════════════════════════════════════════════════════════════════ */
-
-/* ── 1. Chart reveal — cinematic lift-in ──────────────────────────────── */
 @keyframes chartEntrance {
   0%   { opacity: 0; transform: translateY(10px) scale(0.98); filter: blur(8px); }
   55%  { opacity: 1; filter: blur(0); }
@@ -762,75 +696,60 @@ aside {
 }
 .apexcharts-canvas svg { overflow: visible; }
 
-/* ── 2. Grid lines — whisper-soft dashed guides ───────────────────────── */
 .apexcharts-grid line,
 .apexcharts-gridline {
-  stroke: rgba(15, 23, 42, 0.055) !important;
+  stroke: rgba(255, 255, 255, 0.05) !important;
   stroke-dasharray: 3 6;
 }
-.apexcharts-grid-borders line { stroke: rgba(15, 23, 42, 0.07) !important; }
+.apexcharts-grid-borders line { stroke: rgba(255, 255, 255, 0.07) !important; }
 
-/* ── 3. Axis baseline — barely there, but there ───────────────────────── */
 .apexcharts-xaxis line,
-.apexcharts-yaxis line { stroke: rgba(15, 23, 42, 0.09) !important; }
+.apexcharts-yaxis line { stroke: rgba(255, 255, 255, 0.08) !important; }
 .apexcharts-xaxis-tick,
-.apexcharts-yaxis-tick { stroke: rgba(15, 23, 42, 0.12) !important; }
+.apexcharts-yaxis-tick { stroke: rgba(255, 255, 255, 0.10) !important; }
 
-/* ── 4. Pie / Donut — glass enamel slices, cinematic hover isolation ── */
+/* Axis labels — dark theme */
+.apexcharts-xaxis-label tspan,
+.apexcharts-yaxis-label tspan {
+  fill: #64748B !important;
+}
+
+/* Pie / Donut */
 .apexcharts-pie-series path,
 .apexcharts-pie .apexcharts-slices path {
-  filter:
-    drop-shadow(0 2px 4px rgba(15, 23, 42, 0.10))
-    drop-shadow(0 8px 22px rgba(15, 23, 42, 0.10));
-  transition:
-    filter 320ms cubic-bezier(0.4, 0, 0.2, 1),
-    transform 420ms cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 280ms ease;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.45)) drop-shadow(0 8px 24px rgba(0,0,0,0.35));
+  transition: filter 320ms cubic-bezier(0.4, 0, 0.2, 1), transform 420ms cubic-bezier(0.16, 1, 0.3, 1), opacity 280ms ease;
   transform-origin: center center;
   transform-box: fill-box;
 }
-.apexcharts-pie:hover .apexcharts-pie-series path { opacity: 0.55; }
+.apexcharts-pie:hover .apexcharts-pie-series path { opacity: 0.50; }
 .apexcharts-pie-series path:hover {
   opacity: 1 !important;
-  filter:
-    drop-shadow(0 6px 14px rgba(15, 23, 42, 0.20))
-    drop-shadow(0 14px 36px rgba(192, 57, 43, 0.30))
-    brightness(1.10) saturate(1.18);
-  transform: translate(0, -3px) scale(1.04);
+  filter: drop-shadow(0 6px 16px rgba(0,0,0,0.60)) drop-shadow(0 14px 40px rgba(0,0,0,0.50)) brightness(1.12) saturate(1.20);
+  transform: translate(0, -4px) scale(1.05);
 }
 
-/* ── 5. Line / Area — precision stroke with soft aura ─────────────────── */
+/* Line / Area */
 .apexcharts-line .apexcharts-series path[stroke]:not([stroke="none"]),
 .apexcharts-area .apexcharts-series path[stroke]:not([stroke="none"]) {
-  filter: drop-shadow(0 2px 6px rgba(192, 57, 43, 0.18));
+  filter: drop-shadow(0 2px 8px rgba(59,130,246,0.25));
   transition: stroke-width 220ms ease, filter 280ms ease;
 }
-.apexcharts-line:hover .apexcharts-series path[stroke]:not([stroke="none"]),
-.apexcharts-area:hover .apexcharts-series path[stroke]:not([stroke="none"]) {
-  filter: drop-shadow(0 4px 14px rgba(192, 57, 43, 0.32));
-}
 
-/* ── 6. Markers / data points — concentric halo, grows on hover ───────── */
+/* Markers */
 .apexcharts-marker {
   transition: r 200ms ease, filter 220ms ease, stroke-width 200ms ease;
-  filter: drop-shadow(0 1px 3px rgba(15, 23, 42, 0.22));
-}
-.apexcharts-marker:hover {
-  filter: drop-shadow(0 0 10px rgba(192, 57, 43, 0.55))
-          drop-shadow(0 4px 10px rgba(15, 23, 42, 0.22));
+  filter: drop-shadow(0 1px 4px rgba(0,0,0,0.50));
 }
 
-/* ── 7. Tooltip — glassmorphism, pop-in, colour-block title ───────────── */
+/* Tooltip — dark glass */
 .apexcharts-tooltip {
-  background: rgba(255, 255, 255, 0.86) !important;
-  backdrop-filter: blur(16px) saturate(185%);
-  -webkit-backdrop-filter: blur(16px) saturate(185%);
-  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  background: rgba(13, 21, 37, 0.95) !important;
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255,255,255,0.10) !important;
   border-radius: 14px !important;
-  box-shadow:
-    0 1px 3px rgba(15, 23, 42, 0.05),
-    0 10px 34px rgba(15, 23, 42, 0.16),
-    0 22px 70px rgba(192, 57, 43, 0.10) !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.50), 0 10px 34px rgba(0,0,0,0.60), 0 22px 70px rgba(59,130,246,0.12) !important;
   overflow: hidden;
   transform-origin: top left;
   animation: tipPop 200ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -840,27 +759,30 @@ aside {
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 .apexcharts-tooltip-title {
-  background: linear-gradient(135deg, #FFF5F4 0%, #FFE4E1 60%, #FECACA 100%) !important;
-  border-bottom: 1px solid rgba(192, 57, 43, 0.16) !important;
+  background: rgba(255,255,255,0.06) !important;
+  border-bottom: 1px solid rgba(255,255,255,0.08) !important;
+  color: #94A3B8 !important;
   padding: 9px 13px !important;
+  font-size: 11px !important;
+}
+.apexcharts-tooltip-text-y-label,
+.apexcharts-tooltip-text-y-value {
+  color: #F1F5F9 !important;
 }
 .apexcharts-tooltip-series-group { padding: 6px 13px !important; }
 .apexcharts-tooltip-marker {
-  box-shadow:
-    0 0 0 2px rgba(255,255,255,0.95),
-    0 2px 6px rgba(15, 23, 42, 0.22);
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.50), 0 2px 6px rgba(0,0,0,0.50);
   border-radius: 3px !important;
 }
 
-/* Crosshair xaxis/yaxis tooltips — dark premium pill */
 .apexcharts-xaxistooltip,
 .apexcharts-yaxistooltip {
-  background: rgba(15, 23, 42, 0.93) !important;
+  background: rgba(13,21,37,0.96) !important;
   backdrop-filter: blur(8px);
-  color: #fff !important;
-  border: none !important;
+  color: #F1F5F9 !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
   border-radius: 10px !important;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.28) !important;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.50) !important;
   padding: 5px 10px !important;
 }
 .apexcharts-xaxistooltip::before,
@@ -868,57 +790,428 @@ aside {
 .apexcharts-yaxistooltip::before,
 .apexcharts-yaxistooltip::after { border-color: transparent !important; }
 
-/* ── 8. Legend — chip-style with hover lift, coloured marker glow ───── */
+/* Legend */
 .apexcharts-legend-series {
   padding: 4px 10px !important;
   border-radius: 100px;
-  transition:
-    background 180ms ease,
-    transform 180ms ease,
-    box-shadow 180ms ease;
+  transition: background 180ms ease, transform 180ms ease, box-shadow 180ms ease;
   cursor: pointer;
   margin: 2px 3px !important;
 }
 .apexcharts-legend-series:hover {
-  background: rgba(192, 57, 43, 0.08);
+  background: rgba(255,255,255,0.07);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(192, 57, 43, 0.14);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.30);
+}
+.apexcharts-legend-text {
+  color: #94A3B8 !important;
 }
 .apexcharts-legend-marker {
   border-radius: 4px !important;
-  box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.95),
-    0 2px 6px rgba(15, 23, 42, 0.20);
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.50), 0 2px 6px rgba(0,0,0,0.40);
   transition: transform 180ms ease, box-shadow 200ms ease;
 }
 .apexcharts-legend-series:hover .apexcharts-legend-marker {
   transform: scale(1.2);
-  box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.95),
-    0 4px 10px rgba(15, 23, 42, 0.26);
 }
 
-/* ── 9. Radial / Gauge — velvet track + glow slice ────────────────────── */
-.apexcharts-radialbar-track path { opacity: 0.45; }
+/* Radial / Gauge */
+.apexcharts-radialbar-track path { opacity: 0.20; }
 .apexcharts-radialbar-slice {
-  filter: drop-shadow(0 2px 8px rgba(192, 57, 43, 0.26))
-          drop-shadow(0 6px 18px rgba(15, 23, 42, 0.14));
+  filter: drop-shadow(0 2px 10px rgba(59,130,246,0.35)) drop-shadow(0 6px 20px rgba(0,0,0,0.40));
   transition: filter 300ms ease;
 }
-.apexcharts-radialbar-hollow { filter: drop-shadow(inset 0 2px 6px rgba(15, 23, 42, 0.06)); }
 
-/* ── 10. Zero-line / baseline subtle emphasis ─────────────────────────── */
-.apexcharts-zero-line { stroke: rgba(15, 23, 42, 0.18) !important; stroke-dasharray: 0 !important; }
+/* Zero-line */
+.apexcharts-zero-line { stroke: rgba(255,255,255,0.15) !important; stroke-dasharray: 0 !important; }
 
-/* ── 11. Inner chart container — soft vignette seats the hero ────────── */
-.apexcharts-inner {
-  border-radius: 12px;
-}
+/* Inner chart */
+.apexcharts-inner { border-radius: 12px; }
 
-/* ── 12. Toolbar (if ever shown) — graceful fade ─────────────────────── */
-.apexcharts-toolbar { opacity: 0.40; transition: opacity 200ms ease; }
-.apexcharts-canvas:hover .apexcharts-toolbar { opacity: 0.95; }
+/* Toolbar */
+.apexcharts-toolbar { opacity: 0.30; transition: opacity 200ms ease; }
+.apexcharts-canvas:hover .apexcharts-toolbar { opacity: 0.80; }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   END CHART SURROUND
+   SX-PAGE — Dark premium skin
 ═══════════════════════════════════════════════════════════════════════════ */
+
+.sx-page {
+  --sx-radius:        18px;
+  --sx-radius-lg:     22px;
+  --sx-radius-pill:   999px;
+  --sx-pad-card:      24px;
+  --sx-gap-row:       18px;
+  --sx-gap-section:   24px;
+  --sx-border:        rgba(255, 255, 255, 0.06);
+  --sx-border-strong: rgba(255, 255, 255, 0.11);
+  --sx-shadow-card:   0 1px 2px rgba(0,0,0,0.35), 0 8px 24px -10px rgba(0,0,0,0.45);
+  --sx-shadow-hover:  0 1px 2px rgba(0,0,0,0.40), 0 14px 36px -14px rgba(0,0,0,0.55);
+  --sx-shadow-elev:   0 1px 2px rgba(0,0,0,0.45), 0 24px 60px -20px rgba(0,0,0,0.65);
+  --sx-curve:         cubic-bezier(0.16, 1, 0.3, 1);
+  --sx-ink:           #F1F5F9;
+  --sx-ink-soft:      #CBD5E1;
+  --sx-ink-muted:     #94A3B8;
+  --sx-ink-subtle:    #475569;
+  --sx-canvas:        #070C18;
+  --sx-card-bg:       #111827;
+  --sx-rule:          rgba(255, 255, 255, 0.05);
+}
+
+.sx-page,
+.sx-page table,
+.sx-page input,
+.sx-page select {
+  font-feature-settings: 'tnum' 1, 'cv11' 1, 'ss01' 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.sx-card {
+  background: var(--sx-card-bg);
+  border: 1px solid var(--sx-border);
+  border-radius: var(--sx-radius);
+  box-shadow: var(--sx-shadow-card);
+  transition: box-shadow 280ms var(--sx-curve), transform 280ms var(--sx-curve), border-color 280ms ease;
+  position: relative;
+}
+.sx-card:hover {
+  box-shadow: var(--sx-shadow-hover);
+  border-color: var(--sx-border-strong);
+}
+.sx-card-elev { box-shadow: var(--sx-shadow-elev); }
+
+.sx-eyebrow {
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--sx-ink-muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.sx-hero-num {
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  color: var(--sx-ink);
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+}
+
+.sx-num {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  color: var(--sx-ink);
+}
+
+.sx-table-wrap {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--sx-border);
+}
+.sx-table-wrap table { width: 100%; border-collapse: collapse; }
+.sx-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-elevated);
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--sx-ink-muted);
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--sx-border);
+  white-space: nowrap;
+}
+.sx-table-wrap tbody td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--sx-rule);
+  font-size: 13px;
+  vertical-align: middle;
+  transition: background 140ms ease;
+  color: var(--text-secondary);
+}
+.sx-table-wrap tbody tr:last-child td { border-bottom: 0; }
+.sx-table-wrap tbody tr { transition: background 140ms ease; }
+.sx-table-wrap tbody tr:hover td { background: rgba(255,255,255,0.03); }
+
+.sx-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: var(--sx-radius-pill);
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.sx-pill-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.85;
+}
+
+.sx-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 0 2px;
+}
+.sx-section-head h2 {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--sx-ink);
+}
+
+@keyframes sx-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+.sx-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.04) 0%,
+    rgba(255,255,255,0.10) 20%,
+    rgba(255,255,255,0.04) 40%,
+    rgba(255,255,255,0.04) 100%
+  );
+  background-size: 200% 100%;
+  animation: sx-shimmer 1.6s linear infinite;
+  border-radius: 4px;
+}
+
+.sx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px 0 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--sx-border);
+  border-radius: var(--sx-radius-pill);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--sx-ink-soft);
+  cursor: pointer;
+  transition: border-color 200ms ease, background 200ms ease, transform 200ms var(--sx-curve), box-shadow 200ms ease;
+}
+.sx-chip:hover {
+  border-color: var(--sx-border-strong);
+  background: rgba(255,255,255,0.07);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.30);
+}
+.sx-chip-active {
+  background: rgba(59,130,246,0.20);
+  border-color: rgba(59,130,246,0.35);
+  color: #93C5FD;
+}
+
+@keyframes sx-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.sx-fade { animation: sx-fade-in 320ms var(--sx-curve) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sx-card, .sx-chip, .sx-fade { transition: none !important; animation: none !important; }
+  .sx-shimmer { animation: none !important; }
+}
+
+/* ─── Live pulse dot animation ───────────────────────────────────────────── */
+@keyframes livePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.85); }
+}
+.live-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 0 0 rgba(16,185,129,0.5);
+  animation: livePulse 2s ease-in-out infinite;
+}
+
+/* ─── Alert ticker animation ──────────────────────────────────────────────── */
+@keyframes tickerScroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.alert-ticker-track {
+  display: inline-flex;
+  gap: 0;
+  animation: tickerScroll 40s linear infinite;
+  white-space: nowrap;
+}
+.alert-ticker-track:hover { animation-play-state: paused; }
+
+/* ─── Sidebar tooltip ────────────────────────────────────────────────────── */
+.nav-tooltip {
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(13,21,37,0.97);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #F1F5F9;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.50);
+  z-index: 200;
+}
+.nav-item:hover .nav-tooltip { opacity: 1; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DASHBOARD V2 — Executive Redesign (per spykar-dashboard-claude-code-prompt)
+   Scoped under .v2-app so it never leaks into the existing /  dashboard.
+   Light mode is the default; .theme-dark on the wrapper flips to boardroom.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap');
+
+.v2-app {
+  /* Surfaces — light mode defaults */
+  --v2-ink-950: #0A0B0D;
+  --v2-ink-900: #101216;
+  --v2-ink-800: #171A20;
+  --v2-ink-700: #1F232B;
+  --v2-ink-600: #2A2F3A;
+  --v2-paper-50:  #FAFAFA;
+  --v2-paper-100: #F4F5F7;
+  --v2-paper-200: #E8EAEE;
+  --v2-paper-300: #D2D6DD;
+
+  /* Brand — Spykar red */
+  --v2-brand-400: #F03A4A;
+  --v2-brand-500: #E11D2E;
+  --v2-brand-600: #C81525;
+
+  /* Semantic */
+  --v2-ok-50:   #ECFDF5;
+  --v2-ok-400:  #34D399;
+  --v2-ok-500:  #10B981;
+  --v2-warn-50: #FFFBEB;
+  --v2-warn-400:#FBBF24;
+  --v2-warn-500:#F59E0B;
+  --v2-bad-50:  #FEF2F2;
+  --v2-bad-400: #F87171;
+  --v2-bad-500: #EF4444;
+  --v2-info-400:#60A5FA;
+  --v2-info-500:#3B82F6;
+
+  /* Text */
+  --v2-fg-primary:   #0A0B0D;
+  --v2-fg-secondary: #5B6470;
+  --v2-fg-tertiary:  #8A929D;
+  --v2-fg-inverse:   #FAFAFA;
+
+  /* Surface tokens (semantic — what to use in components) */
+  --v2-bg:           var(--v2-paper-50);
+  --v2-bg-card:      #FFFFFF;
+  --v2-bg-elevated:  var(--v2-paper-100);
+  --v2-border:       var(--v2-paper-200);
+  --v2-border-strong:var(--v2-paper-300);
+
+  /* Typography */
+  --v2-font-body:    'Inter', system-ui, -apple-system, sans-serif;
+  --v2-font-display: 'Inter', system-ui, sans-serif;
+  --v2-font-serif:   'Source Serif 4', Georgia, serif;
+
+  /* Motion */
+  --v2-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  background: var(--v2-bg);
+  color: var(--v2-fg-primary);
+  font-family: var(--v2-font-body);
+  font-feature-settings: "tnum", "ss01";
+  min-height: 100vh;
+}
+
+/* Boardroom mode — swap token values for dark */
+.v2-app.theme-dark {
+  --v2-bg:           var(--v2-ink-950);
+  --v2-bg-card:      var(--v2-ink-800);
+  --v2-bg-elevated:  var(--v2-ink-700);
+  --v2-border:       var(--v2-ink-700);
+  --v2-border-strong:var(--v2-ink-600);
+  --v2-fg-primary:   #FAFAFA;
+  --v2-fg-secondary: #A8B0BC;
+  --v2-fg-tertiary:  #6B7280;
+  --v2-fg-inverse:   #0A0B0D;
+  --v2-paper-50:     var(--v2-ink-950);
+  --v2-paper-100:    var(--v2-ink-900);
+  --v2-paper-200:    var(--v2-ink-800);
+}
+
+/* Tabular numerals — apply to every metric.  Lining figures, no proportional. */
+.v2-app .tabular-nums {
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+.v2-app .v2-card {
+  background: var(--v2-bg-card);
+  border: 1px solid var(--v2-border);
+  border-radius: 12px;
+  transition: box-shadow 200ms var(--v2-ease), transform 200ms var(--v2-ease);
+}
+.v2-app:not(.theme-dark) .v2-card {
+  box-shadow: 0 1px 2px rgba(10,11,13,0.04), 0 2px 8px rgba(10,11,13,0.04);
+}
+.v2-app.theme-dark .v2-card {
+  box-shadow: 0 1px 2px rgba(0,0,0,0.40), 0 8px 24px -8px rgba(0,0,0,0.50);
+}
+
+/* Card stagger entrance — Phase 2 KPIs use this */
+@keyframes v2FadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Pulse for live status dot (5min < amber, 1hr < red) */
+@keyframes v2LivePulse {
+  0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+  70%      { box-shadow: 0 0 0 6px transparent;  opacity: 0.6; }
+}
+
+/* Responsive layout — Phase 5 polish.
+   Desktop:    main 1fr | right rail 320px,  KPI row 5 cols, intelligence 2 cols
+   Laptop  ≤1280px:  KPIs wrap to 3 cols, right rail collapses to top strip
+   Tablet  ≤960px:   KPIs go 2 cols, intelligence stacks to 1 col
+   Mobile  ≤640px:   single column everywhere, nav collapses */
+.v2-app .v2-page-grid       { grid-template-columns: minmax(0, 1fr) 320px; }
+.v2-app .v2-kpi-row         { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.v2-app .v2-intelligence    { grid-template-columns: 1.15fr 1fr; }
+
+@media (max-width: 1280px) {
+  .v2-app .v2-page-grid    { grid-template-columns: 1fr; }
+  .v2-app .v2-kpi-row      { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .v2-app .v2-needs-attn   { position: static !important; }
+}
+@media (max-width: 960px) {
+  .v2-app .v2-kpi-row      { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .v2-app .v2-intelligence { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .v2-app .v2-kpi-row      { grid-template-columns: 1fr; }
+}

@@ -14,10 +14,10 @@ export const authService = {
 
 // ─── Inventory ────────────────────────────────────────────────────────────────
 export const inventoryService = {
-  getExecutiveSummary: () => api.get('/inventory/executive-summary'),
+  getExecutiveSummary: (params = {}) => api.get('/inventory/executive-summary', { params }),
   getSnapshot: (params = {}) => api.get('/inventory/snapshot', { params }),
   getAlerts: () => api.get('/inventory/alerts'),
-  getAlertsSummary: () => api.get('/inventory/alerts/summary'),
+  getAlertsSummary: (params = {}) => api.get('/inventory/alerts/summary', { params }),
   getMovements: (params = {}) => api.get('/inventory/movements', { params }),
   getAgeing: (params = {}) => api.get('/inventory/ageing', { params }),
   exportSnapshot: (params = {}) => api.get('/inventory/snapshot/export', {
@@ -88,7 +88,19 @@ export const analyticsService = {
   getZoneHeatmap: () => api.get('/analytics/zone-heatmap'),
   getFillRate: (params = {}) => api.get('/analytics/fill-rate', { params }),
   getSalesAnalytics: (params = {}) => api.get('/analytics/sales', { params }),
+  // Sales drilldown — store-level OR sku-level pivot. Pass ?type=store|sku
+  // and ?id=<uuid>, plus the same v2 filter set as getSalesAnalytics so the
+  // drill scopes to whatever window the user is viewing.
+  getSalesDrilldown: (params = {}) => api.get('/analytics/sales/drilldown', { params }),
   getReturnsAnalytics: (params = {}) => api.get('/analytics/returns', { params }),
+  // Overview cross-pivot — sales × inventory join at SKU + store grain.
+  // Powers the Overview page's hero tables that answer "which store has
+  // SKU X in stock?", "which SKUs is store Y doing best on?", and
+  // "what's OOS at our busiest stores?". Mode + filter aware.
+  getOverviewCrossPivot: (params = {}) => api.get('/analytics/overview/cross-pivot', { params }),
+  // v2 dashboard — state-wise sales for the India heatmap.  Added in
+  // Phase 3 alongside the new backend route.
+  getStateHeatmap: (params = {}) => api.get('/analytics/state-heatmap', { params }),
 };
 
 // ─── AI Query ─────────────────────────────────────────────────────────────────

@@ -59,56 +59,79 @@ function useCountUp(value, duration = 700) {
 
 // ─── KPI card — single big number with optional gradient accent rail ────────
 function KpiHero({ label, value, format = 'indian', icon: Icon, accent, context, loading, prefix = '', suffix = '' }) {
-  const animate = !loading && typeof value === 'number';
-  const shown = useCountUp(animate ? value : null, 720);
-  const display = loading ? null
+  // Skeleton ONLY when we have nothing to display (cold load). During a
+  // mode/filter refetch we keep showing the previous value so toggling
+  // Active ↔ Inactive ↔ All never blanks the hero to a pulsing placeholder.
+  const hasValue   = value !== null && value !== undefined && value !== '';
+  const showSkel   = loading && !hasValue;
+  const animate    = !showSkel && typeof value === 'number';
+  const shown      = useCountUp(animate ? value : null, 720);
+  // For percentage cards keep one decimal so 3.4% doesn't read as "3%".
+  // For Indian-format big numbers we still show K/L/Cr — the raw figure
+  // is exposed via the hover tooltip below.
+  const isPct = suffix === '%';
+  const display    = showSkel ? null
     : format === 'string'  ? value
-    : format === 'indian'  ? prefix + fmtL(animate ? Math.round(shown) : value) + suffix
+    : format === 'indian'  && isPct
+      ? prefix + (animate ? (Math.round(shown * 10) / 10).toFixed(1) : Number(value).toFixed(1)) + suffix
+    : format === 'indian'
+      ? prefix + fmtL(animate ? Math.round(shown) : value) + suffix
     : (prefix + (animate ? Math.round(shown) : Number(value)).toLocaleString('en-IN') + suffix);
+  // Hover tooltip — show the precise raw figure (full Indian-localised
+  // number with commas) so a user hovering on "5.40 L" sees "5,40,000".
+  const rawTooltip = (typeof value === 'number')
+    ? prefix + Number(value).toLocaleString('en-IN', { maximumFractionDigits: 2 }) + suffix
+    : (value != null ? String(value) : '');
   return (
     <div
+      className="sx-card"
       style={{
         position: 'relative',
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: 16,
-        padding: '18px 20px 16px',
+        padding: '20px 22px 18px',
         overflow: 'hidden',
-        transition: 'all 240ms cubic-bezier(0.4,0,0.2,1)',
       }}
       onMouseEnter={e => {
-        e.currentTarget.style.transform = 'translateY(-3px)';
-        e.currentTarget.style.boxShadow = `0 10px 30px rgba(15,23,42,0.10), 0 0 0 1px ${accent}33`;
+        e.currentTarget.style.transform = 'translateY(-2px)';
       }}
       onMouseLeave={e => {
         e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = 'none';
       }}
     >
-      {/* Gradient accent rail */}
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3,
-        background: `linear-gradient(135deg, ${accent}, ${accent}dd)`, borderRadius: '16px 16px 0 0' }} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, marginTop: 4 }}>
+      {/* Whisper-thin accent rail at the top edge — communicates the lens
+          colour without shouting. 2px not 3px; corners hugged via radius. */}
+      <div style={{ position: 'absolute', top: 0, left: 14, right: 14, height: 2,
+        background: `linear-gradient(90deg, ${accent}, ${accent}cc)`,
+        borderRadius: '2px', opacity: 0.85 }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, marginTop: 4 }}>
         {Icon && (
-          <div style={{ width: 32, height: 32, borderRadius: 9, background: `${accent}14`,
-            border: `1px solid ${accent}33`, color: accent,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Icon size={16} strokeWidth={2} />
+          <div style={{ width: 30, height: 30, borderRadius: 9,
+            background: `${accent}10`,
+            color: accent,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <Icon size={15} strokeWidth={2} />
           </div>
         )}
-        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em',
-          textTransform: 'uppercase', color: 'var(--text-muted)' }}>{label}</span>
+        <span style={{
+          fontFamily: 'var(--font-body)',
+          fontSize: 10.5, fontWeight: 800, letterSpacing: '0.10em',
+          textTransform: 'uppercase', color: 'var(--text-muted)',
+        }}>{label}</span>
       </div>
-      {loading ? (
-        <div className="skeleton" style={{ height: 36, width: '70%', marginBottom: 10 }} />
+      {showSkel ? (
+        <div className="sx-shimmer" style={{ height: 36, width: '70%', marginBottom: 10, borderRadius: 6 }} />
       ) : (
-        <div style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 800,
-          color: 'var(--text-primary)', lineHeight: 1.02, letterSpacing: '-0.025em', marginBottom: 6 }}>
+        <div className="sx-hero-num"
+          title={rawTooltip}
+          style={{ marginBottom: 8, fontSize: 32, cursor: 'help' }}>
           {display ?? '—'}
         </div>
       )}
       {context && (
-        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-disabled)' }}>{context}</div>
+        <div style={{
+          fontSize: 11.5, fontWeight: 500, color: 'var(--text-muted)',
+          letterSpacing: '0.005em', lineHeight: 1.45,
+        }}>{context}</div>
       )}
     </div>
   );
@@ -117,12 +140,13 @@ function KpiHero({ label, value, format = 'indian', icon: Icon, accent, context,
 // ─── Pareto Reveal — "X SKUs drive 50% of sales" ────────────────────────────
 function SalesPareto({ rows, totalValue, label = 'SKUs', loading }) {
   const stats = useMemo(() => {
-    const sorted = [...(rows || [])].sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
-    const total = totalValue || sorted.reduce((s, r) => s + Number(r.value || 0), 0);
+    const v = (r) => Number(r.sales_value ?? r.value ?? 0);
+    const sorted = [...(rows || [])].sort((a, b) => v(b) - v(a));
+    const total = totalValue || sorted.reduce((s, r) => s + v(r), 0);
     if (!total) return null;
     let cum = 0, n50 = 0, n80 = 0, n90 = 0;
     for (let i = 0; i < sorted.length; i++) {
-      cum += Number(sorted[i].value || 0);
+      cum += v(sorted[i]);
       if (!n50 && cum >= total * 0.5) n50 = i + 1;
       if (!n80 && cum >= total * 0.8) n80 = i + 1;
       if (!n90 && cum >= total * 0.9) n90 = i + 1;
@@ -182,15 +206,28 @@ function SalesPareto({ rows, totalValue, label = 'SKUs', loading }) {
 }
 
 // ─── TopList — same structure as NetworkPulse, sortable + size-able ────────
-function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, empty, sortKeyValue = 'value', sortKeyUnits = 'units' }) {
-  const [sortBy, setSortBy] = useState('value');
-  const [limit, setLimit]   = useState(10);
+// Direction toggle (Top vs Bottom) lets the user pivot from "best 10 stores"
+// to "worst 10 stores" with one click — same data, just sorted ASC instead
+// of DESC. Worst-N is the canonical CFO ask for finding under-performers.
+function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, empty, sortKeyValue = 'value', sortKeyUnits = 'units', onRowClick }) {
+  const [sortBy,   setSortBy]   = useState('value');
+  const [limit,    setLimit]    = useState(10);
+  const [direction, setDirection] = useState('top'); // 'top' | 'bottom'
   const visible = useMemo(() => {
     const key = sortBy === 'units' ? sortKeyUnits : sortKeyValue;
-    return [...(rows || [])]
-      .sort((a, b) => Number(b?.[key] || 0) - Number(a?.[key] || 0))
-      .slice(0, limit);
-  }, [rows, sortBy, limit, sortKeyValue, sortKeyUnits]);
+    const sorted = [...(rows || [])].sort((a, b) =>
+      direction === 'bottom'
+        ? Number(a?.[key] || 0) - Number(b?.[key] || 0)
+        : Number(b?.[key] || 0) - Number(a?.[key] || 0)
+    );
+    // For bottom view, hide rows that are completely zero (e.g. stores with
+    // zero sales in the window) since "0 / 0 / 0" rows are noise; the user
+    // wants the lowest non-zero performers. Top view always shows everything.
+    const filtered = direction === 'bottom'
+      ? sorted.filter(r => Number(r?.[key] || 0) > 0)
+      : sorted;
+    return filtered.slice(0, limit);
+  }, [rows, sortBy, limit, direction, sortKeyValue, sortKeyUnits]);
   const SelectChip = ({ value, onChange, options }) => (
     <select value={value} onChange={e => onChange(e.target.value)}
       style={{
@@ -205,19 +242,34 @@ function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, em
     </select>
   );
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
-      borderRadius: 14, padding: '16px 18px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        {Icon && <Icon size={14} style={{ color: 'var(--text-muted)' }} />}
-        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.07em',
-          textTransform: 'uppercase', color: 'var(--text-muted)' }}>{title}</span>
-        <div style={{ flex: 1 }} />
-        <SelectChip value={sortBy} onChange={setSortBy}
-          options={[{ value: 'value', label: 'Value' }, { value: 'units', label: 'Units' }]} />
-        <SelectChip value={String(limit)} onChange={v => setLimit(Number(v))}
-          options={[10, 15, 20].map(n => ({ value: String(n), label: `Top ${n}` }))} />
+    <div className="sx-card" style={{ padding: '18px 20px 16px' }}>
+      {/* Header — title on row 1, controls on row 2. Two-row layout keeps the
+          title readable even when the parent column is narrow (the Shades
+          column is 1.2fr and was wrapping the title to 4 lines when 3 chips
+          were stuffed onto the same row). */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          {Icon && <Icon size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
+          <span style={{
+            fontSize: 11, fontWeight: 800, letterSpacing: '0.07em',
+            textTransform: 'uppercase', color: 'var(--text-muted)',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            flex: 1, minWidth: 0,
+          }} title={title}>{title}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <SelectChip value={direction} onChange={setDirection}
+            options={[{ value: 'top', label: 'Top' }, { value: 'bottom', label: 'Bottom' }]} />
+          <SelectChip value={sortBy} onChange={setSortBy}
+            options={[{ value: 'value', label: 'Value' }, { value: 'units', label: 'Units' }]} />
+          <SelectChip value={String(limit)} onChange={v => setLimit(Number(v))}
+            options={[10, 15, 20, 25, 50].map(n => ({
+              value: String(n), label: `${direction === 'bottom' ? 'Worst' : 'Top'} ${n}`,
+            }))} />
+        </div>
       </div>
-      {loading && (
+      {/* Skeleton ONLY on cold load. Refetch keeps prior rows visible. */}
+      {loading && visible.length === 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {[0,1,2,3,4].map(i => <div key={i} className="skeleton" style={{ height: 36, borderRadius: 6 }} />)}
         </div>
@@ -225,16 +277,26 @@ function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, em
       {!loading && visible.length === 0 && (
         <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>{empty}</div>
       )}
-      {!loading && visible.length > 0 && (
+      {visible.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           {visible.map((r, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10,
-              padding: '8px 8px', borderRadius: 8, transition: 'background 120ms' }}
+            <div key={i}
+              onClick={onRowClick ? () => onRowClick(r) : undefined}
+              title={onRowClick ? 'Open drilldown' : undefined}
+              style={{ display: 'flex', alignItems: 'center', gap: 10,
+              padding: '8px 8px', borderRadius: 8, transition: 'background 120ms',
+              cursor: onRowClick ? 'pointer' : 'default' }}
               onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              {/* Top 3 badges glow accent (gold-ish); Worst 3 badges glow red
+                  so the bottom view reads as a problem signal at a glance. */}
               <div style={{ width: 22, height: 22, flexShrink: 0, borderRadius: 6,
-                background: i < 3 ? 'var(--accent-glow)' : 'var(--bg-elevated)',
-                color: i < 3 ? 'var(--accent-primary)' : 'var(--text-muted)',
+                background: i < 3
+                  ? (direction === 'bottom' ? 'rgba(220,38,38,0.12)' : 'var(--accent-glow)')
+                  : 'var(--bg-elevated)',
+                color: i < 3
+                  ? (direction === 'bottom' ? '#DC2626' : 'var(--accent-primary)')
+                  : 'var(--text-muted)',
                 fontSize: 11, fontWeight: 800,
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</div>
               <div style={{ flex: 1, minWidth: 0 }}>{renderLeft(r)}</div>
@@ -251,18 +313,17 @@ function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, em
 function ChannelMixBars({ rows, totalValue, loading }) {
   const total = totalValue || (rows || []).reduce((s, r) => s + Number(r.value || 0), 0);
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
-      borderRadius: 14, padding: '16px 18px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <Layers size={14} style={{ color: 'var(--text-muted)' }} />
-        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.07em',
-          textTransform: 'uppercase', color: 'var(--text-muted)' }}>Channels — sales mix</span>
+    <div className="sx-card" style={{ padding: '18px 20px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <Layers size={13} strokeWidth={2.2} style={{ color: 'var(--text-muted)' }} />
+        <span className="sx-eyebrow">Channels — sales mix</span>
       </div>
-      {loading && <div className="skeleton" style={{ height: 100, borderRadius: 8 }} />}
+      {/* Skeleton ONLY on cold load. Refetch keeps prior bars visible. */}
+      {loading && (!rows || rows.length === 0) && <div className="sx-shimmer" style={{ height: 100, borderRadius: 10 }} />}
       {!loading && (!rows || rows.length === 0) && (
-        <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>No channels match</div>
+        <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12, fontWeight: 600 }}>No channels match</div>
       )}
-      {!loading && rows && rows.length > 0 && (
+      {rows && rows.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {rows.map((c, i) => {
             const pct = total ? (Number(c.value || 0) / total) * 100 : 0;
@@ -293,24 +354,25 @@ function ChannelMixBars({ rows, totalValue, loading }) {
 
 // ─── Action panel — high-return SKUs + slow movers + dead-on-arrival ───────
 function ActionPanel({ summary, byColor, byStore, allStores, loading }) {
-  // High-return SKUs — colours where return % is highest (≥ 5 returns)
+  // High-return SKUs — shades where return % is highest (≥ 5 returns).
+  // by_color now ships with `return_qty` so this is real data.
   const highReturnColors = useMemo(() => {
     return [...(byColor || [])]
-      .filter(c => Number(c.return_units || 0) >= 5)
+      .filter(c => Number(c.return_qty || 0) >= 5)
       .map(c => ({
         ...c,
-        return_rate: Number(c.units || 0) > 0
-          ? (Number(c.return_units || 0) / Number(c.units || 0)) * 100 : 0,
+        return_rate: Number(c.units_sold || 0) > 0
+          ? (Number(c.return_qty || 0) / Number(c.units_sold || 0)) * 100 : 0,
       }))
       .sort((a, b) => b.return_rate - a.return_rate)
       .slice(0, 5);
   }, [byColor]);
 
-  // Slow stores — bottom 5 by net value, but with > 0 sales (excludes dead)
+  // Slow stores — bottom 5 by sales_value with > 0 sales (excludes dead).
   const slowStores = useMemo(() => {
     return [...(allStores || [])]
-      .filter(r => Number(r.units || 0) > 0)
-      .sort((a, b) => Number(a.value || 0) - Number(b.value || 0))
+      .filter(r => Number(r.units_sold || 0) > 0)
+      .sort((a, b) => Number(a.sales_value || 0) - Number(b.sales_value || 0))
       .slice(0, 5);
   }, [allStores]);
 
@@ -323,7 +385,7 @@ function ActionPanel({ summary, byColor, byStore, allStores, loading }) {
       onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)';
         e.currentTarget.style.boxShadow = 'none'; }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <div style={{ width: 32, height: 32, borderRadius: 9, background: '#fff',
+        <div style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(255,255,255,0.06)',
           color: accent, border: `1px solid ${border}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Icon size={16} strokeWidth={2.5} />
@@ -367,7 +429,7 @@ function ActionPanel({ summary, byColor, byStore, allStores, loading }) {
         headline={overallRate + '%'}
         bullets={[
           `${fmtNum(summary?.return_units)} units returned · ${fmtRs(summary?.return_value)} value`,
-          highReturnColors[0] ? `Top return shade: ${highReturnColors[0].color_name} (${highReturnColors[0].return_rate.toFixed(1)}%)` : 'No high-return shades',
+          highReturnColors[0] ? `Top return shade: ${highReturnColors[0].color_name} (${highReturnColors[0].return_rate.toFixed(1)}%)` : 'No high-return shades in scope',
           overallRate >= 5 ? 'High friction — investigate fit/quality' : 'Within healthy band',
         ]}
         cta="Investigate"
@@ -379,7 +441,7 @@ function ActionPanel({ summary, byColor, byStore, allStores, loading }) {
         headline={fmtNum(highReturnColors.length)}
         bullets={
           highReturnColors.length > 0
-            ? highReturnColors.slice(0, 3).map(c => `${c.color_name} — ${fmtNum(c.return_units)} returns (${c.return_rate.toFixed(1)}%)`)
+            ? highReturnColors.slice(0, 3).map(c => `${c.color_name} — ${fmtNum(c.return_qty)} returns (${c.return_rate.toFixed(1)}%)`)
             : ['No shades with 5+ returns in this window']
         }
         cta="Review quality"
@@ -391,7 +453,7 @@ function ActionPanel({ summary, byColor, byStore, allStores, loading }) {
         headline={fmtNum(slowStores.length) + ' stores'}
         bullets={
           slowStores.length > 0
-            ? slowStores.slice(0, 3).map(s => `${s.loc_name || s.loc_code} — ${fmtRs(s.value)}`)
+            ? slowStores.slice(0, 3).map(s => `${s.location_name || s.location_code} — ${fmtRs(s.sales_value)}`)
             : ['Every store moved inventory']
         }
         cta="Plan support"
@@ -400,8 +462,184 @@ function ActionPanel({ summary, byColor, byStore, allStores, loading }) {
   );
 }
 
-// ─── Main SalesPulse component ─────────────────────────────────────────────
-export default function SalesPulse({ data, loading, lensMode = 'net', dateFrom, dateTo }) {
+// ─── SalesPulseTables — the bottom row, exported separately so it can sit
+// BELOW the legacy KPI cards (Sales Transactions / Units / Net Revenue /
+// Returns / Stock) on the page instead of immediately under the hero strip.
+// Driven by the SAME `data` prop as SalesPulse → narrows with every filter.
+export function SalesPulseTables({ data, loading, lensMode = 'net', valuation = 'gross', onStoreClick }) {
+  const s = data?.summary || {};
+  const lens = lensMode || 'net';
+  const lensLabel = lens === 'sale' ? 'Sales' : lens === 'return' ? 'Returns' : 'Net';
+  const valuationResolved = resolveValuation(s, lens, valuation);
+  const value = valuationResolved.value;
+  const valuationKind  = valuationResolved.kind;
+  const valuationLabel = valuationResolved.label;
+
+  // Build a derived "value" field per row matching the chosen lens ×
+  // valuation combo. Now lens-aware so picking Return → Top Stores ranks by
+  // most-returned-revenue stores (or returned-units when sort=Units). Net
+  // mode picks sales − returns. Includes _saleVal / _returnVal so the
+  // sub-line under the value can show context.
+  const enrichRows = (rows) => (rows || []).map(r => {
+    const saleVal   = rowValuation(r, valuation, 'sale');
+    const returnVal = rowValuation(r, valuation, 'return');
+    const lensVal   = rowValuation(r, valuation, lens);
+    // Lens-aware units so "Sort: Units" toggle also flips with lens.
+    const lensUnits = lens === 'return' ? Number(r.return_qty || 0)
+                    : lens === 'net'    ? Number(r.units_sold || 0) - Number(r.return_qty || 0)
+                    : Number(r.units_sold || 0);
+    return { ...r, _val: lensVal, _saleVal: saleVal, _returnVal: returnVal, _units: lensUnits };
+  });
+
+  const formatRowValue = (val) => valuationKind === 'pct' ? `${val.toFixed(1)}%` : fmtRs(val);
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1fr', gap: 14 }}>
+        <TopList
+          title={`Top Stores · ${lensLabel} ${valuationLabel}`}
+          icon={Building2}
+          rows={enrichRows(data?.all_stores)}
+          loading={loading}
+          onRowClick={onStoreClick ? (r) => onStoreClick(r.location_id) : null}
+          renderLeft={(r) => (
+            <>
+              <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
+                {r.location_name || r.location_code}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                {r.location_code} · {r.city || '—'}, {r.state || '—'} · {r.channel || '—'}
+              </div>
+            </>
+          )}
+          renderRight={(r) => {
+            // Units displayed match the lens — Return mode shows return units,
+            // Net shows sales − returns.
+            const lensUnits = lens === 'return' ? Number(r.return_qty || 0)
+                            : lens === 'net'    ? Number(r.units_sold || 0) - Number(r.return_qty || 0)
+                            : Number(r.units_sold || 0);
+            return (
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontWeight: 800, fontSize: 13.5 }}>{formatRowValue(r._val)}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{fmtNum(lensUnits)} {lens === 'return' ? 'returns' : 'units'}</div>
+              </div>
+            );
+          }}
+          sortKeyValue="_val" sortKeyUnits="_units"
+          empty="No stores match the current filters"
+        />
+        <TopList
+          title={`Top Shades · ${lensLabel} ${valuationLabel}`}
+          icon={Award}
+          rows={enrichRows(data?.by_color)}
+          loading={loading}
+          sortKeyValue="_val" sortKeyUnits="_units"
+          renderLeft={(r) => (
+            <>
+              <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
+                {r.color_name}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                {fmtNum(r.transactions)} txns · {fmtNum(r.return_qty)} returns
+              </div>
+            </>
+          )}
+          renderRight={(r) => {
+            // Units displayed match the lens — Return mode shows return units,
+            // Net shows sales − returns.
+            const lensUnits = lens === 'return' ? Number(r.return_qty || 0)
+                            : lens === 'net'    ? Number(r.units_sold || 0) - Number(r.return_qty || 0)
+                            : Number(r.units_sold || 0);
+            return (
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontWeight: 800, fontSize: 13.5 }}>{formatRowValue(r._val)}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{fmtNum(lensUnits)} {lens === 'return' ? 'returns' : 'units'}</div>
+              </div>
+            );
+          }}
+          empty="No shades match"
+        />
+        <ChannelMixBars rows={enrichRows(data?.by_channel).map(c => ({ ...c, value: c._val }))} totalValue={value} loading={loading} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Valuation lens resolver ─────────────────────────────────────────────
+// The user picks one of 8 lenses; this returns the right ₹ figure for the
+// (Sale/Return/Net) movement type. Margin% is special — returns a percent
+// not a rupee figure — so the caller knows whether to render with a ₹ or %.
+function resolveValuation(s, sale_mode, valuation) {
+  const sm = sale_mode || 'net';
+  const v  = valuation || 'gross';
+  const pickByMode = (saleK, retK, netK) =>
+    Number(s?.[sm === 'sale' ? saleK : sm === 'return' ? retK : netK] || 0);
+  switch (v) {
+    case 'gross':   return { kind: 'rupee', value: pickByMode('sales_value','return_value','net_gross_value'), label: 'Gross (with GST)' };
+    case 'ex_gst':  return { kind: 'rupee', value: pickByMode('sales_ex_gst_value','return_ex_gst_value','net_ex_gst_value'), label: 'Ex-GST revenue' };
+    case 'gst':     return { kind: 'rupee', value: pickByMode('sales_gst_collected','return_gst_collected','net_gst_collected'), label: 'GST collected' };
+    case 'mrp':     return { kind: 'rupee', value: pickByMode('sales_mrp_value','return_mrp_value','net_mrp_value'), label: 'At MRP' };
+    case 'discount': {
+      const mrp   = pickByMode('sales_mrp_value','return_mrp_value','net_mrp_value');
+      const gross = pickByMode('sales_value','return_value','net_gross_value');
+      return { kind: 'rupee', value: Math.max(0, mrp - gross), label: 'Discount given' };
+    }
+    case 'cogs':    return { kind: 'rupee', value: pickByMode('sales_cogs_value','return_cogs_value','net_cogs_value'), label: 'COGS (cost basis)' };
+    case 'margin':  return { kind: 'rupee', value: Number(sm === 'net' ? s?.net_margin_value : s?.sales_margin_value || 0), label: 'Gross Margin' };
+    case 'margin_pct': return { kind: 'pct', value: Number(sm === 'net' ? s?.net_margin_pct : s?.sales_margin_pct || 0), label: 'Margin %' };
+    default:        return { kind: 'rupee', value: pickByMode('sales_value','return_value','net_gross_value'), label: 'Gross' };
+  }
+}
+
+// Pick the right ₹ field on a row aggregate (by_color/by_store/etc.) for
+// the chosen lens × valuation combo. Now lens-aware: Return mode picks
+// return-side fields (so "most-returned stores" actually ranks by returns),
+// Net mode picks sales − returns, Sale mode picks sales-side. The backend
+// ships return_value, return_mrp_value, return_gst_collected,
+// return_ex_gst_value alongside the sales-side columns on every aggregate.
+function rowValuation(r, valuation, lensMode = 'sale') {
+  const lm = lensMode || 'sale';
+  // Sale-side picker
+  const saleVal = (() => {
+    switch (valuation) {
+      case 'ex_gst':     return Number(r?.ex_gst_value || 0);
+      case 'gst':        return Number(r?.gst_collected || 0);
+      case 'mrp':        return Number(r?.mrp_value || 0);
+      case 'discount':   return Math.max(0, Number(r?.mrp_value || 0) - Number(r?.sales_value || 0));
+      case 'cogs':       return Number(r?.cogs_value || 0);
+      case 'margin':     return Number(r?.sales_value || 0) - Number(r?.cogs_value || 0);
+      case 'margin_pct': {
+        const sv = Number(r?.sales_value || 0);
+        const cogs = Number(r?.cogs_value || 0);
+        return sv > 0 ? Math.round(((sv - cogs) / sv) * 1000) / 10 : 0;
+      }
+      case 'gross':
+      default:           return Number(r?.sales_value || 0);
+    }
+  })();
+  // Return-side picker. cogs/margin/margin_pct fall back to sale-side since
+  // the breakdown rows don't ship return cogs (a real-world cost-of-returns
+  // signal would need RMA-side cost; out of scope for a UI flip).
+  const returnVal = (() => {
+    switch (valuation) {
+      case 'ex_gst':     return Number(r?.return_ex_gst_value || 0);
+      case 'gst':        return Number(r?.return_gst_collected || 0);
+      case 'mrp':        return Number(r?.return_mrp_value || 0);
+      case 'discount':   return Math.max(0, Number(r?.return_mrp_value || 0) - Number(r?.return_value || 0));
+      case 'cogs':
+      case 'margin':
+      case 'margin_pct': return saleVal; // fallback
+      case 'gross':
+      default:           return Number(r?.return_value || 0);
+    }
+  })();
+  if (lm === 'return') return returnVal;
+  if (lm === 'net')    return saleVal - returnVal;
+  return saleVal;
+}
+
+// ─── Main SalesPulse component (top: header + KPIs only) ──────────────────
+export default function SalesPulse({ data, loading, lensMode = 'net', valuation = 'gross', dateFrom, dateTo }) {
   const s = data?.summary || {};
   const byChannel = data?.by_channel || []; // backend optional; falls back if absent
 
@@ -412,9 +650,10 @@ export default function SalesPulse({ data, loading, lensMode = 'net', dateFrom, 
   const units = lens === 'sale' ? Number(s.units_sold||0)
               : lens === 'return' ? Number(s.return_units||0)
               : Number(s.net_units||0);
-  const value = lens === 'sale' ? Number(s.sales_value||0)
-              : lens === 'return' ? Number(s.return_value||0)
-              : Number(s.net_value||0);
+  const valuationResolved = resolveValuation(s, lens, valuation);
+  const value = valuationResolved.value;
+  const valuationKind = valuationResolved.kind;
+  const valuationLabel = valuationResolved.label;
   const txns  = lens === 'sale' ? Number(s.sales_txns||0)
               : lens === 'return' ? Number(s.return_txns||0)
               : Number(s.sales_txns||0) - Number(s.return_txns||0);
@@ -425,33 +664,38 @@ export default function SalesPulse({ data, loading, lensMode = 'net', dateFrom, 
 
   return (
     <div style={{ marginBottom: 32 }}>
-      {/* ── Header strip ─────────────────────────────────────────────── */}
+      {/* ── Header strip — refined eyebrow + lens chip + date capsule ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Sparkles size={14} style={{ color: 'var(--accent-primary)' }} />
-          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
-            textTransform: 'uppercase', color: 'var(--text-muted)' }}>Sales Pulse</span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '3px 10px', background: `${lensColor}14`,
-            border: `1px solid ${lensColor}33`, color: lensColor,
-            borderRadius: 999, fontSize: 11, fontWeight: 800, letterSpacing: '0.04em' }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: lensColor }} />
+          <Sparkles size={13} strokeWidth={2} style={{ color: 'var(--accent-primary)' }} />
+          <span className="sx-eyebrow">Sales Pulse</span>
+          <span className="sx-pill" style={{
+            background: `${lensColor}10`,
+            border: `1px solid ${lensColor}26`,
+            color: lensColor,
+          }}>
+            <span className="sx-pill-dot" />
             {lensLabel}
           </span>
         </div>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '4px 10px', background: 'rgba(2,132,199,0.08)',
-          color: 'var(--sky)', border: '1px solid rgba(2,132,199,0.20)',
-          borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
-          <Calendar size={11} />
+        <span className="sx-pill" style={{
+          background: 'rgba(15, 23, 42, 0.04)',
+          border: '1px solid rgba(15, 23, 42, 0.06)',
+          color: 'var(--text-muted)',
+          fontWeight: 700, letterSpacing: '0.02em', textTransform: 'none', fontSize: 11,
+        }}>
+          <Calendar size={11} strokeWidth={2.2} />
           {dateFrom} → {dateTo}
-        </div>
+        </span>
       </div>
 
-      {/* ── HERO KPI STRIP ─────────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: 14, marginBottom: 24 }}>
+      {/* ── MERGED KPI STRIP — one section, no duplicates ─────────────────
+          Single row with the 7 most decision-driving numbers. Lens-aware
+          where the metric makes sense; static for what doesn't depend on
+          Sale/Return/Net (Returns Rate, Active Days, Best Day, Stock). ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(208px, 1fr))',
+        gap: 16, marginBottom: 28 }}>
         <KpiHero
           label={`${lensLabel} — Units`}
           icon={ShoppingBag} accent={lensColor}
@@ -459,10 +703,38 @@ export default function SalesPulse({ data, loading, lensMode = 'net', dateFrom, 
           context={`${fmtNum(skuCount)} unique SKUs · avg ${fmtNum(dailyAvg)}/day`}
         />
         <KpiHero
-          label={`${lensLabel} — Revenue`}
+          label={`${lensLabel} — ${valuationLabel}`}
           icon={IndianRupee} accent={lensColor}
-          value={value} format="indian" prefix="₹" loading={loading}
-          context={`avg ₹${fmtNum(avgPerTxn)} per txn`}
+          value={value} format="indian"
+          prefix={valuationKind === 'pct' ? '' : '₹'}
+          suffix={valuationKind === 'pct' ? '%' : ''}
+          loading={loading}
+          context={
+            valuationKind === 'pct'
+              ? `gross ₹${fmtL(Number(s.sales_value||0))} − COGS ₹${fmtL(Number(s.sales_cogs_value||0))}`
+              : `avg ₹${fmtNum(txns ? Math.round(value / txns) : 0)} per txn`
+          }
+        />
+        <KpiHero
+          label={`${lensLabel} — Transactions`}
+          icon={Award} accent={lensColor}
+          value={txns} loading={loading}
+          context={`avg ${fmtNum(s.sales_txns && s.active_days ? Math.round(Number(s.sales_txns)/Number(s.active_days)) : 0)} sale txns/day`}
+        />
+        {/* Stores KPI — eligible store count under the active filters,
+            with sub-line showing how many actually sold in the window.
+            Transparent: "284 stores · 275 sold · 9 silent" reveals the gap. */}
+        <KpiHero
+          label="Stores"
+          icon={Building2} accent="#0284C7"
+          value={Number(s.eligible_store_count || 0)}
+          loading={loading}
+          context={(() => {
+            const elig   = Number(s.eligible_store_count || 0);
+            const sold   = Number(s.stores_with_sales   || 0);
+            const silent = Math.max(0, elig - sold);
+            return `${fmtNum(sold)} sold · ${silent > 0 ? `${fmtNum(silent)} silent` : 'all active'}`;
+          })()}
         />
         <KpiHero
           label="Returns Rate"
@@ -477,76 +749,34 @@ export default function SalesPulse({ data, loading, lensMode = 'net', dateFrom, 
           context={`${fmtNum(s.stores_with_sales)} stores recorded sales`}
         />
         <KpiHero
-          label="Net Stock Today"
+          label="Best Day"
+          icon={Zap} accent="#D97706"
+          value={(() => {
+            const rows = data?.daily || [];
+            if (!rows.length) return '—';
+            const best = [...rows].sort((a,b) => Number(b.sales_value)-Number(a.sales_value))[0];
+            return best ? new Date(best.date).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'2-digit' }) : '—';
+          })()}
+          format="string"
+          loading={loading}
+          context={(() => {
+            const rows = data?.daily || [];
+            if (!rows.length) return '';
+            const best = [...rows].sort((a,b) => Number(b.sales_value)-Number(a.sales_value))[0];
+            return best ? `Peak: ${fmtRs(best.sales_value)} (${fmtNum(best.sales_qty)} units)` : '';
+          })()}
+        />
+        <KpiHero
+          label="Stock as of 1 Feb 2026"
           icon={TrendingUp} accent="#7C3AED"
           value={Number(data?.stock_snapshot?.total_units || 0)} loading={loading}
-          context={`MRP: ${fmtRs(data?.stock_snapshot?.total_mrp_value)}`}
+          context={`MRP: ${fmtRs(data?.stock_snapshot?.total_mrp_value)} · narrows with filters`}
         />
       </div>
 
-      {/* ── Pareto Reveal — top SKUs / colours that drive sales ──────── */}
-      <SalesPareto rows={data?.by_color || []} totalValue={value} label="shades" loading={loading} />
-
-      {/* ── "Where's my revenue?" row — top stores + top shades + channels ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1fr', gap: 14, marginBottom: 24 }}>
-        <TopList
-          title={`Top Stores by ${lensLabel}`}
-          icon={Building2}
-          rows={data?.all_stores || []}
-          loading={loading}
-          renderLeft={(r) => (
-            <>
-              <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
-                {r.loc_name || r.loc_code}
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                {r.loc_code} · {r.city || '—'}, {r.state || '—'} · {r.channel || '—'}
-              </div>
-            </>
-          )}
-          renderRight={(r) => (
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontWeight: 800, fontSize: 13.5 }}>{fmtRs(r.value)}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{fmtNum(r.units)} units</div>
-            </div>
-          )}
-          empty="No stores match the current filters"
-        />
-        <TopList
-          title="Top Shades"
-          icon={Award}
-          rows={data?.by_color || []}
-          loading={loading}
-          sortKeyValue="value" sortKeyUnits="units"
-          renderLeft={(r) => (
-            <>
-              <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
-                {r.color_name}
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                {fmtNum(r.transactions)} txns · {fmtNum(r.return_units)} returns
-              </div>
-            </>
-          )}
-          renderRight={(r) => (
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontWeight: 800, fontSize: 13.5 }}>{fmtRs(r.value)}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{fmtNum(r.units)} units</div>
-            </div>
-          )}
-          empty="No shades match"
-        />
-        <ChannelMixBars rows={byChannel} totalValue={value} loading={loading} />
-      </div>
-
-      {/* ── Action Panel — what to act on right now ───────────────────── */}
-      <ActionPanel
-        summary={s}
-        byColor={data?.by_color || []}
-        byStore={data?.by_store || []}
-        allStores={data?.all_stores || []}
-        loading={loading}
-      />
+      {/* The "Top Stores / Top Shades / Channels" row lives in
+          <SalesPulseTables/> (exported separately) so the page can place it
+          BELOW the legacy KPI cards. ─────────────────────────────────── */}
     </div>
   );
 }

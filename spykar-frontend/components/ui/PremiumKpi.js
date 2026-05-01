@@ -1,38 +1,22 @@
-// ─── PremiumKpi — elite-tier KPI card with breakdown chips ──────────────────
-// World-best dashboards (Stripe, Linear, Notion analytics) don't just show ONE
-// number — they show the headline number with the most relevant breakdowns
-// inline. A user looking at "Total Stock 9.14L" instantly wants to know "how
-// much is sitting in CLOSED stores?" without clicking anywhere.
-//
-// This component delivers that:
-//   • Big, bold headline number (CountUp-animated)
-//   • Up to 3 inline "breakdown chips" with their own count + percentage
-//   • Hover lift + glow, gradient top border, color-coded per metric
-//   • Optional context line (date, last updated) at the bottom
-//   • Optional trend pill (▲ ▼) when delta is provided
-//   • Skeleton during load that matches the eventual layout
-//
-// Designed to be self-contained so any page can drop it in without ceremony.
-
 import { useEffect, useRef, useState } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 
 const PRESETS = {
-  slate:   { color: '#0f172a', bg: 'rgba(15,23,42,0.06)',   border: 'rgba(15,23,42,0.10)',   gradient: 'linear-gradient(135deg, #0f172a, #475569)' },
-  brand:   { color: '#C0392B', bg: 'rgba(192,57,43,0.07)',  border: 'rgba(192,57,43,0.18)',  gradient: 'linear-gradient(135deg, #C0392B, #E74C3C)' },
-  emerald: { color: '#059669', bg: 'rgba(5,150,105,0.08)',  border: 'rgba(5,150,105,0.20)',  gradient: 'linear-gradient(135deg, #10b981, #059669)' },
-  sky:     { color: '#0284C7', bg: 'rgba(2,132,199,0.08)',  border: 'rgba(2,132,199,0.20)',  gradient: 'linear-gradient(135deg, #0ea5e9, #0284c7)' },
-  amber:   { color: '#D97706', bg: 'rgba(217,119,6,0.08)',  border: 'rgba(217,119,6,0.20)',  gradient: 'linear-gradient(135deg, #f59e0b, #d97706)' },
-  violet:  { color: '#7C3AED', bg: 'rgba(124,58,237,0.08)', border: 'rgba(124,58,237,0.20)', gradient: 'linear-gradient(135deg, #8b5cf6, #6d28d9)' },
-  teal:    { color: '#0D9488', bg: 'rgba(13,148,136,0.08)', border: 'rgba(13,148,136,0.20)', gradient: 'linear-gradient(135deg, #14b8a6, #0d9488)' },
+  slate:   { color: '#94A3B8', bg: 'rgba(148,163,184,0.10)', border: 'rgba(148,163,184,0.20)', gradient: 'linear-gradient(135deg, #64748B, #334155)' },
+  brand:   { color: '#EF4444', bg: 'rgba(239,68,68,0.12)',   border: 'rgba(239,68,68,0.28)',   gradient: 'linear-gradient(135deg, #EF4444, #DC2626)' },
+  emerald: { color: '#10B981', bg: 'rgba(16,185,129,0.12)',  border: 'rgba(16,185,129,0.28)',  gradient: 'linear-gradient(135deg, #34D399, #10B981)' },
+  sky:     { color: '#3B82F6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.28)',  gradient: 'linear-gradient(135deg, #60A5FA, #3B82F6)' },
+  amber:   { color: '#F59E0B', bg: 'rgba(245,158,11,0.12)',  border: 'rgba(245,158,11,0.28)',  gradient: 'linear-gradient(135deg, #FCD34D, #F59E0B)' },
+  violet:  { color: '#A855F7', bg: 'rgba(168,85,247,0.12)',  border: 'rgba(168,85,247,0.28)',  gradient: 'linear-gradient(135deg, #C084FC, #A855F7)' },
+  teal:    { color: '#14B8A6', bg: 'rgba(20,184,166,0.12)',  border: 'rgba(20,184,166,0.28)',  gradient: 'linear-gradient(135deg, #2DD4BF, #14B8A6)' },
+  orange:  { color: '#F97316', bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.28)',  gradient: 'linear-gradient(135deg, #FB923C, #F97316)' },
 };
 
-// Smooth integer count-up. First mount → snap. After that → animate.
-function useCountUp(value, duration = 750) {
-  const [n, setN] = useState(value);
-  const fromRef   = useRef(value);
-  const rafRef    = useRef(null);
-  const mounted   = useRef(false);
+function useCountUp(value, duration = 800) {
+  const [n, setN]    = useState(value);
+  const fromRef      = useRef(value);
+  const rafRef       = useRef(null);
+  const mounted      = useRef(false);
 
   useEffect(() => {
     if (typeof value !== 'number' || isNaN(value)) { setN(value); return; }
@@ -42,8 +26,8 @@ function useCountUp(value, duration = 750) {
     const from = Number(fromRef.current) || 0;
     const to   = Number(value) || 0;
     const start = performance.now();
-    const ease = (t) => 1 - Math.pow(1 - t, 3);
-    const tick = (now) => {
+    const ease = t => 1 - Math.pow(1 - t, 3);
+    const tick = now => {
       const t = Math.min((now - start) / duration, 1);
       setN(from + (to - from) * ease(t));
       if (t < 1) rafRef.current = requestAnimationFrame(tick);
@@ -57,7 +41,6 @@ function useCountUp(value, duration = 750) {
   return n;
 }
 
-// Format helpers — Lakhs / Crores Indian convention.
 function fmtIndian(n) {
   if (n == null || isNaN(n)) return '—';
   const v = Math.abs(n);
@@ -66,145 +49,215 @@ function fmtIndian(n) {
   if (v >= 1000)     return (n / 1000).toFixed(1) + 'K';
   return Math.round(n).toLocaleString('en-IN');
 }
+
 function fmtPct(part, total) {
   if (!total) return '0%';
   return Math.round((part / total) * 100) + '%';
 }
 
+/* Mini SVG sparkline — draws a smooth polyline from an array of numbers */
+function Sparkline({ data = [], color = '#3B82F6', height = 36, width = 80 }) {
+  if (!data || data.length < 2) return null;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const pad = 3;
+  const points = data.map((v, i) => {
+    const x = pad + (i / (data.length - 1)) * (width - pad * 2);
+    const y = height - pad - ((v - min) / range) * (height - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: 'block', overflow: 'visible' }}>
+      <defs>
+        <linearGradient id={`spk-${color.replace('#','')}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {/* Area fill */}
+      <polyline
+        points={`${points} ${(width - pad).toFixed(1)},${height} ${pad},${height}`}
+        fill={`url(#spk-${color.replace('#','')})`}
+        stroke="none"
+      />
+      {/* Line */}
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      {/* Last point dot */}
+      {(() => {
+        const last = points.split(' ').pop().split(',');
+        return (
+          <circle cx={last[0]} cy={last[1]} r="2.5" fill={color} />
+        );
+      })()}
+    </svg>
+  );
+}
+
 export default function PremiumKpi({
   label,
-  value,                  // headline number
-  format = 'indian',      // 'indian' | 'plain' | 'string'
+  value,
+  format   = 'indian',
+  prefix   = '',
+  suffix   = '',
   icon: Icon,
-  accent = 'slate',
-  breakdowns = [],        // [{ label, value, color, total? }] — total optional, defaults to value
-  context,                // bottom-line context (e.g. "as of Feb 1, 2026")
-  loading = false,
-  delta,                  // number — % change vs prior period
-  highlight = false,      // emphasised border for "primary" KPI
+  accent   = 'slate',
+  breakdowns = [],
+  context,
+  loading  = false,
+  delta,
+  highlight = false,
+  sparkData,          // array of numbers for mini sparkline
+  sparkColor,         // override sparkline color
+  size     = 'normal', // 'hero' | 'normal'
 }) {
-  const preset = PRESETS[accent] || PRESETS.slate;
+  const preset  = PRESETS[accent] || PRESETS.slate;
   const animate = !loading && typeof value === 'number' && format !== 'string';
-  const shown   = useCountUp(animate ? value : null, 750);
+  const shown   = useCountUp(animate ? value : null, 800);
 
-  const headline = loading ? null
+  const headlineCore = loading ? null
     : format === 'string' ? value
     : format === 'indian' ? fmtIndian(animate ? Math.round(shown) : value)
     : (animate ? Math.round(shown) : Number(value)).toLocaleString('en-IN');
 
+  const headline = (loading || headlineCore == null || headlineCore === '—')
+    ? headlineCore
+    : (format === 'string' ? headlineCore : `${prefix}${headlineCore}${suffix}`);
+
+  const rawTooltip = typeof value === 'number'
+    ? Number(value).toLocaleString('en-IN', { maximumFractionDigits: 2 })
+    : (value != null ? String(value) : '');
+
+  const heroSize = size === 'hero' ? 52 : 36;
+  const spkColor = sparkColor || preset.color;
+
   return (
     <div
+      className="sx-card"
       style={{
         position: 'relative',
-        background: 'var(--bg-card)',
-        border: `1px solid ${highlight ? preset.border : 'var(--border-subtle)'}`,
-        borderRadius: 16,
-        padding: '18px 20px 16px',
+        padding: size === 'hero' ? '22px 24px 20px' : '18px 20px 16px',
         overflow: 'hidden',
-        transition: 'all 240ms cubic-bezier(0.4,0,0.2,1)',
-        boxShadow: highlight ? '0 1px 3px rgba(15,23,42,0.04), 0 4px 16px rgba(15,23,42,0.05)' : '0 1px 2px rgba(15,23,42,0.03)',
+        border: highlight ? `1px solid ${preset.border}` : undefined,
+        background: highlight ? `${preset.bg}` : undefined,
+        cursor: 'default',
+        transition: 'transform 260ms cubic-bezier(0.16,1,0.3,1), box-shadow 260ms ease',
       }}
-      onMouseEnter={e => {
-        e.currentTarget.style.transform = 'translateY(-3px)';
-        e.currentTarget.style.boxShadow = `0 10px 30px rgba(15,23,42,0.10), 0 0 0 1px ${preset.border}`;
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = highlight ? '0 1px 3px rgba(15,23,42,0.04), 0 4px 16px rgba(15,23,42,0.05)' : '0 1px 2px rgba(15,23,42,0.03)';
-      }}
+      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-3px)'; }}
+      onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
     >
-      {/* Top gradient accent rail */}
+      {/* Gradient top rail */}
       <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0, height: 3,
-        background: preset.gradient, borderRadius: '16px 16px 0 0',
+        position: 'absolute', top: 0, left: 14, right: 14, height: 2,
+        background: preset.gradient,
+        borderRadius: '0 0 2px 2px',
+        opacity: 0.90,
       }} />
 
-      {/* Header row — label + icon + delta */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, marginTop: 4 }}>
+      {/* Subtle corner glow */}
+      <div style={{
+        position: 'absolute', top: 0, right: 0,
+        width: 80, height: 80,
+        background: `radial-gradient(circle at 80% 0%, ${preset.color}18 0%, transparent 70%)`,
+        pointerEvents: 'none',
+      }} />
+
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, marginTop: 4 }}>
         {Icon && (
           <div style={{
-            width: 32, height: 32, borderRadius: 9,
+            width: 28, height: 28, borderRadius: 8,
             background: preset.bg,
-            border: `1px solid ${preset.border}`,
             color: preset.color,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
           }}>
-            <Icon size={16} strokeWidth={2} />
+            <Icon size={13} strokeWidth={2} />
           </div>
         )}
         <span style={{
-          fontFamily: 'var(--font-body)', fontSize: 11, fontWeight: 700,
-          color: 'var(--text-muted)', textTransform: 'uppercase',
-          letterSpacing: '0.07em', flex: 1,
+          fontFamily: 'var(--font-body)',
+          fontSize: 10, fontWeight: 800,
+          color: '#475569',
+          textTransform: 'uppercase',
+          letterSpacing: '0.10em',
+          flex: 1,
         }}>{label}</span>
         {delta != null && !loading && (
           <span style={{
             display: 'inline-flex', alignItems: 'center', gap: 3,
             padding: '2px 7px', borderRadius: 999,
-            background: delta >= 0 ? 'var(--mint-glow)' : 'var(--coral-glow)',
-            color:      delta >= 0 ? 'var(--mint)'      : 'var(--coral)',
+            background: delta >= 0 ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
+            color:      delta >= 0 ? '#34D399'                : '#F87171',
             fontSize: 11, fontWeight: 700,
           }}>
-            {delta >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+            {delta >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
             {Math.abs(delta)}%
           </span>
         )}
       </div>
 
-      {/* Headline number */}
-      {loading ? (
-        <div className="skeleton" style={{ height: 36, width: '70%', marginBottom: 10 }} />
-      ) : (
-        <div style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 30, fontWeight: 800,
-          color: 'var(--text-primary)',
-          lineHeight: 1.02, letterSpacing: '-0.025em',
-          marginBottom: breakdowns.length > 0 ? 12 : 6,
-        }}>{headline ?? '—'}</div>
-      )}
+      {/* Headline number + sparkline row */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
+        <div>
+          {loading ? (
+            <div className="sx-shimmer" style={{ height: heroSize, width: 120, marginBottom: 8, borderRadius: 6 }} />
+          ) : (
+            <div
+              title={rawTooltip}
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: heroSize,
+                fontWeight: 800,
+                letterSpacing: '-0.04em',
+                lineHeight: 1,
+                color: '#F1F5F9',
+                fontFeatureSettings: "'tnum' 1, 'lnum' 1",
+                cursor: 'help',
+                marginBottom: breakdowns.length > 0 ? 10 : 6,
+              }}
+            >{headline ?? '—'}</div>
+          )}
+        </div>
+
+        {/* Sparkline */}
+        {sparkData && sparkData.length > 1 && !loading && (
+          <div style={{ flexShrink: 0, opacity: 0.85 }}>
+            <Sparkline data={sparkData} color={spkColor} height={34} width={72} />
+          </div>
+        )}
+      </div>
 
       {/* Breakdown chips */}
       {!loading && breakdowns.length > 0 && (
-        <div style={{
-          display: 'flex', flexWrap: 'wrap', gap: 6,
-          marginBottom: context ? 8 : 0,
-        }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: context ? 8 : 0 }}>
           {breakdowns.map((b, i) => {
-            // Only compute % if `total` is explicitly supplied AND it's a
-            // meaningful denominator (i.e. b.value is a part of b.total).
-            // Avoids NaN% on orthogonal metrics (e.g. Avg / Top channel).
             const showPct = b.total != null && Number(b.total) > 0 && typeof b.value === 'number';
             const pct = showPct ? fmtPct(b.value, b.total) : null;
             return (
               <div key={i}
                 title={pct ? `${b.label}: ${pct}` : b.label}
                 style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                  padding: '4px 9px', borderRadius: 999,
-                  background: b.color ? `${b.color}14` : 'var(--bg-elevated)',
-                  border: `1px solid ${b.color ? `${b.color}33` : 'var(--border-subtle)'}`,
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '3px 8px', borderRadius: 999,
+                  background: b.color ? `${b.color}12` : 'rgba(255,255,255,0.06)',
+                  border: `1px solid ${b.color ? `${b.color}28` : 'rgba(255,255,255,0.08)'}`,
                 }}>
-                <span style={{
-                  width: 7, height: 7, borderRadius: '50%',
-                  background: b.color || 'var(--text-muted)',
-                  flexShrink: 0,
-                }} />
-                <span style={{
-                  fontFamily: 'var(--font-body)', fontSize: 11, fontWeight: 600,
-                  color: 'var(--text-muted)',
-                }}>{b.label}</span>
-                <span style={{
-                  fontFamily: 'var(--font-display)', fontSize: 12, fontWeight: 800,
-                  color: 'var(--text-primary)',
-                  letterSpacing: '-0.01em',
-                }}>{typeof b.value === 'number' ? fmtIndian(b.value) : (b.value ?? '—')}</span>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: b.color || '#475569', flexShrink: 0 }} />
+                <span style={{ fontFamily: 'var(--font-body)', fontSize: 10.5, fontWeight: 600, color: '#64748B' }}>{b.label}</span>
+                <span style={{ fontFamily: 'var(--font-display)', fontSize: 11.5, fontWeight: 800, color: '#CBD5E1', letterSpacing: '-0.01em' }}>
+                  {typeof b.value === 'number' ? fmtIndian(b.value) : (b.value ?? '—')}
+                </span>
                 {pct && (
-                  <span style={{
-                    fontFamily: 'var(--font-body)', fontSize: 10, fontWeight: 700,
-                    color: 'var(--text-disabled)',
-                  }}>· {pct}</span>
+                  <span style={{ fontFamily: 'var(--font-body)', fontSize: 10, fontWeight: 700, color: '#334155' }}>· {pct}</span>
                 )}
               </div>
             );
@@ -212,12 +265,11 @@ export default function PremiumKpi({
         </div>
       )}
 
-      {/* Context line (small, bottom) */}
+      {/* Context line */}
       {context && (
         <div style={{
           fontFamily: 'var(--font-body)', fontSize: 11, fontWeight: 500,
-          color: 'var(--text-disabled)',
-          marginTop: 4,
+          color: '#334155', marginTop: 4,
         }}>{context}</div>
       )}
     </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import FilterBar from '../components/filters/FilterBar';
@@ -33,13 +33,15 @@ const CATEGORY_OPTIONS = [
 ];
 
 // ── Typography — identical to sales page ───────────────────────────────────
+// ── Typography constants — refined to consume design-system tokens ─────────
+// Mirrors pages/sales.js so both pages share the same visual language.
 const T = {
-  primary:   '#0f172a',
-  secondary: '#1e293b',
-  muted:     '#334155',
-  border:    '#e2e8f0',
-  bg:        '#f8fafc',
-  accent:    '#0f172a',
+  primary:   '#F1F5F9',
+  secondary: '#CBD5E1',
+  muted:     '#64748B',
+  border:    'rgba(255, 255, 255, 0.07)',
+  bg:        '#070C18',
+  accent:    '#EF4444',
 };
 
 // ── Chart base theme — identical to sales page ────────────────────────────
@@ -64,43 +66,66 @@ function fmtNum(n) {
   return Number(n).toLocaleString('en-IN');
 }
 
-// ── Shared filter styles — identical to sales page ─────────────────────────
-const filterInput  = { border: `1.5px solid ${T.border}`, borderRadius: 8, padding: '6px 10px 6px 30px', fontSize: 12, fontWeight: 700, color: T.primary, outline: 'none', background: T.bg };
-const filterSelect = { border: `1.5px solid ${T.border}`, borderRadius: 8, padding: '6px 28px 6px 10px', fontSize: 12, fontWeight: 700, color: T.primary, outline: 'none', background: T.bg, appearance: 'none', cursor: 'pointer' };
-const SearchIcon   = () => <svg style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', opacity: 0.45 }} width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={T.primary} strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
-const ChevronIcon  = () => <svg style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', opacity: 0.5 }} width={11} height={11} viewBox="0 0 24 24" fill="none" stroke={T.primary} strokeWidth={2.5}><polyline points="6 9 12 15 18 9"/></svg>;
+// ── Shared filter styles — refined hairline + tabular figures ────────────
+const filterInput  = { border: '1px solid rgba(255,255,255,0.10)', borderRadius: 9, padding: '7px 12px 7px 32px', fontSize: 12, fontWeight: 600, color: '#F1F5F9', outline: 'none', background: 'rgba(255,255,255,0.07)', height: 32, fontFamily: 'var(--font-body)', transition: 'border-color 200ms ease' };
+const filterSelect = { border: '1px solid rgba(255,255,255,0.10)', borderRadius: 9, padding: '7px 30px 7px 12px', fontSize: 12, fontWeight: 600, color: '#F1F5F9', outline: 'none', background: 'rgba(255,255,255,0.07)', appearance: 'none', cursor: 'pointer', height: 32, fontFamily: 'var(--font-body)', transition: 'border-color 200ms ease' };
+const SearchIcon   = () => <svg style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', opacity: 0.40 }} width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={T.primary} strokeWidth={2.2}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
+const ChevronIcon  = () => <svg style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', opacity: 0.45 }} width={10} height={10} viewBox="0 0 24 24" fill="none" stroke={T.primary} strokeWidth={2.4}><polyline points="6 9 12 15 18 9"/></svg>;
 
-// ── KPI Card — identical to sales page ────────────────────────────────────
-function KpiCard({ icon: Icon, label, value, sub, sub2, accent = '#0f172a', loading }) {
+// ── KPI Card — premium hero (mirrors SalesPulse KpiHero) ─────────────────
+function KpiCard({ icon: Icon, label, value, sub, sub2, accent = '#0B1220', loading }) {
+  // Hover tooltip — reveal the raw number below the abbreviated K/L/Cr value.
+  const rawTooltip = typeof value === 'string' ? value : (value != null ? String(value) : '');
   return (
-    <div style={{
-      background: '#fff', border: `1px solid ${T.border}`, borderRadius: 16,
-      padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 8,
+    <div className="sx-card" style={{
+      padding: '20px 22px 18px',
       position: 'relative', overflow: 'hidden',
     }}>
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: accent, borderRadius: '16px 16px 0 0' }} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <div style={{ width: 30, height: 30, borderRadius: 8, background: accent + '14', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Icon size={14} color={accent} strokeWidth={2.5} />
+      {/* Whisper-thin accent rail at the top edge */}
+      <div style={{ position: 'absolute', top: 0, left: 14, right: 14, height: 2,
+        background: `linear-gradient(90deg, ${accent}, ${accent}cc)`,
+        borderRadius: '2px', opacity: 0.85 }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, marginTop: 4 }}>
+        <div style={{ width: 30, height: 30, borderRadius: 9,
+          background: `${accent}10`, color: accent,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}>
+          <Icon size={15} strokeWidth={2} />
         </div>
-        <span style={{ fontSize: 11, fontWeight: 800, color: T.muted, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</span>
+        <span style={{
+          fontFamily: 'var(--font-body)',
+          fontSize: 10.5, fontWeight: 800, letterSpacing: '0.10em',
+          textTransform: 'uppercase', color: T.muted,
+        }}>{label}</span>
       </div>
       {loading
-        ? <div style={{ height: 38, background: '#f1f5f9', borderRadius: 8 }} />
-        : <div style={{ fontSize: 32, fontWeight: 900, color: T.primary, letterSpacing: '-0.03em', lineHeight: 1 }}>{value}</div>
+        ? <div className="sx-shimmer" style={{ height: 36, width: '70%', marginBottom: 10, borderRadius: 6 }} />
+        : <div className="sx-hero-num" title={rawTooltip}
+            style={{ marginBottom: 8, fontSize: 32, cursor: 'help' }}>{value}</div>
       }
-      {sub  && <div style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>{sub}</div>}
-      {sub2 && <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, marginTop: -4 }}>{sub2}</div>}
+      {sub  && <div style={{ fontSize: 11.5, fontWeight: 500, color: T.muted, letterSpacing: '0.005em', lineHeight: 1.45 }}>{sub}</div>}
+      {sub2 && <div style={{ fontSize: 11, fontWeight: 500, color: T.muted, marginTop: 2, letterSpacing: '0.005em' }}>{sub2}</div>}
     </div>
   );
 }
 
-// ── Section Title — identical to sales page ───────────────────────────────
+// ── Section Title — premium icon chip + Plus Jakarta title ───────────────
 function SectionTitle({ icon: Icon, label }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-      <Icon size={16} color={T.primary} strokeWidth={2.5} />
-      <span style={{ fontSize: 13, fontWeight: 900, color: T.primary, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+      <span style={{
+        width: 26, height: 26, borderRadius: 8,
+        background: 'rgba(255,255,255,0.07)',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        flexShrink: 0,
+      }}>
+        <Icon size={13} color={T.primary} strokeWidth={2.4} />
+      </span>
+      <span style={{
+        fontFamily: 'var(--font-display)',
+        fontSize: 13, fontWeight: 800, color: T.primary,
+        letterSpacing: '-0.005em',
+      }}>{label}</span>
     </div>
   );
 }
@@ -116,12 +141,12 @@ function ChannelBreakdownSection({ groups, loading }) {
   const maxStock   = rows[0] ? Number(rows[0].stock || 0) : 1;
 
   return (
-    <div style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 16, overflow: 'hidden' }}>
-      <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
-          <PieChart size={13} color={T.primary} strokeWidth={2.5} />
-          <span style={{ fontSize: 11, fontWeight: 900, color: T.primary, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Channel Breakdown</span>
-          {!loading && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: T.primary, borderRadius: 100, padding: '2px 7px' }}>{rows.length}</span>}
+    <div className="sx-card" style={{ overflow: 'hidden' }}>
+      <div style={{ padding: '16px 20px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <PieChart size={13} color={T.primary} strokeWidth={2.2} />
+          <span style={{ fontSize: 11, fontWeight: 800, color: T.primary, letterSpacing: '0.10em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Channel Breakdown</span>
+          {!loading && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#EF4444', borderRadius: 100, padding: '2px 7px' }}>{rows.length}</span>}
         </div>
         <span style={{ fontSize: 10, fontWeight: 700, color: T.muted }}>Sorted by highest stock</span>
       </div>
@@ -129,25 +154,29 @@ function ChannelBreakdownSection({ groups, loading }) {
       <div style={{ overflowY: 'auto', maxHeight: 420 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-            <tr style={{ background: T.bg }}>
+            <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
               {['#','Channel / Group','Billing','Distribution','Locations','Total Stock','Share %'].map(h => (
-                <th key={h} style={{ padding: '9px 14px', textAlign: ['Locations','Total Stock','Share %'].includes(h) ? 'right' : 'left', fontSize: 10, fontWeight: 900, color: T.primary, letterSpacing: '0.07em', textTransform: 'uppercase', borderBottom: `1.5px solid ${T.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                <th key={h} style={{ padding: '9px 14px', textAlign: ['Locations','Total Stock','Share %'].includes(h) ? 'right' : 'left', fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.10em', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading
               ? Array.from({ length: 6 }).map((_, i) => (
-                  <tr key={i}><td colSpan={7} style={{ padding: '9px 14px' }}><div style={{ height: 13, background: T.bg, borderRadius: 4 }} /></td></tr>
+                  <tr key={i}><td colSpan={7} style={{ padding: '9px 14px' }}><div className="sx-shimmer" style={{ height: 13, borderRadius: 4 }} /></td></tr>
                 ))
               : rows.map((r, i) => {
-                  const pct   = maxStock > 0 ? Math.round((Number(r.stock || 0) / maxStock) * 100) : 0;
-                  const share = totalStock > 0 ? ((Number(r.stock || 0) / totalStock) * 100).toFixed(1) : '0.0';
+                  // Bar reads as share-of-total (so the top channel might be
+                  // 73% if it dominates) — NOT share-of-max which always
+                  // pinned the leader at 100%. Same number as Share % column.
+                  const shareNum = totalStock > 0 ? (Number(r.stock || 0) / totalStock) * 100 : 0;
+                  const pct      = Math.min(100, Math.round(shareNum * 10) / 10);
+                  const share    = shareNum.toFixed(1);
                   return (
                     <tr key={i}
-                      style={{ borderBottom: `1px solid ${T.border}`, background: i % 2 === 0 ? '#fff' : '#fafafe' }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#f0f4ff'}
-                      onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? '#fff' : '#fafafe'}
+                      style={{ borderBottom: `1px solid ${T.border}`, background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)' }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                      onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'}
                     >
                       <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: T.muted, width: 36 }}>{i + 1}</td>
                       <td style={{ padding: '9px 14px', fontSize: 13, fontWeight: 800, color: T.primary }}>{r.group_name || '—'}</td>
@@ -157,11 +186,12 @@ function ChannelBreakdownSection({ groups, loading }) {
                         </span>
                       </td>
                       <td style={{ padding: '9px 14px', width: 130 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                          <div style={{ flex: 1, background: '#f1f5f9', borderRadius: 100, height: 6, overflow: 'hidden' }}>
-                            <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg,#2563EB,#6366F1)', borderRadius: 100, transition: 'width 0.6s ease' }} />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}
+                          title={`${pct}% of total stock`}>
+                          <div style={{ flex: 1, background: 'rgba(255,255,255,0.08)', borderRadius: 100, height: 6, overflow: 'hidden' }}>
+                            <div style={{ width: `${Math.max(1, pct)}%`, height: '100%', background: 'linear-gradient(90deg,#2563EB,#6366F1)', borderRadius: 100, transition: 'width 0.6s ease' }} />
                           </div>
-                          <span style={{ fontSize: 10, fontWeight: 700, color: T.muted, minWidth: 30, textAlign: 'right' }}>{pct}%</span>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: T.muted, minWidth: 38, textAlign: 'right' }}>{pct < 0.1 ? '<0.1%' : `${pct}%`}</span>
                         </div>
                       </td>
                       <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 13, fontWeight: 800, color: T.primary }}>{fmtNum(r.count)}</td>
@@ -179,7 +209,7 @@ function ChannelBreakdownSection({ groups, loading }) {
       </div>
 
       {!loading && rows.length > 0 && (
-        <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.border}`, background: T.bg }}>
+        <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.border}`, background: 'rgba(255,255,255,0.03)' }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: T.muted }}>
             <strong style={{ color: T.primary }}>{rows.length}</strong> channels · Total stock: <strong style={{ color: T.primary }}>{fmtL(totalStock)}</strong> units
           </span>
@@ -218,7 +248,7 @@ function NetworkChartsSection({ groups, filteredGroups, locations, loading }) {
           style: { fontSize: '11px', fontWeight: 800, colors: ['#fff'] },
           dropShadow: { enabled: false },
         },
-        grid: { borderColor: '#f1f5f9', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
+        grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
         tooltip: { y: { formatter: v => fmtNum(v) + ' units' }, style: { fontSize: '12px', fontWeight: 700 } },
         legend: { show: false },
       },
@@ -259,7 +289,7 @@ function NetworkChartsSection({ groups, filteredGroups, locations, loading }) {
         dataLabels: { enabled: false },
         legend: { position: 'bottom', fontWeight: 700, fontSize: '12px', labels: { colors: T.primary } },
         tooltip: { y: { formatter: v => fmtNum(v) + ' units' }, style: { fontSize: '12px', fontWeight: 700 } },
-        stroke: { width: 2, colors: ['#fff'] },
+        stroke: { width: 2, colors: ['#111827'] },
       },
       series: [sor, outright],
     };
@@ -293,7 +323,7 @@ function NetworkChartsSection({ groups, filteredGroups, locations, loading }) {
           style: { fontSize: '10px', fontWeight: 800, colors: [T.primary] },
           offsetY: -6,
         },
-        grid: { borderColor: '#f1f5f9', strokeDashArray: 4 },
+        grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 4 },
         tooltip: {
           y: { formatter: (v, { dataPointIndex }) => `${rows[dataPointIndex]?.name || ''}: ${fmtNum(v)} units` },
           style: { fontSize: '12px', fontWeight: 700 },
@@ -304,28 +334,32 @@ function NetworkChartsSection({ groups, filteredGroups, locations, loading }) {
     };
   }, [locations]);
 
-  const chartCardStyle = {
-    background: '#fff', border: `1px solid ${T.border}`, borderRadius: 16, overflow: 'hidden',
-  };
+  // Chart card surface — uses .sx-card for consistent shadow + hover lift.
+  // Inline overflow:hidden on the wrapper because charts have their own
+  // toolbar/tooltip absolute positioning that we don't want clipped.
+  const chartCardStyle = { overflow: 'hidden' };
+  const chartCardClass = 'sx-card';
   const chartHeaderStyle = {
-    padding: '14px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8,
+    padding: '16px 20px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 10,
   };
   const chartTitleStyle = {
-    fontSize: 11, fontWeight: 900, color: T.primary, letterSpacing: '0.08em', textTransform: 'uppercase',
+    fontFamily: 'var(--font-display)',
+    fontSize: 13, fontWeight: 800, color: T.primary,
+    letterSpacing: '-0.005em',
   };
 
   return (
     <>
       {/* Chart 1: Stock by Channel — full width horizontal bar */}
       <div style={{ marginBottom: 24 }}>
-        <div style={chartCardStyle}>
+        <div className={chartCardClass} style={chartCardStyle}>
           <div style={chartHeaderStyle}>
-            <BarChart2 size={13} color={T.primary} strokeWidth={2.5} />
-            <span style={chartTitleStyle}>Stock by Channel — Top 10 Groups</span>
+            <BarChart2 size={13} color={T.primary} strokeWidth={2.2} />
+            <span style={chartTitleStyle}>Stock by Channel</span>
           </div>
           <div style={{ padding: '16px 18px 8px' }}>
             {loading
-              ? <div style={{ height: 280, background: T.bg, borderRadius: 8 }} />
+              ? <div className="sx-shimmer" style={{ height: 280, borderRadius: 12 }} />
               : <Chart options={channelStockChart.options} series={channelStockChart.series} type="bar" height={280} />
             }
           </div>
@@ -335,7 +369,7 @@ function NetworkChartsSection({ groups, filteredGroups, locations, loading }) {
       {/* Charts Row: Billing model donut + Top stores bar */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 20, marginBottom: 24 }}>
         {/* Chart 2: Billing Split Donut */}
-        <div style={chartCardStyle}>
+        <div className={chartCardClass} style={chartCardStyle}>
           <div style={chartHeaderStyle}>
             <PieChart size={13} color={T.primary} strokeWidth={2.5} />
             <span style={chartTitleStyle}>Billing Model — SOR vs Outright</span>
@@ -349,7 +383,7 @@ function NetworkChartsSection({ groups, filteredGroups, locations, loading }) {
         </div>
 
         {/* Chart 3: Top 10 Stores */}
-        <div style={chartCardStyle}>
+        <div className={chartCardClass} style={chartCardStyle}>
           <div style={chartHeaderStyle}>
             <Activity size={13} color={T.primary} strokeWidth={2.5} />
             <span style={chartTitleStyle}>Top 10 Stores — By Stock (Current Filter)</span>
@@ -458,7 +492,7 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
       colors: ['#7C3AED'],
       fill: { type: 'gradient', gradient: { shade: 'light', type: 'horizontal', gradientToColors: ['#C4B5FD'], opacityFrom: 1, opacityTo: 0.85 } },
       dataLabels: { enabled: true, formatter: v => fmtL(v), style: { fontSize: '10px', fontWeight: 800, colors: ['#fff'] }, dropShadow: { enabled: false } },
-      grid: { borderColor: '#f1f5f9', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
+      grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
       tooltip: { y: { formatter: (v, { dataPointIndex }) => `${colorRows[dataPointIndex]?.color_name || ''}: ${fmtNum(v)} units (${colorRows[dataPointIndex]?.pct_of_total || 0}%)` }, style: { fontSize: '12px', fontWeight: 700 } },
       legend: { show: false },
     },
@@ -480,16 +514,17 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
       colors: ['#DC2626'],
       fill: { type: 'gradient', gradient: { shade: 'light', type: 'horizontal', gradientToColors: ['#F87171'], opacityFrom: 1, opacityTo: 0.8 } },
       dataLabels: { enabled: true, formatter: v => fmtL(v), style: { fontSize: '10px', fontWeight: 800, colors: ['#fff'] }, dropShadow: { enabled: false } },
-      grid: { borderColor: '#f1f5f9', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
+      grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
       tooltip: { y: { formatter: (v, { dataPointIndex }) => `Size ${sizeRows[dataPointIndex]?.size || ''}: ${fmtNum(v)} units (${sizeRows[dataPointIndex]?.pct_of_total || 0}%)` }, style: { fontSize: '12px', fontWeight: 700 } },
       legend: { show: false },
     },
     series: [{ name: 'Stock', data: sizeRows.map(r => Number(r.total_stock || 0)) }],
   }), [sizeRows]);
 
-  const cardStyle   = { background: '#fff', border: `1px solid ${T.border}`, borderRadius: 16, overflow: 'hidden' };
-  const hdrStyle    = { padding: '12px 16px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8 };
-  const ttlStyle    = { fontSize: 11, fontWeight: 900, color: T.primary, letterSpacing: '0.08em', textTransform: 'uppercase' };
+  const cardStyle   = { overflow: 'hidden' };
+  const cardClass   = 'sx-card';
+  const hdrStyle    = { padding: '14px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 10 };
+  const ttlStyle    = { fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 800, color: T.primary, letterSpacing: '-0.005em' };
   const skeletonH   = (showColor === 'All' ? colorData.length : Number(showColor)) * 28 + 40;
 
   // Dynamic height: 28px per bar + padding
@@ -499,52 +534,33 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
   return (
     <div style={{ marginBottom: 24 }}>
       {/* Common filter bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <BarChart2 size={15} color={T.primary} strokeWidth={2.5} />
-        <span style={{ fontSize: 13, fontWeight: 900, color: T.primary, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <span style={{
+          width: 26, height: 26, borderRadius: 8,
+          background: 'rgba(15,23,42,0.04)',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}>
+          <BarChart2 size={13} color={T.primary} strokeWidth={2.2} />
+        </span>
+        <span style={{
+          fontFamily: 'var(--font-display)',
+          fontSize: 13, fontWeight: 800, color: T.primary,
+          letterSpacing: '-0.005em',
+        }}>
           Colour &amp; Size Stock Distribution
         </span>
         <div style={{ flex: 1 }} />
-        {/* State */}
-        <div style={{ position: 'relative' }}>
-          <select value={filterState}
-            onChange={e => { setFilterState(e.target.value); setFilterCity(''); }}
-            style={{ ...filterSelect, minWidth: 140 }}>
-            <option value="">All States</option>
-            {(stateOptions || []).map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <ChevronIcon />
-        </div>
-        {/* Category */}
-        <div style={{ position: 'relative' }}>
-          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
-            style={{ ...filterSelect, minWidth: 150 }} title="Filter by product category (matched on product name)">
-            {CATEGORY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          <ChevronIcon />
-        </div>
-        {/* City */}
-        <div style={{ position: 'relative' }}>
-          <select value={filterCity} onChange={e => setFilterCity(e.target.value)}
-            style={{ ...filterSelect, minWidth: 130 }}>
-            <option value="">All Cities</option>
-            {cityOpts.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <ChevronIcon />
-        </div>
-        {(filterState || filterCity || filterCategory) && (
-          <button onClick={() => { setFilterState(''); setFilterCity(''); setFilterCategory(''); }}
-            style={{ border: `1.5px solid ${T.border}`, borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 800, color: T.primary, background: '#fff', cursor: 'pointer' }}>
-            Clear
-          </button>
-        )}
+        {/* Local State / City / Category dropdowns removed — the v2 FilterBar
+            at the top of the page is the single source of truth for those
+            dimensions. State/city/category narrow this section automatically
+            via the `v2Filters` prop above. */}
       </div>
 
       {/* Two charts side by side */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
 
         {/* Colour chart */}
-        <div style={cardStyle}>
+        <div className={cardClass} style={cardStyle}>
           <div style={hdrStyle}>
             <PieChart size={13} color='#2563EB' strokeWidth={2.5} />
             <span style={ttlStyle}>Stock by Colour</span>
@@ -572,7 +588,7 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
         </div>
 
         {/* Size chart */}
-        <div style={cardStyle}>
+        <div className={cardClass} style={cardStyle}>
           <div style={hdrStyle}>
             <Activity size={13} color='#059669' strokeWidth={2.5} />
             <span style={ttlStyle}>Stock by Size</span>
@@ -612,18 +628,25 @@ function AllLocationsTable({
   stateOptions, cityOptions,
   loading,
   onFilterChange,
+  paretoPick = null,           // { tier: 50|80|90, n: <count> } | null
+  onClearParetoPick = null,
 }) {
+  // State/City/Channel are owned by the v2 FilterBar at the top of the
+  // page — no local UI for them here. They still exist as empty-string
+  // local state so the existing onFilterChange contract stays intact;
+  // the parent's handleFilterChange merges in the live v2 values.
   const [search,   setSearch]   = useState('');
-  const [state,    setState]    = useState('');
-  const [city,     setCity]     = useState('');
-  const [channel,  setChannel]  = useState('');
+  const [state]                 = useState('');
+  const [city]                  = useState('');
+  const [channel]               = useState('');
   const [category, setCategory] = useState('');
   const [sortBy,   setSortBy]   = useState('total_stock');
   const [page,     setPage]     = useState(1);
+  // Suppress lint for unused-but-needed-by-payload setters.
+  void stateOptions; void cityOptions; void groups;
 
-  const availableChannels = useMemo(() =>
-    (groups || []).map(g => g.group_name).filter(Boolean).sort(),
-  [groups]);
+  // availableChannels was used by the local Channel dropdown which is
+  // now retired in favour of the v2 FilterBar's Party multi-select.
 
   // Notify parent to re-fetch whenever filters / page / sort change
   useEffect(() => {
@@ -631,11 +654,26 @@ function AllLocationsTable({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, state, city, channel, category, page, sortBy]);
 
+  // ── Pareto highlight robustness ────────────────────────────────────────
+  // The highlight only makes sense when the table is sorted by total_stock
+  // DESC (which IS the default) AND no extra filter has narrowed the
+  // dataset. If the user changes any of those, auto-clear so the rail
+  // never points at the wrong rows. Pure client-side; no fetch.
+  const hasFilter = !!(search || state || city || channel || category);
+  const sortIsStockDesc = sortBy === 'total_stock';
+  useEffect(() => {
+    if (paretoPick && (!sortIsStockDesc || hasFilter)) onClearParetoPick?.();
+  }, [paretoPick, sortIsStockDesc, hasFilter, onClearParetoPick]);
+
+  // Snap to page 1 when a Pareto highlight is requested — top N rows live
+  // on the first pages of a stock-DESC sort.
+  useEffect(() => { if (paretoPick) setPage(1); }, [paretoPick]);
+
   const totalRecords = Number(pagination?.total || 0);
   const totalPages   = Number(pagination?.totalPages || 1);
   const safePage     = Math.min(page, totalPages);
 
-  const hasFilter = search || state || city || channel || category;
+  // (`hasFilter` is declared above next to the Pareto-clear effect.)
 
   const clearAll = () => {
     setSearch(''); setState(''); setCity(''); setChannel(''); setCategory(''); setPage(1);
@@ -644,16 +682,41 @@ function AllLocationsTable({
   const globalOffset = (safePage - 1) * PAGE_SIZE_LOCS;
 
   return (
-    <div style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 16, overflow: 'hidden', marginBottom: 24 }}>
+    <div className="sx-card" style={{ overflow: 'hidden', marginBottom: 24 }}>
 
       {/* Filter bar */}
-      <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Globe size={13} color={T.primary} strokeWidth={2.5} />
-          <span style={{ fontSize: 11, fontWeight: 900, color: T.primary, letterSpacing: '0.08em', textTransform: 'uppercase' }}>All Locations</span>
+      <div style={{ padding: '16px 20px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <Globe size={13} color={T.primary} strokeWidth={2.2} />
+          <span style={{ fontSize: 11, fontWeight: 800, color: T.primary, letterSpacing: '0.10em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>All Locations</span>
           {!loading && (
-            <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: T.primary, borderRadius: 100, padding: '2px 7px' }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#EF4444', borderRadius: 100, padding: '2px 7px' }}>
               {fmtNum(totalRecords)}
+            </span>
+          )}
+          {/* Pareto highlight chip — visible only when a tier was clicked.
+              Crimson fill so it reads as an active concentration callout;
+              click × to clear. */}
+          {paretoPick && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '3px 4px 3px 10px',
+              background: 'rgba(192,57,43,0.07)',
+              border: '1px solid rgba(192,57,43,0.20)',
+              color: '#C0392B',
+              borderRadius: 999,
+              fontSize: 10.5, fontWeight: 800, letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+            }}>
+              <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#C0392B' }} />
+              Concentration · top {paretoPick.n} · {paretoPick.tier}% of stock
+              <button onClick={() => onClearParetoPick?.()}
+                title="Clear concentration filter"
+                style={{
+                  border: 'none', background: 'transparent', cursor: 'pointer',
+                  color: '#C0392B', fontWeight: 900, fontSize: 13,
+                  padding: '0 6px', lineHeight: 1,
+                }}>×</button>
             </span>
           )}
         </div>
@@ -669,42 +732,12 @@ function AllLocationsTable({
           {search && <button onClick={() => { setSearch(''); setPage(1); }} style={{ position: 'absolute', right: 7, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: T.muted, fontWeight: 900, fontSize: 14, padding: 0, lineHeight: 1 }}>×</button>}
         </div>
 
-        {/* State */}
-        <div style={{ position: 'relative' }}>
-          <select value={state} onChange={e => { setState(e.target.value); setCity(''); setPage(1); }} style={{ ...filterSelect, minWidth: 140 }}>
-            <option value="">All States</option>
-            {(stateOptions || []).map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <ChevronIcon />
-        </div>
+        {/* Local State / City / Channel dropdowns removed — the v2 FilterBar
+            at the top of the page owns those dimensions. The current
+            selection narrows this table automatically via the parent's
+            handleFilterChange merge. */}
 
-        {/* City */}
-        <div style={{ position: 'relative' }}>
-          <select value={city} onChange={e => { setCity(e.target.value); setPage(1); }} style={{ ...filterSelect, minWidth: 130 }}>
-            <option value="">All Cities</option>
-            {(cityOptions || []).map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <ChevronIcon />
-        </div>
-
-        {/* Channel — uses actual group_names from API */}
-        <div style={{ position: 'relative' }}>
-          <select value={channel} onChange={e => { setChannel(e.target.value); setPage(1); }} style={{ ...filterSelect, minWidth: 160 }}>
-            <option value="">All Channels</option>
-            {availableChannels.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <ChevronIcon />
-        </div>
-
-        {/* Category — filters total_stock per location to the selected category */}
-        <div style={{ position: 'relative' }}>
-          <select value={category} onChange={e => { setCategory(e.target.value); setPage(1); }}
-            style={{ ...filterSelect, minWidth: 150 }}
-            title="Filter stock by product category (matched on product name)">
-            {CATEGORY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          <ChevronIcon />
-        </div>
+        {/* Legacy Category dropdown removed — covered by v2 FilterBar. */}
 
         {/* Sort */}
         <div style={{ position: 'relative' }}>
@@ -717,7 +750,7 @@ function AllLocationsTable({
         </div>
 
         {hasFilter && (
-          <button onClick={clearAll} style={{ border: `1.5px solid ${T.border}`, borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 800, color: T.primary, background: '#fff', cursor: 'pointer' }}>
+          <button onClick={clearAll} style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 800, color: T.primary, background: 'transparent', cursor: 'pointer' }}>
             Clear
           </button>
         )}
@@ -727,9 +760,9 @@ function AllLocationsTable({
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ background: T.bg }}>
+            <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
               {['#','Location Name','Channel / Group','Billing','State','City','Total Stock','Total Value'].map(h => (
-                <th key={h} style={{ padding: '10px 14px', textAlign: ['Total Stock','Total Value','#'].includes(h) ? 'right' : 'left', fontSize: 10, fontWeight: 900, color: T.primary, letterSpacing: '0.07em', textTransform: 'uppercase', borderBottom: `2px solid ${T.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                <th key={h} style={{ padding: '10px 14px', textAlign: ['Total Stock','Total Value','#'].includes(h) ? 'right' : 'left', fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.10em', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -741,13 +774,31 @@ function AllLocationsTable({
               : locations.map((r, i) => {
                   const globalIdx = globalOffset + i;
                   const isTop3    = globalIdx < 3 && !hasFilter && sortBy === 'total_stock';
+                  // True if this row is one of the "top N stores" the user
+                  // selected from the Pareto Reveal. Highlight is applied
+                  // ONLY when sort is total_stock DESC + no extra filter
+                  // (the parent auto-clears paretoPick otherwise so this
+                  // condition is mostly defensive).
+                  const inPareto  = !!paretoPick && globalIdx < paretoPick.n && sortIsStockDesc && !hasFilter;
+                  const baseBg    = inPareto
+                    ? 'linear-gradient(90deg, rgba(192,57,43,0.06), rgba(192,57,43,0.02) 60%)'
+                    : isTop3 ? 'rgba(239,68,68,0.06)' : i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)';
                   return (
                     <tr key={r.id || i}
-                      style={{ borderBottom: `1px solid ${T.border}`, background: isTop3 ? '#fafaf7' : i % 2 === 0 ? '#fff' : '#fafafa' }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'}
-                      onMouseLeave={e => e.currentTarget.style.background = isTop3 ? '#fafaf7' : i % 2 === 0 ? '#fff' : '#fafafa'}
+                      style={{
+                        borderBottom: `1px solid ${T.border}`,
+                        background: baseBg,
+                        // 3px crimson accent rail on the inside of the row's
+                        // left edge — the visual signal that this row belongs
+                        // to the selected Pareto tier. Uses inset box-shadow
+                        // so it doesn't shift any cell padding.
+                        boxShadow: inPareto ? 'inset 3px 0 0 0 #C0392B' : 'none',
+                        transition: 'background 200ms ease',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                      onMouseLeave={e => e.currentTarget.style.background = baseBg}
                     >
-                      <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 12, fontWeight: 900, color: T.muted, width: 40 }}>
+                      <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 12, fontWeight: 900, color: inPareto ? '#C0392B' : T.muted, width: 40 }}>
                         {isTop3 ? ['🥇','🥈','🥉'][globalIdx] : globalIdx + 1}
                       </td>
                       <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, color: T.primary, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</td>
@@ -780,21 +831,21 @@ function AllLocationsTable({
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <button onClick={() => setPage(1)} disabled={safePage === 1}
-              style={{ border: `1.5px solid ${T.border}`, borderRadius: 7, padding: '4px 9px', fontSize: 11, fontWeight: 800, color: safePage === 1 ? T.border : T.primary, background: '#fff', cursor: safePage === 1 ? 'default' : 'pointer' }}>«</button>
+              style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: '5px 10px', fontSize: 11, fontWeight: 800, color: safePage === 1 ? T.border : T.primary, background: 'transparent', cursor: safePage === 1 ? 'default' : 'pointer' }}>«</button>
             <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
-              style={{ border: `1.5px solid ${T.border}`, borderRadius: 7, padding: '4px 10px', fontSize: 11, fontWeight: 800, color: safePage === 1 ? T.border : T.primary, background: '#fff', cursor: safePage === 1 ? 'default' : 'pointer' }}>‹ Prev</button>
+              style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: '5px 11px', fontSize: 11, fontWeight: 800, color: safePage === 1 ? T.border : T.primary, background: 'transparent', cursor: safePage === 1 ? 'default' : 'pointer' }}>‹ Prev</button>
             {Array.from({ length: totalPages }, (_, i) => i + 1)
               .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 2)
               .reduce((acc, p, idx, arr) => { if (idx > 0 && p - arr[idx-1] > 1) acc.push('…'); acc.push(p); return acc; }, [])
               .map((p, idx) => p === '…'
                 ? <span key={`e${idx}`} style={{ fontSize: 12, color: T.muted, padding: '0 2px' }}>…</span>
                 : <button key={p} onClick={() => setPage(p)}
-                    style={{ border: `1.5px solid ${p === safePage ? T.primary : T.border}`, borderRadius: 7, padding: '4px 9px', fontSize: 11, fontWeight: p === safePage ? 900 : 700, color: p === safePage ? '#fff' : T.primary, background: p === safePage ? T.primary : '#fff', cursor: 'pointer', minWidth: 30 }}>{p}</button>
+                    style={{ border: `1.5px solid ${p === safePage ? T.primary : T.border}`, borderRadius: 8, padding: '5px 10px', fontSize: 11, fontWeight: p === safePage ? 900 : 700, color: p === safePage ? '#EF4444' : T.primary, background: p === safePage ? 'rgba(239,68,68,0.20)' : 'transparent', cursor: 'pointer', minWidth: 30 }}>{p}</button>
               )}
             <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
-              style={{ border: `1.5px solid ${T.border}`, borderRadius: 7, padding: '4px 10px', fontSize: 11, fontWeight: 800, color: safePage === totalPages ? T.border : T.primary, background: '#fff', cursor: safePage === totalPages ? 'default' : 'pointer' }}>Next ›</button>
+              style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: '5px 11px', fontSize: 11, fontWeight: 800, color: safePage === totalPages ? T.border : T.primary, background: 'transparent', cursor: safePage === totalPages ? 'default' : 'pointer' }}>Next ›</button>
             <button onClick={() => setPage(totalPages)} disabled={safePage === totalPages}
-              style={{ border: `1.5px solid ${T.border}`, borderRadius: 7, padding: '4px 9px', fontSize: 11, fontWeight: 800, color: safePage === totalPages ? T.border : T.primary, background: '#fff', cursor: safePage === totalPages ? 'default' : 'pointer' }}>»</button>
+              style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: '5px 10px', fontSize: 11, fontWeight: 800, color: safePage === totalPages ? T.border : T.primary, background: 'transparent', cursor: safePage === totalPages ? 'default' : 'pointer' }}>»</button>
           </div>
         </div>
       )}
@@ -831,6 +882,26 @@ export default function NetworkPage() {
 
   // Server-side filters — driven by AllLocationsTable
   const [tableFilters, setTableFilters] = useState({ sort_by: 'total_stock', page: 1 });
+
+  // Pareto drill-down — set when user clicks a tier in the Concentration
+  // Reveal. Holds { tier: 50|80|90, n: <store-count> }. The All Locations
+  // table reads this to highlight the first N rows (sorted by total_stock
+  // DESC, which it already is by default). Clears automatically when the
+  // user changes filters / sort / mode so the rail never lies. Pure client
+  // state — no API call, no cache key change, no extra latency.
+  const [paretoPick, setParetoPick] = useState(null);
+  const allLocationsRef = useRef(null);
+  const handleParetoPick = useCallback(({ tier, n }) => {
+    if (!n) return;
+    setParetoPick({ tier, n });
+    // Smooth-scroll to the table on the next paint so the highlight is
+    // already rendering when scroll lands. requestAnimationFrame ensures
+    // we don't fight React's batched render.
+    requestAnimationFrame(() => {
+      allLocationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, []);
+  const clearParetoPick = useCallback(() => setParetoPick(null), []);
 
   // Fetch summary + groupSummary (drives ChannelBreakdownSection +
   // NetworkChartsSection + StockBreakdownSection state list).
@@ -960,6 +1031,10 @@ export default function NetworkPage() {
   // own effect on `filters` prop. Multi-select arrays joined as CSV strings
   // — backend's location.controller accepts CSV for every dimension.
   const v2FiltersJson = JSON.stringify(v2Filters); // deps key
+  // Any v2 filter change invalidates the Pareto highlight — the underlying
+  // dataset just changed, so "top 100 stores" might mean different stores
+  // now. Cheap state reset; no fetch implications.
+  useEffect(() => { setParetoPick(null); }, [v2FiltersJson]);
   useEffect(() => {
     const csv = (v) => Array.isArray(v) ? v.join(',') : (v || '');
     const merged = {
@@ -988,11 +1063,43 @@ export default function NetworkPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [v2FiltersJson]);
 
-  // Table filter changes → only re-fetch table, never touch summary
+  // Table filter changes → only re-fetch table, never touch summary.
+  // Critical: re-apply the v2 FilterBar values on top so a sort/page click
+  // inside the table can't clobber the user's "Bihar" / "EBO-SOR" / mode
+  // pick from the universal filter bar above. The local table dropdowns
+  // (search / state / city / channel) are an INTERSECTION of v2 — they
+  // can NARROW further but never widen back to all rows.
   const handleFilterChange = useCallback((filters) => {
-    setTableFilters(filters);
-    fetchTableData(filters);
-  }, [fetchTableData]);
+    const csv = (v) => Array.isArray(v) ? v.join(',') : (v || '');
+    // v2 wins for every dimension it has a value on; the local table input
+    // wins only when v2 is empty for that dim (so user can still type a
+    // city locally if they haven't picked one in the v2 bar).
+    const v2State      = csv(v2Filters.state);
+    const v2City       = csv(v2Filters.city);
+    const v2Group      = csv(v2Filters.group_name);
+    const v2StoreCode  = csv(v2Filters.store_code);
+    const merged = {
+      ...filters,
+      state:       v2State     || filters.state     || undefined,
+      city:        v2City      || filters.city      || undefined,
+      group_name:  v2Group     || filters.group_name|| undefined,
+      store_code:  v2StoreCode || undefined,
+      // SKU-side dims live ONLY in the v2 bar — table has no UI for them
+      gender:      csv(v2Filters.gender_name) || undefined,
+      sub_product: csv(v2Filters.sub_product) || undefined,
+      product:     csv(v2Filters.product)     || undefined,
+      style:       csv(v2Filters.style)       || undefined,
+      shade:       csv(v2Filters.shade)       || undefined,
+      color:       csv(v2Filters.color)       || undefined,
+      size:        csv(v2Filters.size)        || undefined,
+      season:      csv(v2Filters.season)      || undefined,
+      category:    csv(v2Filters.category)    || undefined,
+      mode:        v2Filters.mode             || 'active',
+    };
+    setTableFilters(merged);
+    fetchTableData(merged);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchTableData, v2FiltersJson]);
 
   // ── KPI source values ─────────────────────────────────────────────────────
   // Backend now returns Active/Closed splits inline (one query, no extra
@@ -1015,6 +1122,10 @@ export default function NetworkPage() {
 
   return (
     <DashboardLayout title="Network" subtitle="Retail network — inventory positions across all locations and channels">
+      {/* Premium skin layer — same .sx-page tokens as the Sales page so
+          both pages share one visual language. Cards, tables, chips, and
+          numbers all inherit the refined hairlines + Plus Jakarta numbers. */}
+      <div className="sx-page sx-fade">
 
       {/* ── v2 Universal FilterBar + active-filter chips ──────────────────
           Sticky glass surface with 13 multi-select dimensions, mode toggle
@@ -1037,7 +1148,7 @@ export default function NetworkPage() {
           Hero KPI strip with current-status splits · Pareto reveal ·
           Top stores · Top states · Channel mix · Action panel.
           One round-trip, all 13 v2 filters narrow every widget. ─────────────*/}
-      <NetworkPulse filters={v2Filters} />
+      <NetworkPulse filters={v2Filters} onParetoPick={handleParetoPick} />
 
       {/* ── Legacy KPI mini-row (unfiltered, retained for back-compat) ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 28, opacity: 0 /* hidden — replaced by NetworkPulse above */, height: 0, overflow: 'hidden' }}>
@@ -1047,7 +1158,7 @@ export default function NetworkPage() {
       {/* ── Refresh — refreshes both summary and table ── */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
         <button onClick={() => { fetchSummaryData(); fetchTableData(tableFilters); }} disabled={summaryLoading || tableLoading}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, border: `1.5px solid ${T.border}`, borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 800, color: T.primary, background: '#fff', cursor: (summaryLoading || tableLoading) ? 'default' : 'pointer', opacity: (summaryLoading || tableLoading) ? 0.6 : 1 }}>
+          style={{ display: 'flex', alignItems: 'center', gap: 6, border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 800, color: T.primary, background: 'rgba(255,255,255,0.06)', cursor: (summaryLoading || tableLoading) ? 'default' : 'pointer', opacity: (summaryLoading || tableLoading) ? 0.6 : 1 }}>
           <RefreshCw size={13} style={{ animation: (summaryLoading || tableLoading) ? 'spin 1s linear infinite' : 'none' }} strokeWidth={2.5} />
           Refresh
         </button>
@@ -1069,20 +1180,27 @@ export default function NetworkPage() {
       <StockBreakdownSection stateOptions={stateOptions} v2Filters={v2Filters} />
 
       {/* ── All Locations Table ── */}
-      <SectionTitle icon={Globe} label="All Locations — Full Network" />
-      <AllLocationsTable
-        locations={locations}
-        pagination={pagination}
-        groups={groupSummary}
-        stateOptions={stateOptions}
-        cityOptions={cityOptions}
-        loading={tableLoading}
-        onFilterChange={handleFilterChange}
-      />
+      {/* Anchor lives on a wrapping div so the smooth-scroll target is
+          stable even if the table conditionally renders during refetch. */}
+      <div ref={allLocationsRef} style={{ scrollMarginTop: 16 }}>
+        <SectionTitle icon={Globe} label="All Locations — Full Network" />
+        <AllLocationsTable
+          locations={locations}
+          pagination={pagination}
+          groups={groupSummary}
+          stateOptions={stateOptions}
+          cityOptions={cityOptions}
+          loading={tableLoading}
+          onFilterChange={handleFilterChange}
+          paretoPick={paretoPick}
+          onClearParetoPick={clearParetoPick}
+        />
+      </div>
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
+      </div>{/* /.sx-page */}
     </DashboardLayout>
   );
 }

@@ -63,7 +63,7 @@ export default function FilterChips({ filters, setFilter, clearAll }) {
       style={{
         display: 'flex', flexWrap: 'wrap', gap: 6,
         padding: '8px 24px 14px',
-        background: 'rgba(255,255,255,0.78)',
+        background: 'rgba(7,12,24,0.90)',
         backdropFilter: 'blur(16px)',
         WebkitBackdropFilter: 'blur(16px)',
         borderBottom: '1px solid var(--border-subtle)',
@@ -114,10 +114,10 @@ function Chip({ label, value, full, onRemove }) {
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
         height: 28, padding: '0 4px 0 12px',
-        background: '#fff',
-        border: '1px solid var(--accent-border)',
+        background: 'rgba(255,255,255,0.07)',
+        border: '1px solid rgba(239,68,68,0.35)',
         borderRadius: 999,
-        boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.20)',
         animation: 'chipIn 220ms cubic-bezier(0.16,1,0.3,1)',
       }}
     >

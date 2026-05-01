@@ -56,7 +56,7 @@ const fmtNum = (n) => Number(n || 0).toLocaleString('en-IN');
 const COL_ACTIVE = '#059669';
 const COL_CLOSED = '#64748B';
 
-export default function NetworkPulse({ filters }) {
+export default function NetworkPulse({ filters, onParetoPick }) {
   // Cache key per unique filter combo. Lookup is synchronous in
   // useState's lazy initialiser → first paint sees cached data immediately
   // (no skeleton flash) when the same filters were used before.
@@ -143,48 +143,38 @@ export default function NetworkPulse({ filters }) {
       {/* ── Header strip — pulse label + lens chip + as-of date ─────────── */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: 12, marginBottom: 16, flexWrap: 'wrap',
+        gap: 12, marginBottom: 18, flexWrap: 'wrap',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Sparkles size={14} style={{ color: 'var(--accent-primary)' }} />
-          <span style={{
-            fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
-            textTransform: 'uppercase', color: 'var(--text-muted)',
-          }}>Network Pulse</span>
+          <Sparkles size={13} strokeWidth={2} style={{ color: 'var(--accent-primary)' }} />
+          <span className="sx-eyebrow">Network Pulse</span>
           {/* Lens chip — echoes the FilterBar mode pill so the user always
               knows which slice the KPIs are showing. */}
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '3px 10px',
-            background: `${lensColor}14`,
-            border: `1px solid ${lensColor}33`,
+          <span className="sx-pill" style={{
+            background: `${lensColor}10`,
+            border: `1px solid ${lensColor}26`,
             color: lensColor,
-            borderRadius: 999,
-            fontSize: 11, fontWeight: 800, letterSpacing: '0.04em',
           }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: lensColor }} />
+            <span className="sx-pill-dot" />
             {lensLabel}
           </span>
         </div>
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '4px 10px',
-          background: 'rgba(2,132,199,0.08)',
-          color: 'var(--sky)',
-          border: '1px solid rgba(2,132,199,0.20)',
-          borderRadius: 999,
-          fontSize: 11, fontWeight: 700,
+        <span className="sx-pill" style={{
+          background: 'rgba(15, 23, 42, 0.04)',
+          border: '1px solid rgba(15, 23, 42, 0.06)',
+          color: 'var(--text-muted)',
+          fontWeight: 700, letterSpacing: '0.02em', textTransform: 'none', fontSize: 11,
         }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--sky)' }} />
+          <span className="sx-pill-dot" style={{ background: 'var(--sky)' }} />
           Stock as of {s.as_of_date || '—'}
-        </div>
+        </span>
       </div>
 
       {/* ── HERO KPI STRIP — single-number cards, lens-aware ────────────── */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: 14, marginBottom: 24,
+        gridTemplateColumns: 'repeat(auto-fit, minmax(208px, 1fr))',
+        gap: 16, marginBottom: 28,
       }}>
         <PremiumKpi
           label="Total Stock"
@@ -241,6 +231,7 @@ export default function NetworkPulse({ filters }) {
           stores80={pulse.pareto.stores_for_80}
           stores90={pulse.pareto.stores_for_90}
           loading={loading}
+          onPick={onParetoPick}
         />
       )}
 
@@ -299,18 +290,24 @@ export default function NetworkPulse({ filters }) {
 }
 
 // ─── Pareto Reveal — animated 80/20 callout ──────────────────────────────────
-function ParetoReveal({ totalStores, stores50, stores80, stores90, loading }) {
+// onPick({ tier, n, label }) — fired when user clicks a slice. Lets the parent
+// page scroll to the All Locations table and highlight the top-N stores that
+// make up that 50% / 80% / 90% slice. Purely client-side — no extra fetch.
+function ParetoReveal({ totalStores, stores50, stores80, stores90, loading, onPick }) {
   if (loading || !totalStores) return null;
   const pct50 = Math.round((stores50 / totalStores) * 100);
   const pct80 = Math.round((stores80 / totalStores) * 100);
   return (
     <div style={{
       position: 'relative',
-      background: 'linear-gradient(135deg, rgba(192,57,43,0.04), rgba(231,76,60,0.04))',
-      border: '1px solid rgba(192,57,43,0.18)',
-      borderRadius: 16, padding: '20px 24px',
+      background: 'linear-gradient(135deg, rgba(192,57,43,0.035), rgba(231,76,60,0.025))',
+      border: '1px solid rgba(192,57,43,0.14)',
+      borderRadius: 18,
+      padding: '22px 26px',
       marginBottom: 24,
       overflow: 'hidden',
+      boxShadow: '0 1px 2px rgba(15,23,42,0.03), 0 8px 24px -10px rgba(15,23,42,0.06)',
+      transition: 'box-shadow 280ms cubic-bezier(0.16, 1, 0.3, 1)',
     }}>
       <div style={{
         position: 'absolute', right: -40, top: -40,
@@ -339,24 +336,62 @@ function ParetoReveal({ totalStores, stores50, stores80, stores90, loading }) {
         </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, position: 'relative' }}>
-        <ParetoSlice n={stores50} of={totalStores} pct={pct50} label="hold 50%" tone="strong" />
-        <ParetoSlice n={stores80} of={totalStores} pct={pct80} label="hold 80%" tone="medium" />
-        <ParetoSlice n={stores90} of={totalStores} pct={Math.round((stores90 / totalStores) * 100)} label="hold 90%" tone="soft" />
+        <ParetoSlice n={stores50} of={totalStores} pct={pct50}
+          label="hold 50%" tone="strong"
+          onClick={onPick ? () => onPick({ tier: 50, n: stores50 }) : null} />
+        <ParetoSlice n={stores80} of={totalStores} pct={pct80}
+          label="hold 80%" tone="medium"
+          onClick={onPick ? () => onPick({ tier: 80, n: stores80 }) : null} />
+        <ParetoSlice n={stores90} of={totalStores} pct={Math.round((stores90 / totalStores) * 100)}
+          label="hold 90%" tone="soft"
+          onClick={onPick ? () => onPick({ tier: 90, n: stores90 }) : null} />
       </div>
+      {onPick && (
+        <div style={{ marginTop: 14, fontSize: 11, fontWeight: 600,
+          color: 'rgba(192,57,43,0.75)', letterSpacing: '0.02em' }}>
+          Click any tier to highlight those stores in the table below ↓
+        </div>
+      )}
     </div>
   );
 }
 
-function ParetoSlice({ n, of, pct, label, tone }) {
+function ParetoSlice({ n, of, pct, label, tone, onClick }) {
   const colors = {
     strong: { bar: '#C0392B', label: 'rgba(192,57,43,0.9)' },
     medium: { bar: '#E74C3C', label: 'rgba(231,76,60,0.85)' },
     soft:   { bar: '#F87171', label: 'rgba(248,113,113,0.85)' },
   }[tone];
+  const interactive = typeof onClick === 'function';
   return (
-    <div>
+    <button
+      type="button"
+      onClick={onClick || undefined}
+      disabled={!interactive}
+      style={{
+        all: 'unset',
+        display: 'block',
+        textAlign: 'left',
+        padding: interactive ? '10px 12px' : 0,
+        margin: interactive ? '-10px -12px' : 0,
+        borderRadius: 12,
+        cursor: interactive ? 'pointer' : 'default',
+        transition: 'background 200ms ease, transform 200ms cubic-bezier(0.16,1,0.3,1), box-shadow 200ms ease',
+      }}
+      onMouseEnter={interactive ? (e) => {
+        e.currentTarget.style.background = 'rgba(192,57,43,0.05)';
+        e.currentTarget.style.transform   = 'translateY(-1px)';
+        e.currentTarget.style.boxShadow   = '0 6px 18px -8px rgba(192,57,43,0.25)';
+      } : undefined}
+      onMouseLeave={interactive ? (e) => {
+        e.currentTarget.style.background = 'transparent';
+        e.currentTarget.style.transform   = 'translateY(0)';
+        e.currentTarget.style.boxShadow   = 'none';
+      } : undefined}
+      title={interactive ? `Show top ${n} stores that hold ${pct}% of stock` : undefined}
+    >
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 6 }}>
-        <span style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.025em' }}>
+        <span style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.025em', fontFeatureSettings: '"tnum" 1' }}>
           {n}
         </span>
         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>/ {of}</span>
@@ -374,7 +409,7 @@ function ParetoSlice({ n, of, pct, label, tone }) {
           transition: 'width 800ms cubic-bezier(0.16,1,0.3,1)',
         }} />
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -418,15 +453,10 @@ function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, em
   );
 
   return (
-    <div style={{
-      background: 'var(--bg-card)',
-      border: '1px solid var(--border-subtle)',
-      borderRadius: 14,
-      padding: '16px 18px',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        {Icon && <Icon size={14} style={{ color: 'var(--text-muted)' }} />}
-        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{title}</span>
+    <div className="sx-card" style={{ padding: '18px 20px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        {Icon && <Icon size={13} strokeWidth={2.2} style={{ color: 'var(--text-muted)' }} />}
+        <span className="sx-eyebrow">{title}</span>
         <div style={{ flex: 1 }} />
         {/* Sort + limit pills, top-right corner */}
         <SelectChip
@@ -481,17 +511,12 @@ function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, em
 function ChannelMix({ channels, loading }) {
   const total = useMemo(() => channels.reduce((s, c) => s + Number(c.value || 0), 0), [channels]);
   return (
-    <div style={{
-      background: 'var(--bg-card)',
-      border: '1px solid var(--border-subtle)',
-      borderRadius: 14,
-      padding: '16px 18px',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <Layers size={14} style={{ color: 'var(--text-muted)' }} />
-        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Channels</span>
+    <div className="sx-card" style={{ padding: '18px 20px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <Layers size={13} strokeWidth={2.2} style={{ color: 'var(--text-muted)' }} />
+        <span className="sx-eyebrow">Channels</span>
       </div>
-      {loading && <div className="skeleton" style={{ height: 100, borderRadius: 8 }} />}
+      {loading && <div className="sx-shimmer" style={{ height: 100, borderRadius: 10 }} />}
       {!loading && channels.length === 0 && (
         <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>No channels match</div>
       )}
@@ -521,41 +546,35 @@ function ChannelMix({ channels, loading }) {
   );
 }
 
-// ─── ActionPanel — OOS + Dead Stock callouts ────────────────────────────────
-// Dead Capital intentionally omitted: stores marked closed in the master
-// were OPEN at the snapshot date (2026-02-01). Reframing closed-store stock
-// as "stuck capital" would mislabel legitimate operating inventory.
+// ─── ActionPanel — OOS + Dead Stock summarised as 2 minimal KPI cards ─────
+// Replaces the chunky callout cards with the same .sx-card hero treatment
+// used for the rest of the Network Pulse strip. One number per card; the
+// secondary stats live in a single context line so the cards visually
+// align with the rest of the dashboard.
 function ActionPanel({ actions, loading }) {
   const oos = actions?.oos_active || { count: 0, value: 0 };
   const ds  = actions?.dead_stock || { count: 0, units: 0, value: 0 };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
-      <ActionCard
-        accent="#D97706" tint="rgba(217,119,6,0.06)" border="rgba(217,119,6,0.22)"
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+      <PremiumKpi
+        label="Empty Active Stores"
         icon={AlertTriangle}
-        title="Empty Active Stores — no stock at all"
-        headline={fmtNum(oos.count)}
+        accent="amber"
+        value={Number(oos.count || 0)}
+        format="plain"
         loading={loading}
-        bullets={[
-          'Active stores carrying zero inventory',
-          'Open for trade but nothing to sell',
-          'Reorder priority',
-        ]}
-        cta="Generate reorder"
+        context="Open for trade · zero inventory · reorder priority"
       />
-      <ActionCard
-        accent="#7C3AED" tint="rgba(124,58,237,0.06)" border="rgba(124,58,237,0.22)"
+      <PremiumKpi
+        label="Dead Stock — 180+ days"
         icon={Target}
-        title="Dead Stock — no sale in 180+ days"
-        headline={fmtRs(ds.value)}
+        accent="violet"
+        value={Number(ds.value || 0)}
+        format="indian"
+        prefix="₹"
         loading={loading}
-        bullets={[
-          `${fmtNum(ds.count)} SKU-store lines`,
-          `${fmtL(ds.units)} units sitting`,
-          'Mark for clearance',
-        ]}
-        cta="Plan clearance"
+        context={`${fmtNum(ds.count)} SKU-store lines · ${fmtL(ds.units)} units · clearance candidate`}
       />
     </div>
   );
@@ -578,7 +597,7 @@ function ActionCard({ accent, tint, border, icon: Icon, title, headline, bullets
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
         <div style={{
           width: 32, height: 32, borderRadius: 9,
-          background: '#fff', color: accent, border: `1px solid ${border}`,
+          background: 'rgba(255,255,255,0.06)', color: accent, border: `1px solid ${border}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <Icon size={16} strokeWidth={2.5} />

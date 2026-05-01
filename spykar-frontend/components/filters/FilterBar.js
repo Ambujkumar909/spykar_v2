@@ -160,13 +160,13 @@ export default function FilterBar({ filters, setFilter, clearAll, activeCount })
       className="v2-filterbar"
       style={{
         position: 'sticky', top: 0, zIndex: 100,
-        background: 'rgba(255,255,255,0.78)',
-        backdropFilter: 'blur(16px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(16px) saturate(180%)',
-        borderBottom: '1px solid var(--border-subtle)',
-        padding: '12px 24px',
+        background: 'rgba(7,12,24,0.92)',
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        padding: '10px 24px',
         marginBottom: 16,
-        boxShadow: '0 1px 0 rgba(15,23,42,0.03)',
+        boxShadow: '0 1px 0 rgba(255,255,255,0.04)',
       }}
     >
       {/* Top row — header + active count + clear all */}
@@ -257,23 +257,23 @@ function ModePill({ mode, onChange }) {
     <div
       style={{
         display: 'inline-flex', position: 'relative',
-        background: 'var(--bg-elevated)',
-        border: '1px solid var(--border-subtle)',
+        background: 'rgba(255,255,255,0.06)',
+        border: '1px solid rgba(255,255,255,0.10)',
         borderRadius: 999,
         padding: 3,
         height: 32,
       }}
     >
-      {/* Sliding white indicator */}
+      {/* Sliding indicator */}
       <span
         style={{
           position: 'absolute',
           top: 3, bottom: 3,
           left:  `calc(${idx * segPct}% + 3px)`,
           width: `calc(${segPct}% - 6px)`,
-          background: '#fff',
+          background: 'rgba(255,255,255,0.14)',
           borderRadius: 999,
-          boxShadow: '0 1px 4px rgba(15,23,42,0.10), 0 0 0 1px var(--border-subtle)',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.30), 0 0 0 1px rgba(255,255,255,0.12)',
           transition: 'left 220ms cubic-bezier(0.16,1,0.3,1), width 220ms',
         }}
       />
@@ -289,7 +289,7 @@ function ModePill({ mode, onChange }) {
             padding: '0 14px',
             fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 700,
             letterSpacing: '0.02em',
-            color: mode === opt.key ? 'var(--text-primary)' : 'var(--text-muted)',
+            color: mode === opt.key ? '#F1F5F9' : '#64748B',
             transition: 'color 200ms',
           }}
         >{opt.label}</button>
