@@ -15,7 +15,7 @@
 // pulse until the backend adds /analytics/sales/daily-series in Phase 4.
 
 import { useEffect, useState, useMemo } from 'react';
-import { analyticsService, inventoryService, syncService, skuService } from '../services';
+import { analyticsService, inventoryService, syncService } from '../services';
 import { pctDelta } from './format';
 
 function shiftYear(iso, years) {
@@ -75,13 +75,14 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active' } = {}) {
       inventoryService.getExecutiveSummary({ mode }),
       syncService.getStatus().catch(() => null),
       inventoryService.getAgeing({ mode }).catch(() => null),
-      skuService.getTopMoving({ n: 8, days: 30 }).catch(() => null),
-      skuService.getSlowMoving({ days: 90 }).catch(() => null),
       // State heatmap is best-effort — endpoint added in Phase 3.7.
       analyticsService.getStateHeatmap?.({ date_from: fromISO, date_to: toISO, mode }).catch(() => null),
       inventoryService.getAlertsSummary({ mode }).catch(() => null),
+      // Removed: skuService.getTopMoving / getSlowMoving — the SKU Pulse
+      // section was retired from /dashboard-v2.  Keeping the calls would
+      // burn ~700 ms cold per page load for data nothing renders.
     ])
-      .then(([cur, ly, inv, sync, ageing, topSkus, slowSkus, heatmap, alertsSum]) => {
+      .then(([cur, ly, inv, sync, ageing, heatmap, alertsSum]) => {
         if (!alive) return;
         const c = cur?.data?.data?.summary || {};
         const lyS = ly?.data?.data?.summary || {};
@@ -309,8 +310,6 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active' } = {}) {
           aging,
           todayVsLy,
           channelMix,
-          topSkus:    (topSkus?.data?.data    || []).slice(0, 8),
-          bottomSkus: (slowSkus?.data?.data   || []).slice(0, 8),
           stateHeatmap: heatmap?.data?.data   || null,
           needsAttention,
           syncStatus: sync?.data?.data || null,

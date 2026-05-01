@@ -23,7 +23,6 @@ import IndiaHeatmap from '../components/dashboard-v2/IndiaHeatmap';
 import AgingWaterfall from '../components/dashboard-v2/AgingWaterfall';
 import TodayVsLY from '../components/dashboard-v2/TodayVsLY';
 import CategoryMix from '../components/dashboard-v2/CategoryMix';
-import TopBottomSkus from '../components/dashboard-v2/TopBottomSkus';
 import NeedsAttentionPanel from '../components/dashboard-v2/NeedsAttentionPanel';
 import FilterDrawer from '../components/dashboard-v2/FilterDrawer';
 import Sidebar from '../components/layout/Sidebar';
@@ -206,12 +205,6 @@ export default function DashboardV2() {
                 <TodayVsLY      data={metrics?.todayVsLy}    loading={metricsLoading} isDark={isDark} />
                 <CategoryMix    data={metrics?.channelMix}   loading={metricsLoading} isDark={isDark} />
               </div>
-
-              <TopBottomSkus
-                topSkus={metrics?.topSkus}
-                bottomSkus={metrics?.bottomSkus}
-                loading={metricsLoading}
-              />
             </main>
 
             {/* Zone E — Right rail */}
