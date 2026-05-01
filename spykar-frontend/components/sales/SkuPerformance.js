@@ -17,16 +17,19 @@
 
 import { useMemo, useState } from 'react';
 
+// Theme tokens — read from CSS variables so the component auto-flips with
+// the portal-wide light/dark toggle.  The legacy hex values are kept as
+// fallbacks for any caller that bypasses the v2 var system.
 const T = {
-  primary: '#0B1220',                  // sx-ink
-  muted:   '#475569',                  // sx-ink-muted
-  border:  'rgba(15, 23, 42, 0.06)',   // sx-border (hairline)
-  bg:      '#F7F8FB',                  // sx-canvas
-  card:    '#FFFFFF',
-  accent:  '#0B1220',
+  primary: 'var(--text-primary, #F1F5F9)',
+  muted:   'var(--text-muted,   #64748B)',
+  border:  'var(--border-subtle, rgba(255,255,255,0.07))',
+  bg:      'transparent',                  // alternating row — sits on canvas
+  card:    'rgba(255,255,255,0.02)',       // even row — barely-there tint
+  accent:  'var(--accent-primary, #EF4444)',
   velocity:'#0284C7',
-  win:     '#059669',
-  loss:    '#B91C1C',
+  win:     '#10B981',
+  loss:    '#F43F5E',
 };
 
 // Match the parent page's currency formatter so figures render consistently.

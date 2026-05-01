@@ -1,14 +1,15 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
 
-/* ─── Design System — Executive Dark Command Center ────────────────────────
-   Philosophy:  Deep navy canvas. Numbers pop. Decisions happen fast.
-   Brand:       Spykar Red #EF4444 on dark (brighter than light-mode value)
+/* ─── Design System — Executive Command Center, dual-theme ──────────────────
+   Philosophy:  Deep navy or pearl canvas. Numbers pop. Decisions happen fast.
+   Brand:       Spykar Red #EF4444 on both modes
    Typography:  Plus Jakarta Sans (display/numbers) + Inter (body/UI)
-   Mode:        Dark ONLY — built for boardrooms and long sessions
+   Theme:       Dark by default; flip to light by adding class `theme-light`
+                to <html> (managed by lib/useTheme.js — applies app-wide).
 ──────────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* ── Surfaces ── */
+  /* ── Surfaces — dark default ── */
   --bg-canvas:      #070C18;
   --bg-surface:     #0D1525;
   --bg-card:        #111827;
@@ -21,7 +22,7 @@
   --border-default: rgba(255, 255, 255, 0.10);
   --border-strong:  rgba(255, 255, 255, 0.18);
 
-  /* ── Text ── */
+  /* ── Text — dark default ── */
   --text-primary:   #F1F5F9;
   --text-secondary: #CBD5E1;
   --text-muted:     #94A3B8;
@@ -109,6 +110,62 @@
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 260ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 420ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ─── Light theme override ─────────────────────────────────────────────────
+   Applied when <html> carries class `theme-light` (managed by lib/useTheme).
+   Only the surfaces, borders, text and shadow tokens flip — brand and
+   semantic accent colours stay consistent across modes for recognition. */
+html.theme-light {
+  --bg-canvas:      #F7F8FB;
+  --bg-surface:     #FFFFFF;
+  --bg-card:        #FFFFFF;
+  --bg-card-hover:  #F4F5F7;
+  --bg-elevated:    #F4F5F7;
+  --bg-input:       #FFFFFF;
+
+  --border-subtle:  rgba(15, 23, 42, 0.06);
+  --border-default: rgba(15, 23, 42, 0.10);
+  --border-strong:  rgba(15, 23, 42, 0.18);
+
+  --text-primary:   #0A0B0D;
+  --text-secondary: #1F2937;
+  --text-muted:     #5B6470;
+  --text-disabled:  #94A3B8;
+
+  /* Brand red sits a touch deeper on light backgrounds for legibility. */
+  --lavender:        #C81525;
+  --lavender-glow:   rgba(200, 21, 37, 0.10);
+  --lavender-border: rgba(200, 21, 37, 0.24);
+  --coral:           #DC2626;
+  --coral-glow:      rgba(220, 38, 38, 0.10);
+
+  --shadow-card:     0 1px 2px rgba(10,11,13,0.04), 0 2px 8px rgba(10,11,13,0.04);
+  --shadow-elevated: 0 4px 12px rgba(10,11,13,0.08), 0 1px 3px rgba(10,11,13,0.05);
+  --shadow-deep:     0 12px 36px rgba(10,11,13,0.14), 0 4px 12px rgba(10,11,13,0.06);
+}
+
+/* Tell the browser the dark theme is active so native widgets (scrollbars,
+   form controls, calendar pickers) render in dark by default.  Light mode
+   is the OS default so no explicit override needed. */
+html { color-scheme: dark; }
+html.theme-light { color-scheme: light; }
+
+/* Native dropdowns + date inputs invert in light mode too — option rows
+   need a light background and dark text or they look broken. */
+html.theme-light select,
+html.theme-light option {
+  color: var(--text-primary);
+  background-color: var(--bg-card);
+}
+html.theme-light option:checked,
+html.theme-light option:hover {
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
+}
+html.theme-light input[type='date']::-webkit-calendar-picker-indicator,
+html.theme-light input[type='datetime-local']::-webkit-calendar-picker-indicator {
+  filter: none;
 }
 
 /* ─── Reset ──────────────────────────────────────────────────────────────── */

@@ -70,13 +70,15 @@ const CATEGORY_OPTIONS = [
 // All colour values flow from styles/globals.css custom properties so the
 // page automatically inherits global theme refinements. Only fall through to
 // hex values when a token doesn't exist (e.g. reds/greens used inline below).
+// Theme tokens — read from CSS variables so /sales follows the portal
+// light/dark toggle automatically.  Hex fallbacks are the dark defaults.
 const T = {
-  primary:   '#F1F5F9',
-  secondary: '#CBD5E1',
-  muted:     '#64748B',
-  border:    'rgba(255, 255, 255, 0.07)',
-  bg:        '#070C18',
-  accent:    '#EF4444',
+  primary:   'var(--text-primary,   #F1F5F9)',
+  secondary: 'var(--text-secondary, #CBD5E1)',
+  muted:     'var(--text-muted,     #64748B)',
+  border:    'var(--border-subtle,  rgba(255,255,255,0.07))',
+  bg:        'var(--bg-canvas,      #070C18)',
+  accent:    'var(--accent-primary, #EF4444)',
 };
 
 // ── Number formatters ──────────────────────────────────────────────────────
@@ -686,19 +688,26 @@ function AllStoresTable({ data, loading, lensMode = 'net', valuation = 'gross', 
                       onClick={() => onStoreClick?.(r.location_id)}
                       style={{
                         borderBottom: `1px solid ${T.border}`,
-                        background: isTop3 ? '#fafaf7' : globalIdx % 2 === 0 ? '#fff' : '#FBFCFE',
+                        // Dark-theme backgrounds: top-3 highlighted rows get a
+                        // subtle brand glow; alternating rows use transparency
+                        // tiers over the dark canvas so text stays legible.
+                        background: isTop3
+                          ? 'rgba(239,68,68,0.06)'
+                          : globalIdx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)',
                         cursor: onStoreClick ? 'pointer' : 'default',
                       }}
                       title={onStoreClick ? `View store breakdown — ${r.location_name}` : undefined}
                       onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                      onMouseLeave={e => e.currentTarget.style.background = isTop3 ? '#fafaf7' : globalIdx % 2 === 0 ? '#fff' : '#FBFCFE'}
+                      onMouseLeave={e => e.currentTarget.style.background = isTop3
+                        ? 'rgba(239,68,68,0.06)'
+                        : globalIdx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'}
                     >
                       <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 12, fontWeight: 900, color: T.muted, width: 36 }}>
                         {isTop3 ? ['🥇','🥈','🥉'][globalIdx] : globalIdx + 1}
                       </td>
                       <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, color: T.primary, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.location_name}</td>
                       <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
-                        <span style={{ background: '#e2e8f0', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 800, color: T.primary }}>{r.channel || '—'}</span>
+                        <span style={{ background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 800, color: T.primary }}>{r.channel || '—'}</span>
                       </td>
                       <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: T.muted, whiteSpace: 'nowrap' }}>{r.state || '—'}</td>
                       <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: T.muted, whiteSpace: 'nowrap' }}>{r.city || '—'}</td>

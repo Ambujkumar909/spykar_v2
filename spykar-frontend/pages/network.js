@@ -36,13 +36,15 @@ const CATEGORY_OPTIONS = [
 // ── Typography — identical to sales page ───────────────────────────────────
 // ── Typography constants — refined to consume design-system tokens ─────────
 // Mirrors pages/sales.js so both pages share the same visual language.
+// Theme tokens — read from CSS variables so /network follows the portal
+// light/dark toggle automatically.  Hex fallbacks are the dark defaults.
 const T = {
-  primary:   '#F1F5F9',
-  secondary: '#CBD5E1',
-  muted:     '#64748B',
-  border:    'rgba(255, 255, 255, 0.07)',
-  bg:        '#070C18',
-  accent:    '#EF4444',
+  primary:   'var(--text-primary,   #F1F5F9)',
+  secondary: 'var(--text-secondary, #CBD5E1)',
+  muted:     'var(--text-muted,     #64748B)',
+  border:    'var(--border-subtle,  rgba(255,255,255,0.07))',
+  bg:        'var(--bg-canvas,      #070C18)',
+  accent:    'var(--accent-primary, #EF4444)',
 };
 
 // ── Chart base theme — identical to sales page ────────────────────────────

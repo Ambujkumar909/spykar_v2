@@ -1,28 +1,8 @@
-import { useEffect, useState, useCallback } from 'react';
-
-const STORAGE_KEY = 'v2-theme';
-
-function readInitial() {
-  if (typeof window === 'undefined') return 'light';
-  const saved = window.localStorage.getItem(STORAGE_KEY);
-  if (saved === 'light' || saved === 'dark') return saved;
-  return 'light';
-}
-
-export function useTheme() {
-  const [theme, setTheme] = useState('light');
-
-  useEffect(() => { setTheme(readInitial()); }, []);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, theme);
-    }
-  }, [theme]);
-
-  const toggle = useCallback(() => {
-    setTheme(t => (t === 'dark' ? 'light' : 'dark'));
-  }, []);
-
-  return { theme, setTheme, toggle, isDark: theme === 'dark' };
-}
+// Compat shim — the v2 dashboard imported its own scoped useTheme before
+// the portal-wide theme system existed.  Both now share state via
+// localStorage key `spykar-theme`, so the v2 page automatically follows
+// the sidebar toggle and vice versa.
+//
+// Kept as a separate file so existing imports in components/dashboard-v2/*
+// don't need to be rewritten.
+export { useTheme, getTheme } from '../useTheme';
