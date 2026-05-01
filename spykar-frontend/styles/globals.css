@@ -457,6 +457,50 @@ h1, h2, h3, h4, h5, h6 {
 .input::placeholder { color: var(--text-disabled); }
 select.input { cursor: pointer; }
 
+/* ─── Native dropdowns — dark-mode legibility ─────────────────────────────
+   Browsers render <select>'s popup list with system styling and partly ignore
+   page CSS — on Windows / Chrome that gave us white text on near-white
+   background.  Two-pronged fix:
+   1. color-scheme: dark tells Chrome 81+/Firefox 96+ to draw the popup
+      chrome (border, scrollbar, hover) in dark.
+   2. Explicit color + background on every <option> works on every modern
+      browser and overrides the OS default for the option rows themselves. */
+select {
+  color-scheme: dark;
+  color: var(--text-primary);
+  background-color: var(--bg-card);
+}
+option {
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+option:checked,
+option:hover {
+  background-color: var(--bg-elevated);
+  color: #FFFFFF;
+}
+option:disabled {
+  color: var(--text-disabled);
+}
+
+/* Native date/time/number input pickers — same OS-popup problem. */
+input[type='date'],
+input[type='datetime-local'],
+input[type='time'],
+input[type='month'],
+input[type='week'],
+input[type='number'] {
+  color-scheme: dark;
+}
+/* Default the calendar-icon glyph to legible white on Webkit-based browsers
+   (Chrome / Edge) where it's near-invisible on dark backgrounds otherwise. */
+input[type='date']::-webkit-calendar-picker-indicator,
+input[type='datetime-local']::-webkit-calendar-picker-indicator {
+  filter: invert(0.85);
+  cursor: pointer;
+}
+
 /* ─── Page Header ────────────────────────────────────────────────────────── */
 .page-header { margin-bottom: 24px; }
 
