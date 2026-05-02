@@ -84,15 +84,21 @@ function filterOptionsCacheKey(params) {
   return `flt:opts:${JSON.stringify(norm)}`;
 }
 
+// Prefetch must use the SAME default params the panel's first real fetch
+// uses, otherwise the cache key differs and we pay a cold fetch on first
+// hover.  Defaults match what /network and /sales pass into useFilters.
+const PREFETCH_DEFAULTS = { mode: 'active' };
+
 let _prefetched = null;
 export function prefetchFilterOptions() {
   if (_prefetched) return _prefetched;
-  const cacheKey = filterOptionsCacheKey({});
+  const params = PREFETCH_DEFAULTS;
+  const cacheKey = filterOptionsCacheKey(params);
   if (getCached(cacheKey) && isFresh(cacheKey)) {
     _prefetched = Promise.resolve(getCached(cacheKey));
     return _prefetched;
   }
-  _prefetched = filterService.getAllOptions({})
+  _prefetched = filterService.getAllOptions(params)
     .then(r => {
       const opts = r?.data?.options || {};
       setCached(cacheKey, opts);
@@ -142,11 +148,11 @@ function Panel({ api }) {
   const { filters, setFilter, clearAll, activeCount } = api;
 
   const [optionsByDim, setOptionsByDim] = useState(() => {
-    const c = getCached(filterOptionsCacheKey({}));
+    const c = getCached(filterOptionsCacheKey(PREFETCH_DEFAULTS));
     return c || {};
   });
   const [loading, setLoading] = useState(() => {
-    const c = getCached(filterOptionsCacheKey({}));
+    const c = getCached(filterOptionsCacheKey(PREFETCH_DEFAULTS));
     return !c || Object.keys(c).length === 0;
   });
   const debounceRef  = useRef(null);
@@ -246,14 +252,21 @@ function Panel({ api }) {
             rgba(255,255,255,0.00) 80%,
             rgba(225,29,46,0.02) 100%);
         }
-        /* Light-mode panel — warm ivory wash instead of cold white.
-           Reads as luxury notepad paper, not hospital wall. */
+        /* ─── Light-mode panel — restraint, not romance ─────────────────
+           Aesop / Bottega Veneta / Bloomberg.  A single warm bone tone,
+           NO gradient washes.  Red appears only as a 2px accent bar on
+           active dimensions and as a single hairline at the crown.
+           Negative space and stone hierarchy do the work. */
         :global(html.theme-light) .lux__inner {
+          background: #F8F5EE;
+        }
+        :global(html.theme-light) .lux__inner::before {
           background: linear-gradient(
-            180deg,
-            rgba(254,247,238,0.92) 0%,
-            rgba(252,250,244,0.82) 36%,
-            rgba(252,250,244,0.74) 100%);
+            90deg,
+            transparent 0%,
+            rgba(225,29,46,0.55) 50%,
+            transparent 100%);
+          opacity: 0.45;
         }
         /* Top hairline that fades through accent red */
         .lux__inner::before {
@@ -405,78 +418,85 @@ function Panel({ api }) {
           padding: 2px 0 8px;
         }
 
-        /* ─── Light-mode crown overrides ──────────────────────────────── */
-        :global(html.theme-light) .lux__halo {
-          background: radial-gradient(
-            ellipse at center,
-            rgba(225,29,46,0.22) 0%,
-            rgba(225,29,46,0.06) 38%,
-            transparent 72%);
-          opacity: 0.72;
-        }
+        /* ─── Light-mode crown — restraint over romance ─────────────────
+           No halo (radial blur is too "magical" for a stone palette).
+           No shimmer.  LENS sits in a charcoal-on-bone outline chip with
+           a single red sparkle and a thin red underline.  That's it. */
+        :global(html.theme-light) .lux__halo { display: none; }
         :global(html.theme-light) .lux__mark {
-          background: linear-gradient(
-            135deg,
-            rgba(225,29,46,0.12) 0%,
-            rgba(225,29,46,0.04) 100%);
-          border: 1px solid rgba(225,29,46,0.55);
-          box-shadow:
-            inset 0 1px 0 rgba(255,255,255,0.85),
-            0 1px 6px rgba(225,29,46,0.20);
+          position: relative;
+          background: transparent;
+          border: 1px solid rgba(28,25,23,0.20);
+          box-shadow: none;
+          padding: 0 12px 0 10px;
+        }
+        :global(html.theme-light) .lux__mark::after {
+          content: '';
+          position: absolute;
+          left: 14px; right: 14px; bottom: -3px;
+          height: 1px;
+          background: var(--accent-primary);
         }
         :global(html.theme-light) .lux__mark-text {
-          color: #B91020;
-          text-shadow: 0 1px 0 rgba(255,255,255,0.6);
+          color: #1C1917;
+          letter-spacing: 0.32em;
+          text-shadow: none;
         }
         :global(html.theme-light) .lux__mark-icon {
-          color: #B91020;
+          color: var(--accent-primary);
+          filter: none;
         }
-        :global(html.theme-light) .lux__shimmer {
-          background: linear-gradient(
-            105deg,
-            transparent 30%,
-            rgba(255,255,255,0.55) 50%,
-            transparent 70%);
-        }
+        :global(html.theme-light) .lux__shimmer { display: none; }
         :global(html.theme-light) .lux__reset {
-          background: linear-gradient(180deg, #FFFFFF, #FAF6EE);
-          border: 1px solid rgba(28,25,23,0.14);
+          background: transparent;
+          border: 1px solid rgba(28,25,23,0.20);
           color: #44403C;
-          box-shadow:
-            inset 0 1px 0 rgba(255,255,255,1),
-            0 1px 2px rgba(28,25,23,0.06);
+          box-shadow: none;
+          letter-spacing: 0.10em;
         }
         :global(html.theme-light) .lux__reset:hover {
-          color: #B91020;
-          border-color: rgba(225,29,46,0.50);
-          background: linear-gradient(180deg, #FFFFFF, #FEEEEC);
+          color: var(--accent-primary);
+          border-color: var(--accent-primary);
+          background: transparent;
+          transform: none;
         }
-        /* Section headers in light — readable charcoal, not muted slate */
-        :global(html.theme-light) .grp__head { color: #57534E; }
+        :global(html.theme-light) .lux__count {
+          background: var(--accent-primary);
+          box-shadow: none;
+        }
+
+        /* ─── Section headers + dividers — stone hierarchy, no washes ─── */
+        :global(html.theme-light) .grp { background: transparent; }
+        :global(html.theme-light) .grp__head {
+          color: #57534E;
+          padding: 18px 6px 14px;
+        }
         :global(html.theme-light) .grp__head:hover { color: #1C1917; }
-        :global(html.theme-light) .grp__head.is-open { color: #292524; }
-        :global(html.theme-light) .grp__title { color: inherit; }
-        :global(html.theme-light) .grp__eyebrow { color: #78716C; }
+        :global(html.theme-light) .grp__head.is-open { color: #1C1917; }
+        :global(html.theme-light) .grp__title {
+          color: inherit;
+          letter-spacing: 0.30em;
+          font-weight: 700;
+        }
+        :global(html.theme-light) .grp__eyebrow {
+          color: #A8A29E;
+          font-style: italic;
+          font-weight: 400;
+        }
         :global(html.theme-light) .grp__caret { color: #A8A29E; }
         :global(html.theme-light) .grp__head:hover .grp__caret { color: #57534E; }
-        :global(html.theme-light) .grp__head.is-open .grp__caret { color: #B91020; }
+        :global(html.theme-light) .grp__head.is-open .grp__caret { color: var(--accent-primary); }
         :global(html.theme-light) .grp__badge {
-          background: linear-gradient(135deg, #FEEEEC, #FCE0DD);
-          color: #B91020;
-          border-color: rgba(225,29,46,0.45);
-          box-shadow:
-            inset 0 1px 0 rgba(255,255,255,0.92),
-            0 1px 3px rgba(225,29,46,0.14);
+          background: transparent;
+          color: var(--accent-primary);
+          border: 1px solid var(--accent-primary);
+          box-shadow: none;
+          font-weight: 700;
+          letter-spacing: 0.04em;
         }
-        /* Section dividers in light — warm gold/blush instead of red on red */
         :global(html.theme-light) .grp:not(:last-child)::after {
-          background: linear-gradient(
-            90deg,
-            transparent 0%,
-            rgba(28,25,23,0.10) 28%,
-            rgba(225,29,46,0.18) 50%,
-            rgba(28,25,23,0.10) 72%,
-            transparent 100%);
+          background: rgba(28,25,23,0.08);
+          left: 6px; right: 6px;
         }
       `}</style>
     </div>
@@ -775,72 +795,60 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
             0 0 28px rgba(225,29,46,0.18) !important;
         }
 
-        /* ─── Light-mode pills ──────────────────────────────────────────
-           Real shade — not just dark inverted.  Warm ivory base, real
-           charcoal border (0.16 vs the previous wishy-washy 0.10), deeper
-           pressed-paper shadow, AND we override the inner button text
-           colour so the GENDER / CATEGORY label reads as charcoal instead
-           of inheriting the muted-slate that washes out on cream. */
+        /* ─── Light-mode pills — flat bone, single hairline, no gradients
+           Single tone (#FCFAF5).  One 1px stone-300 hairline.  No drop
+           shadow, no inner bloom.  The 2px brand-red accent bar on the
+           left of an active pill is the ONLY accent — everywhere else,
+           negative space and stone hierarchy do the work. */
         :global(html.theme-light) .pill :global(button) {
-          background: linear-gradient(
-            180deg,
-            #FFFFFF 0%,
-            #FAF6EE 100%) !important;
-          border: 1px solid rgba(28,25,23,0.16) !important;
-          box-shadow:
-            inset 0 1px 0 rgba(255,255,255,1),
-            0 1px 2px rgba(28,25,23,0.06),
-            0 2px 8px rgba(28,25,23,0.06) !important;
+          background: #FCFAF5 !important;
+          border: 1px solid rgba(28,25,23,0.14) !important;
+          box-shadow: none !important;
+          height: 40px !important;
+          border-radius: 6px !important;
         }
-        /* Override the inline label / placeholder text colours on light
-           mode so they don't read as "barely there". */
         :global(html.theme-light) .pill :global(button) :global(span) {
-          color: #44403C !important;
+          color: #1C1917 !important;
+          font-weight: 600 !important;
         }
         :global(html.theme-light) .pill :global(button:hover) {
-          border-color: rgba(225,29,46,0.42) !important;
-          box-shadow:
-            inset 0 1px 0 rgba(255,255,255,1),
-            0 8px 22px rgba(28,25,23,0.12),
-            0 0 0 1px rgba(225,29,46,0.18) !important;
+          border-color: rgba(28,25,23,0.36) !important;
+          background: #FFFFFF !important;
+          box-shadow: none !important;
+          transform: none !important;
         }
         :global(html.theme-light) .pill.is-active :global(button) {
-          background: linear-gradient(
-            180deg,
-            #FFFFFF 0%,
-            #FEEEEC 100%) !important;
-          border-color: rgba(225,29,46,0.50) !important;
-          box-shadow:
-            inset 0 1px 0 rgba(255,255,255,1),
-            0 1px 2px rgba(28,25,23,0.08),
-            0 0 0 1px rgba(225,29,46,0.20),
-            0 6px 16px rgba(225,29,46,0.10) !important;
+          background: #FFFFFF !important;
+          border-color: rgba(28,25,23,0.36) !important;
+          box-shadow: none !important;
         }
         :global(html.theme-light) .pill.is-active :global(button) :global(span) {
-          color: #1C1917 !important;
+          color: #0C0A09 !important;
+        }
+        /* Strengthen the existing 2px red left bar in light mode */
+        :global(html.theme-light) .pill.is-active::before {
+          left: 2px;
+          width: 2px;
+          box-shadow: none;
         }
 
-        /* Icon chip in light — warm ivory with charcoal glyph */
+        /* Icon chip in light — flat bone with a single hairline */
         :global(html.theme-light) .pill__icon {
-          background: linear-gradient(180deg, #FFFFFF, #F5F0E7) !important;
+          background: #FCFAF5 !important;
           border: 1px solid rgba(28,25,23,0.14) !important;
-          box-shadow:
-            inset 0 1px 0 rgba(255,255,255,1),
-            0 1px 2px rgba(28,25,23,0.06) !important;
-          color: #57534E !important;
+          box-shadow: none !important;
+          color: #78716C !important;
+          border-radius: 6px !important;
         }
         :global(html.theme-light) .pill:hover .pill__icon {
           color: #1C1917 !important;
-          border-color: rgba(28,25,23,0.22) !important;
+          border-color: rgba(28,25,23,0.36) !important;
         }
         :global(html.theme-light) .pill.is-active .pill__icon {
-          background: linear-gradient(180deg, #FFFFFF, #FEF1F0) !important;
-          border-color: rgba(225,29,46,0.50) !important;
+          background: #FFFFFF !important;
+          border-color: rgba(28,25,23,0.36) !important;
           color: var(--accent-primary) !important;
-          box-shadow:
-            inset 0 1px 0 rgba(255,255,255,1),
-            0 1px 2px rgba(28,25,23,0.06),
-            0 0 12px rgba(225,29,46,0.16) !important;
+          box-shadow: none !important;
         }
       `}</style>
     </div>

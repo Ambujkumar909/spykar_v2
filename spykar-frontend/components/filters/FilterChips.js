@@ -38,7 +38,14 @@ export default function FilterChips({ filters, setFilter, clearAll }) {
   const chips = useMemo(() => {
     const out = [];
     Object.entries(filters || {}).forEach(([k, v]) => {
-      if (k === 'mode' || k === 'asOfDate' || k === 'page' || k === 'limit') return;
+      // Skip lens/persistent keys so the chips agree with the LENS panel's
+      // activeCount badge (useFilters skips the same set when counting).
+      if (
+        k === 'mode' || k === 'asOfDate' ||
+        k === 'page' || k === 'limit' ||
+        k === 'sort_by' || k === 'sort_dir' ||
+        k === 'sale_mode' || k === 'valuation'
+      ) return;
       if (v === undefined || v === null || v === '') return;
       const arr = Array.isArray(v) ? v : [v];
       if (arr.length === 0) return;

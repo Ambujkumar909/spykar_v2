@@ -867,6 +867,12 @@ export default function SalesAnalyticsPage() {
         group_name:  csv(v2Filters.group_name)  || undefined,
         store_code:  csv(v2Filters.store_code)  || undefined,
         mode:        v2Filters.mode             || 'active',
+        // Lens-aware aggregation — backend computes net/sale/return splits
+        // and the gross/ex-GST/MRP family from these.  Without them, every
+        // chart would render gross-with-GST regardless of what the user
+        // picked in the filter drawer.
+        sale_mode:   v2Filters.sale_mode        || 'net',
+        valuation:   v2Filters.valuation       || 'gross',
       });
       const v = res.data.data;
       // Always cache under the key this fetch was issued for, so future
@@ -1012,6 +1018,8 @@ export default function SalesAnalyticsPage() {
       group_name:  csvJ(v2Filters.group_name),
       store_code:  csvJ(v2Filters.store_code),
       mode:        v2Filters.mode || 'active',
+      sale_mode:   v2Filters.sale_mode || 'net',
+      valuation:   v2Filters.valuation || 'gross',
     };
   }, [dateFrom, dateTo, size, v2Slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
