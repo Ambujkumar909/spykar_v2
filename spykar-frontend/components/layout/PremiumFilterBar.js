@@ -239,14 +239,21 @@ function Panel({ api }) {
           overflow: hidden;
           padding: 6px 4px 8px;
           margin-top: 8px;
-          /* Subtle vertical gradient sheen — almost imperceptible but lifts
-             the panel off the sidebar background and gives it presence. */
           background: linear-gradient(
             180deg,
             rgba(225,29,46,0.04) 0%,
             rgba(225,29,46,0.00) 22%,
             rgba(255,255,255,0.00) 80%,
             rgba(225,29,46,0.02) 100%);
+        }
+        /* Light-mode panel — warm ivory wash instead of cold white.
+           Reads as luxury notepad paper, not hospital wall. */
+        :global(html.theme-light) .lux__inner {
+          background: linear-gradient(
+            180deg,
+            rgba(254,247,238,0.92) 0%,
+            rgba(252,250,244,0.82) 36%,
+            rgba(252,250,244,0.74) 100%);
         }
         /* Top hairline that fades through accent red */
         .lux__inner::before {
@@ -391,14 +398,85 @@ function Panel({ api }) {
         }
 
         /* ─── Groups list ────────────────────────────────────────────────
-           No inner scroll container.  The sidebar's <nav> is ALREADY a
-           scroll region; nesting a second one inside it makes the wheel
-           hand off awkwardly between the two and feels janky.  Letting
-           the groups grow naturally and scrolling the whole nav gives one
-           smooth surface — and removes the need for a custom scrollbar
-           inside the panel entirely. */
+           No inner scroll container — the sidebar's <nav> already scrolls.
+           Letting the groups grow naturally inside it gives one smooth
+           continuous wheel surface. */
         .lux__groups {
           padding: 2px 0 8px;
+        }
+
+        /* ─── Light-mode crown overrides ──────────────────────────────── */
+        :global(html.theme-light) .lux__halo {
+          background: radial-gradient(
+            ellipse at center,
+            rgba(225,29,46,0.22) 0%,
+            rgba(225,29,46,0.06) 38%,
+            transparent 72%);
+          opacity: 0.72;
+        }
+        :global(html.theme-light) .lux__mark {
+          background: linear-gradient(
+            135deg,
+            rgba(225,29,46,0.12) 0%,
+            rgba(225,29,46,0.04) 100%);
+          border: 1px solid rgba(225,29,46,0.55);
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.85),
+            0 1px 6px rgba(225,29,46,0.20);
+        }
+        :global(html.theme-light) .lux__mark-text {
+          color: #B91020;
+          text-shadow: 0 1px 0 rgba(255,255,255,0.6);
+        }
+        :global(html.theme-light) .lux__mark-icon {
+          color: #B91020;
+        }
+        :global(html.theme-light) .lux__shimmer {
+          background: linear-gradient(
+            105deg,
+            transparent 30%,
+            rgba(255,255,255,0.55) 50%,
+            transparent 70%);
+        }
+        :global(html.theme-light) .lux__reset {
+          background: linear-gradient(180deg, #FFFFFF, #FAF6EE);
+          border: 1px solid rgba(28,25,23,0.14);
+          color: #44403C;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,1),
+            0 1px 2px rgba(28,25,23,0.06);
+        }
+        :global(html.theme-light) .lux__reset:hover {
+          color: #B91020;
+          border-color: rgba(225,29,46,0.50);
+          background: linear-gradient(180deg, #FFFFFF, #FEEEEC);
+        }
+        /* Section headers in light — readable charcoal, not muted slate */
+        :global(html.theme-light) .grp__head { color: #57534E; }
+        :global(html.theme-light) .grp__head:hover { color: #1C1917; }
+        :global(html.theme-light) .grp__head.is-open { color: #292524; }
+        :global(html.theme-light) .grp__title { color: inherit; }
+        :global(html.theme-light) .grp__eyebrow { color: #78716C; }
+        :global(html.theme-light) .grp__caret { color: #A8A29E; }
+        :global(html.theme-light) .grp__head:hover .grp__caret { color: #57534E; }
+        :global(html.theme-light) .grp__head.is-open .grp__caret { color: #B91020; }
+        :global(html.theme-light) .grp__badge {
+          background: linear-gradient(135deg, #FEEEEC, #FCE0DD);
+          color: #B91020;
+          border-color: rgba(225,29,46,0.45);
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.92),
+            0 1px 3px rgba(225,29,46,0.14);
+        }
+        /* Section dividers in light — warm gold/blush instead of red on red */
+        :global(html.theme-light) .grp:not(:last-child)::after {
+          background: linear-gradient(
+            90deg,
+            transparent 0%,
+            rgba(28,25,23,0.10) 28%,
+            rgba(225,29,46,0.18) 50%,
+            rgba(28,25,23,0.10) 72%,
+            transparent 100%);
         }
       `}</style>
     </div>
@@ -697,39 +775,72 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
             0 0 28px rgba(225,29,46,0.18) !important;
         }
 
-        /* Light-mode parity */
+        /* ─── Light-mode pills ──────────────────────────────────────────
+           Real shade — not just dark inverted.  Warm ivory base, real
+           charcoal border (0.16 vs the previous wishy-washy 0.10), deeper
+           pressed-paper shadow, AND we override the inner button text
+           colour so the GENDER / CATEGORY label reads as charcoal instead
+           of inheriting the muted-slate that washes out on cream. */
         :global(html.theme-light) .pill :global(button) {
           background: linear-gradient(
             180deg,
-            rgba(255,255,255,1) 0%,
-            rgba(248,250,252,0.86) 100%) !important;
-          border: 1px solid rgba(15,23,42,0.10) !important;
-          box-shadow:
-            inset 0 1px 0 rgba(255,255,255,0.92),
-            0 1px 2px rgba(15,23,42,0.06),
-            0 2px 6px rgba(15,23,42,0.04) !important;
-        }
-        :global(html.theme-light) .pill :global(button:hover) {
-          border-color: rgba(225,29,46,0.32) !important;
+            #FFFFFF 0%,
+            #FAF6EE 100%) !important;
+          border: 1px solid rgba(28,25,23,0.16) !important;
           box-shadow:
             inset 0 1px 0 rgba(255,255,255,1),
-            0 6px 18px rgba(15,23,42,0.12),
-            0 0 0 1px rgba(225,29,46,0.12) !important;
+            0 1px 2px rgba(28,25,23,0.06),
+            0 2px 8px rgba(28,25,23,0.06) !important;
+        }
+        /* Override the inline label / placeholder text colours on light
+           mode so they don't read as "barely there". */
+        :global(html.theme-light) .pill :global(button) :global(span) {
+          color: #44403C !important;
+        }
+        :global(html.theme-light) .pill :global(button:hover) {
+          border-color: rgba(225,29,46,0.42) !important;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,1),
+            0 8px 22px rgba(28,25,23,0.12),
+            0 0 0 1px rgba(225,29,46,0.18) !important;
         }
         :global(html.theme-light) .pill.is-active :global(button) {
           background: linear-gradient(
             180deg,
-            rgba(255,255,255,1) 0%,
-            rgba(254,242,243,0.96) 100%) !important;
-          border-color: rgba(225,29,46,0.40) !important;
-        }
-        :global(html.theme-light) .pill__icon {
-          background: linear-gradient(180deg, rgba(255,255,255,1), rgba(248,250,252,0.92));
-          border: 1px solid rgba(15,23,42,0.10);
+            #FFFFFF 0%,
+            #FEEEEC 100%) !important;
+          border-color: rgba(225,29,46,0.50) !important;
           box-shadow:
-            inset 0 1px 0 rgba(255,255,255,0.92),
-            0 1px 2px rgba(15,23,42,0.06);
-          color: var(--text-muted);
+            inset 0 1px 0 rgba(255,255,255,1),
+            0 1px 2px rgba(28,25,23,0.08),
+            0 0 0 1px rgba(225,29,46,0.20),
+            0 6px 16px rgba(225,29,46,0.10) !important;
+        }
+        :global(html.theme-light) .pill.is-active :global(button) :global(span) {
+          color: #1C1917 !important;
+        }
+
+        /* Icon chip in light — warm ivory with charcoal glyph */
+        :global(html.theme-light) .pill__icon {
+          background: linear-gradient(180deg, #FFFFFF, #F5F0E7) !important;
+          border: 1px solid rgba(28,25,23,0.14) !important;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,1),
+            0 1px 2px rgba(28,25,23,0.06) !important;
+          color: #57534E !important;
+        }
+        :global(html.theme-light) .pill:hover .pill__icon {
+          color: #1C1917 !important;
+          border-color: rgba(28,25,23,0.22) !important;
+        }
+        :global(html.theme-light) .pill.is-active .pill__icon {
+          background: linear-gradient(180deg, #FFFFFF, #FEF1F0) !important;
+          border-color: rgba(225,29,46,0.50) !important;
+          color: var(--accent-primary) !important;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,1),
+            0 1px 2px rgba(28,25,23,0.06),
+            0 0 12px rgba(225,29,46,0.16) !important;
         }
       `}</style>
     </div>
