@@ -2,11 +2,16 @@ import '../styles/globals.css';
 import { AuthProvider } from '../lib/auth-context';
 import { Toaster } from 'react-hot-toast';
 import Head from 'next/head';
+import Script from 'next/script';
 import { useTheme } from '../lib/useTheme';
 
-// Pre-hydration theme bootstrap — runs in <head> BEFORE React hydrates so
-// the page paints in the user's chosen mode without a dark→light flash.
+// Pre-hydration theme bootstrap — runs BEFORE React hydrates so the page
+// paints in the user's chosen mode without a dark→light flash.
 // Reads the same localStorage key (`spykar-theme`) as lib/useTheme.
+//
+// Uses next/script with strategy="beforeInteractive" so Next.js inlines
+// it correctly — putting a raw <script> inside <Head> triggers Next.js's
+// "no-script-tags-in-head" warning that previously polluted dev logs.
 const THEME_BOOTSTRAP = `
 (function () {
   try {
@@ -38,8 +43,15 @@ export default function App({ Component, pageProps }) {
     <AuthProvider>
       <Head>
         <title>Spykar IQ — Inventory Intelligence</title>
-        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
       </Head>
+      {/* Theme-paint script — beforeInteractive runs before page hydration
+          so the html.theme-light class is applied before any styles render,
+          preventing the flash-of-wrong-theme. */}
+      <Script
+        id="theme-bootstrap"
+        strategy="beforeInteractive"
+        dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }}
+      />
       {getLayout(<Component {...pageProps} />)}
       <Toaster
         position="top-right"
