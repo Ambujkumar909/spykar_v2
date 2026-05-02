@@ -269,26 +269,24 @@ function Panel({ api }) {
           gap: 8px;
           padding: 16px 6px 14px;
         }
-        /* Soft red halo behind the LENS chip — pure ambience */
+        /* Soft red halo behind the LENS chip — STATIC.  An animated radial
+           blur was repainting 14px of pixels every frame and chewing scroll
+           perf; the static version reads identically and costs nothing. */
         .lux__halo {
           position: absolute;
-          top: -10px;
-          left: -10px;
+          top: -8px;
+          left: -8px;
           width: 110px;
-          height: 60px;
+          height: 56px;
           background: radial-gradient(
             ellipse at center,
-            rgba(225,29,46,0.32) 0%,
-            rgba(225,29,46,0.08) 35%,
-            transparent 70%);
-          filter: blur(14px);
+            rgba(225,29,46,0.28) 0%,
+            rgba(225,29,46,0.06) 38%,
+            transparent 72%);
+          filter: blur(12px);
           pointer-events: none;
-          opacity: 0.85;
-          animation: luxHaloPulse 5s ease-in-out infinite;
-        }
-        @keyframes luxHaloPulse {
-          0%, 100% { opacity: 0.85; transform: scale(1); }
-          50%      { opacity: 0.55; transform: scale(0.94); }
+          opacity: 0.80;
+          contain: paint;
         }
 
         .lux__mark {
@@ -392,24 +390,16 @@ function Panel({ api }) {
           transform: translateY(-1px);
         }
 
-        /* ─── Groups list ─── */
+        /* ─── Groups list ────────────────────────────────────────────────
+           No inner scroll container.  The sidebar's <nav> is ALREADY a
+           scroll region; nesting a second one inside it makes the wheel
+           hand off awkwardly between the two and feels janky.  Letting
+           the groups grow naturally and scrolling the whole nav gives one
+           smooth surface — and removes the need for a custom scrollbar
+           inside the panel entirely. */
         .lux__groups {
           padding: 2px 0 8px;
-          max-height: calc(100vh - 280px);
-          overflow-y: auto;
-          overflow-x: hidden;
-          scrollbar-width: thin;
-          scrollbar-color: rgba(225,29,46,0.22) transparent;
         }
-        .lux__groups::-webkit-scrollbar { width: 4px; }
-        .lux__groups::-webkit-scrollbar-thumb {
-          background: linear-gradient(180deg, rgba(225,29,46,0.30), rgba(225,29,46,0.14));
-          border-radius: 6px;
-        }
-        .lux__groups::-webkit-scrollbar-thumb:hover {
-          background: linear-gradient(180deg, rgba(225,29,46,0.55), rgba(225,29,46,0.30));
-        }
-        .lux__groups::-webkit-scrollbar-track { background: transparent; }
       `}</style>
     </div>
   );
@@ -447,7 +437,7 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
               <div
                 key={d.key}
                 className={`pill${hasValue ? ' is-active' : ''}`}
-                style={{ '--stagger': `${i * 32}ms` }}
+                style={{ '--stagger': `${i * 18}ms` }}
               >
                 <span className="pill__icon" aria-hidden>
                   <Icon size={12} strokeWidth={2} />
@@ -662,15 +652,18 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
             rgba(0,0,0,0.10) 100%) !important;
           border: 1px solid rgba(255,255,255,0.07) !important;
           border-radius: 11px !important;
+          /* Steady-state shadow is a SINGLE light layer so scroll-frame
+             paints stay cheap.  Hover/active states upgrade to multi-layer
+             cushions because they only animate on intent — no scroll cost. */
           box-shadow:
             inset 0 1px 0 rgba(255,255,255,0.06),
-            inset 0 -1px 0 rgba(0,0,0,0.20),
-            0 2px 4px rgba(0,0,0,0.36),
-            0 1px 1px rgba(0,0,0,0.20) !important;
+            0 1px 2px rgba(0,0,0,0.30) !important;
           transition:
             transform 220ms cubic-bezier(0.16,1,0.3,1),
             border-color 220ms cubic-bezier(0.4,0,0.2,1),
             box-shadow 220ms cubic-bezier(0.4,0,0.2,1) !important;
+          contain: layout paint;
+          will-change: transform;
         }
         .pill :global(button:hover) {
           transform: translateY(-1px) !important;
@@ -691,10 +684,8 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
           border-color: rgba(225,29,46,0.32) !important;
           box-shadow:
             inset 0 1px 0 rgba(255,255,255,0.08),
-            inset 0 -1px 0 rgba(0,0,0,0.20),
-            0 2px 4px rgba(0,0,0,0.36),
-            0 0 0 1px rgba(225,29,46,0.14),
-            0 0 18px rgba(225,29,46,0.16) !important;
+            0 1px 2px rgba(0,0,0,0.30),
+            0 0 0 1px rgba(225,29,46,0.14) !important;
         }
         .pill.is-active :global(button:hover) {
           border-color: rgba(225,29,46,0.50) !important;
@@ -751,6 +742,40 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
 function LuxPopoverStyles() {
   return (
     <style jsx global>{`
+      /* ─── Sidebar <nav> smoothness ─────────────────────────────────────
+         The whole sidebar nav scrolls (sidebar item list + filter panel).
+         Make it premium: smooth scroll, momentum-style scrollbar,
+         contained so the page behind never gets bumped, and a hairline
+         silver thumb in light mode / a hairline white thumb in dark mode.
+         No bright-red gradient — that was reading as a giant artery
+         pinned to the rail. */
+      aside > nav {
+        scroll-behavior: smooth;
+        overscroll-behavior: contain;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(15,23,42,0.18) transparent;
+      }
+      html:not(.theme-light) aside > nav {
+        scrollbar-color: rgba(255,255,255,0.14) transparent;
+      }
+      aside > nav::-webkit-scrollbar { width: 5px; }
+      aside > nav::-webkit-scrollbar-track { background: transparent; }
+      aside > nav::-webkit-scrollbar-thumb {
+        background: rgba(15,23,42,0.18);
+        border-radius: 999px;
+        transition: background 200ms;
+      }
+      aside > nav::-webkit-scrollbar-thumb:hover {
+        background: rgba(225,29,46,0.55);
+      }
+      html:not(.theme-light) aside > nav::-webkit-scrollbar-thumb {
+        background: rgba(255,255,255,0.14);
+      }
+      html:not(.theme-light) aside > nav::-webkit-scrollbar-thumb:hover {
+        background: rgba(225,29,46,0.65);
+      }
+
+
       .lux-pop {
         background:
           radial-gradient(
