@@ -1,14 +1,16 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { RefreshCw, Bell, Clock, Zap } from 'lucide-react';
+import { RefreshCw, Bell, Clock, Sun, Moon } from 'lucide-react';
 import { syncService } from '../../lib/services';
 import { useAlerts } from '../../lib/useAlerts';
 import { timeAgo } from '../../lib/utils';
 import { useAuth } from '../../lib/auth-context';
+import { useTheme } from '../../lib/useTheme';
 
 export default function Header({ title, subtitle }) {
   const router = useRouter();
   const { user } = useAuth();
+  const { isDark, toggle: toggleTheme } = useTheme();
   const isAdmin = user && ['SUPER_ADMIN', 'ADMIN'].includes(user.role);
   const [syncStatus, setSyncStatus]           = useState(null);
   const [syncing, setSyncing]                 = useState(false);
@@ -55,16 +57,18 @@ export default function Header({ title, subtitle }) {
       left: 'var(--sidebar-width)',
       right: 0,
       height: 'var(--header-height)',
-      background: 'rgba(7,12,24,0.92)',
+      background: isDark ? 'rgba(7,12,24,0.92)' : 'rgba(255,255,255,0.92)',
       backdropFilter: 'blur(20px)',
       WebkitBackdropFilter: 'blur(20px)',
-      borderBottom: '1px solid rgba(255,255,255,0.06)',
+      borderBottom: '1px solid var(--border-subtle)',
       display: 'flex',
       alignItems: 'center',
       padding: '0 28px',
       zIndex: 90,
       gap: 14,
-      boxShadow: '0 1px 0 rgba(255,255,255,0.04)',
+      boxShadow: isDark
+        ? '0 1px 0 rgba(255,255,255,0.04)'
+        : '0 1px 0 rgba(15,23,42,0.04)',
     }}>
 
       {/* Page title */}
@@ -75,7 +79,7 @@ export default function Header({ title, subtitle }) {
             fontWeight: 800,
             fontSize: 17,
             letterSpacing: '-0.03em',
-            color: '#F1F5F9',
+            color: 'var(--text-primary)',
             lineHeight: 1.2,
             whiteSpace: 'nowrap',
             overflow: 'hidden',
@@ -85,7 +89,7 @@ export default function Header({ title, subtitle }) {
         {subtitle && (
           <div style={{
             fontSize: 11,
-            color: '#475569',
+            color: 'var(--text-muted)',
             marginTop: 1,
             fontFamily: 'var(--font-body)',
             fontWeight: 500,
@@ -97,19 +101,19 @@ export default function Header({ title, subtitle }) {
       {/* Date / time */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        color: '#475569',
+        color: 'var(--text-muted)',
         fontFamily: 'var(--font-body)',
         fontSize: 12, fontWeight: 600,
         letterSpacing: '0.02em',
       }}>
-        <Clock size={12} color="#334155" />
+        <Clock size={12} />
         <span>{dateStr}</span>
-        <span style={{ color: '#1E293B' }}>·</span>
-        <span style={{ color: '#64748B', fontVariantNumeric: 'tabular-nums' }}>{timeStr}</span>
+        <span style={{ opacity: 0.5 }}>·</span>
+        <span style={{ fontVariantNumeric: 'tabular-nums' }}>{timeStr}</span>
       </div>
 
       {/* Divider */}
-      <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.08)' }} />
+      <div style={{ width: 1, height: 20, background: 'var(--border-default)' }} />
 
       {/* Live indicator */}
       <div style={{
@@ -158,20 +162,20 @@ export default function Header({ title, subtitle }) {
             display: 'flex', alignItems: 'center', gap: 6,
             padding: '6px 14px', borderRadius: 100,
             background: 'transparent',
-            border: '1px solid rgba(255,255,255,0.09)',
-            color: '#64748B',
+            border: '1px solid var(--border-default)',
+            color: 'var(--text-muted)',
             cursor: 'pointer', fontSize: 12, fontWeight: 600,
             fontFamily: 'var(--font-body)',
             transition: 'all 0.15s',
           }}
           onMouseEnter={e => {
             e.currentTarget.style.borderColor = 'rgba(59,130,246,0.40)';
-            e.currentTarget.style.color = '#93C5FD';
+            e.currentTarget.style.color = 'var(--info)';
             e.currentTarget.style.background = 'rgba(59,130,246,0.10)';
           }}
           onMouseLeave={e => {
-            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.09)';
-            e.currentTarget.style.color = '#64748B';
+            e.currentTarget.style.borderColor = 'var(--border-default)';
+            e.currentTarget.style.color = 'var(--text-muted)';
             e.currentTarget.style.background = 'transparent';
           }}
         >
@@ -181,7 +185,37 @@ export default function Header({ title, subtitle }) {
       )}
 
       {/* Divider */}
-      <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.08)' }} />
+      <div style={{ width: 1, height: 20, background: 'var(--border-default)' }} />
+
+      {/* Theme toggle — same source of truth as the v2 dashboard's toggle.
+          Sun in dark mode, Moon in light mode (icon shows the destination). */}
+      <button
+        onClick={toggleTheme}
+        aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+        title={`${isDark ? 'Switch to light mode' : 'Switch to dark mode'} (D)`}
+        style={{
+          width: 36, height: 36,
+          border: '1px solid var(--border-default)',
+          borderRadius: '50%',
+          background: 'transparent',
+          cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: 'var(--text-muted)',
+          transition: 'all 0.15s',
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.borderColor = 'var(--accent-border)';
+          e.currentTarget.style.color = 'var(--accent-primary)';
+          e.currentTarget.style.background = 'var(--accent-glow)';
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.borderColor = 'var(--border-default)';
+          e.currentTarget.style.color = 'var(--text-muted)';
+          e.currentTarget.style.background = 'transparent';
+        }}
+      >
+        {isDark ? <Sun size={14} /> : <Moon size={14} />}
+      </button>
 
       {/* Notifications */}
       <button
@@ -189,23 +223,23 @@ export default function Header({ title, subtitle }) {
         title="View stock alerts"
         style={{
           width: 36, height: 36,
-          border: '1px solid rgba(255,255,255,0.09)',
+          border: '1px solid var(--border-default)',
           borderRadius: '50%',
           background: 'transparent',
           cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: '#64748B',
+          color: 'var(--text-muted)',
           position: 'relative',
           transition: 'all 0.15s',
         }}
         onMouseEnter={e => {
           e.currentTarget.style.borderColor = 'rgba(239,68,68,0.40)';
-          e.currentTarget.style.color = '#FCA5A5';
+          e.currentTarget.style.color = 'var(--accent-primary)';
           e.currentTarget.style.background = 'rgba(239,68,68,0.10)';
         }}
         onMouseLeave={e => {
-          e.currentTarget.style.borderColor = 'rgba(255,255,255,0.09)';
-          e.currentTarget.style.color = '#64748B';
+          e.currentTarget.style.borderColor = 'var(--border-default)';
+          e.currentTarget.style.color = 'var(--text-muted)';
           e.currentTarget.style.background = 'transparent';
         }}
       >
@@ -217,7 +251,7 @@ export default function Header({ title, subtitle }) {
             padding: '0 4px',
             background: '#EF4444',
             borderRadius: 999,
-            border: '2px solid #070C18',
+            border: `2px solid ${isDark ? '#070C18' : '#FFFFFF'}`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#fff',
             fontSize: 9, fontWeight: 800,

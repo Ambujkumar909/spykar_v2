@@ -3,10 +3,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
   LayoutDashboard, Globe, TrendingUp, RefreshCw, LogOut, UserCog, Sparkles,
-  Sun, Moon,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth-context';
-import { useTheme } from '../../lib/useTheme';
 
 const NAV = [
   {
@@ -30,7 +28,6 @@ const NAV = [
 export default function Sidebar() {
   const router = useRouter();
   const { user, logout } = useAuth();
-  const { isDark, toggle: toggleTheme } = useTheme();
   const [expanded, setExpanded] = useState(false);
 
   const isActive = (href) => {
@@ -236,64 +233,6 @@ export default function Sidebar() {
           </div>
         ))}
       </nav>
-
-      {/* ── Theme toggle ── one click flips the whole portal */}
-      <div style={{
-        padding: '6px 8px',
-        borderTop: '1px solid rgba(255,255,255,0.06)',
-        flexShrink: 0,
-      }}>
-        <button
-          type="button"
-          onClick={toggleTheme}
-          aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-          title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            width: '100%', padding: '10px 8px',
-            background: 'transparent',
-            border: 'none', borderRadius: 10,
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
-            transition: 'background 160ms, color 160ms',
-            position: 'relative',
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.background = 'var(--accent-glow)';
-            e.currentTarget.style.color = 'var(--text-primary)';
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.color = 'var(--text-muted)';
-          }}
-        >
-          <span style={{
-            width: 30, height: 30, borderRadius: 8,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(255,255,255,0.06)',
-            flexShrink: 0,
-            marginLeft: expanded ? 0 : 'auto',
-            marginRight: expanded ? 0 : 'auto',
-          }}>
-            {isDark ? <Sun size={15} /> : <Moon size={15} />}
-          </span>
-          <span style={{
-            fontSize: 13, fontWeight: 600,
-            fontFamily: 'var(--font-body)',
-            letterSpacing: '-0.01em',
-            whiteSpace: 'nowrap',
-            opacity: expanded ? 1 : 0,
-            transform: expanded ? 'translateX(0)' : 'translateX(-6px)',
-            transition: 'opacity 180ms ease, transform 180ms ease',
-            color: 'inherit',
-          }}>
-            {isDark ? 'Light mode' : 'Dark mode'}
-          </span>
-          {!expanded && (
-            <div className="nav-tooltip">{isDark ? 'Light mode' : 'Dark mode'}</div>
-          )}
-        </button>
-      </div>
 
       {/* ── User footer ── */}
       <div style={{

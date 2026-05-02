@@ -8,7 +8,7 @@
 // The dark mode also writes `color-scheme: dark` so native widgets
 // (scrollbars, calendar pickers) render in dark by default.
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
 const STORAGE_KEY = 'spykar-theme';   // 'dark' | 'light'
 
@@ -30,19 +30,26 @@ function applyClass(theme) {
 }
 
 export function useTheme() {
-  const [theme, setTheme] = useState('dark');
+  // Lazy initialiser reads the persisted value SYNCHRONOUSLY so the first
+  // render already matches what the bootstrap script applied to <html>.
+  // SSR falls back to 'dark' since window is undefined; the bootstrap
+  // script in _app.js handles the pre-hydration paint.
+  const [theme, setTheme] = useState(readInitial);
 
-  // Initial sync — runs once on mount.  Reads localStorage / system pref
-  // and pushes the class to <html> so the page paints the right theme.
-  useEffect(() => {
-    const t = readInitial();
-    setTheme(t);
-    applyClass(t);
-  }, []);
-
-  // Persist + reflect every change.
+  // Persist + reflect on every USER change.  We deliberately skip the first
+  // run so a fresh mount on /sales doesn't overwrite the value the user just
+  // saved on / .  The bootstrap script + lazy-init above already painted
+  // the right mode, so there's nothing for the first run to do.
+  const isFirstMount = useRef(true);
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      // Sync the class on first mount in case the bootstrap script didn't
+      // run (e.g. very fast SPA route changes).  Idempotent.
+      applyClass(theme);
+      return;
+    }
     window.localStorage.setItem(STORAGE_KEY, theme);
     applyClass(theme);
   }, [theme]);
