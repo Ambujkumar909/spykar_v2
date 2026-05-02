@@ -177,7 +177,7 @@ function DonutCard({
         enabled: true,
         top: 4, left: 0, blur: 14,
         opacity: 0.10,
-        color: '#F1F5F9',
+        color: 'var(--text-primary)',
       },
     },
     labels,
@@ -213,7 +213,7 @@ function DonutCard({
               fontSize: '11px',
               fontFamily: 'var(--font-body)',
               fontWeight: 800,
-              color: '#64748B',
+              color: 'var(--text-muted)',
               letterSpacing: '0.08em',
               offsetY: 24,
               formatter: () => `${lensLabel.toUpperCase()} UNITS`,
@@ -223,7 +223,7 @@ function DonutCard({
               fontSize: '34px', // bigger, more dramatic hero number
               fontFamily: 'var(--font-display)',
               fontWeight: 900,
-              color: '#F1F5F9',
+              color: 'var(--text-primary)',
               letterSpacing: '-0.02em',
               offsetY: -20,
               formatter: (v) => fmtL(Number(v) || 0),
@@ -235,7 +235,7 @@ function DonutCard({
               fontSize: '11px',
               fontFamily: 'var(--font-body)',
               fontWeight: 800,
-              color: '#64748B',
+              color: 'var(--text-muted)',
               formatter: () => fmtL(totalUnits),
             },
           },
@@ -304,7 +304,7 @@ function DonutCard({
         </span>
         <span style={{
           fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 800,
-          color: '#F1F5F9', letterSpacing: '-0.005em', whiteSpace: 'nowrap',
+          color: 'var(--text-primary)', letterSpacing: '-0.005em', whiteSpace: 'nowrap',
         }}>{title}</span>
         <span className="sx-pill" style={{
           background: `${lensColor}10`,
@@ -394,16 +394,16 @@ function DonutCard({
                 <div style={{ minWidth: 0 }}>
                   <div style={{
                     fontFamily: 'var(--font-body)',
-                    fontSize: 12.5, fontWeight: 700, color: '#F1F5F9',
+                    fontSize: 12.5, fontWeight: 700, color: 'var(--text-primary)',
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>{r.label}</div>
-                  <div style={{ fontSize: 10.5, fontWeight: 600, color: '#94A3B8', marginTop: 1, letterSpacing: '0.005em' }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-muted)', marginTop: 1, letterSpacing: '0.005em' }}>
                     {fmtNum(r.units)} {lensLabel.toLowerCase()} · {fmtCr(r.value)}
                   </div>
                 </div>
                 <div style={{
                   fontFamily: 'var(--font-display)', fontSize: 12, fontWeight: 800,
-                  color: '#F1F5F9', letterSpacing: '-0.005em',
+                  color: 'var(--text-primary)', letterSpacing: '-0.005em',
                   fontFeatureSettings: '"tnum" 1',
                   minWidth: 42, textAlign: 'right',
                 }}>{pct < 0.1 ? '<0.1%' : `${pct.toFixed(1)}%`}</div>
@@ -421,12 +421,12 @@ function DonutCard({
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           flexWrap: 'wrap', gap: 8,
         }}>
-          <span style={{ fontSize: 11, fontWeight: 600, color: '#94A3B8', letterSpacing: '0.02em' }}>
-            Top <strong style={{ color: '#F1F5F9' }}>{Math.min(topN, (rows||[]).length)}</strong> shown
-            {(rows || []).length > topN && <> · <strong style={{ color: '#F1F5F9' }}>{(rows||[]).length - topN}</strong> more rolled into Others</>}
+          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.02em' }}>
+            Top <strong style={{ color: 'var(--text-primary)' }}>{Math.min(topN, (rows||[]).length)}</strong> shown
+            {(rows || []).length > topN && <> · <strong style={{ color: 'var(--text-primary)' }}>{(rows||[]).length - topN}</strong> more rolled into Others</>}
           </span>
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#475569', letterSpacing: '0.02em' }}>
-            <span style={{ color: '#94A3B8' }}>Total {valuationLabel.toLowerCase()}</span> · <span style={{ color: lensColor, fontFamily: 'var(--font-display)', fontFeatureSettings: '"tnum" 1' }}>{fmtCr(totalValue)}</span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-disabled)', letterSpacing: '0.02em' }}>
+            <span style={{ color: 'var(--text-muted)' }}>Total {valuationLabel.toLowerCase()}</span> · <span style={{ color: lensColor, fontFamily: 'var(--font-display)', fontFeatureSettings: '"tnum" 1' }}>{fmtCr(totalValue)}</span>
           </span>
         </div>
       )}

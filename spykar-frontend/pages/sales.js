@@ -157,15 +157,16 @@ function SaleModePill({ mode, onChange }) {
 }
 
 // ── KPI Card ──────────────────────────────────────────────────────────────
-function KpiCard({ icon: Icon, label, value, sub, sub2, accent = '#0f172a', loading }) {
+function KpiCard({ icon: Icon, label, value, sub, sub2, accent = 'var(--text-primary)', loading }) {
   return (
     <div style={{
-      background: '#111827',
+      background: 'var(--bg-card)',
       border: `1px solid ${T.border}`,
       borderRadius: 16,
       padding: '22px 24px',
       display: 'flex', flexDirection: 'column', gap: 8,
       position: 'relative', overflow: 'hidden',
+      boxShadow: 'var(--shadow-card)',
     }}>
       {/* Accent bar top */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: accent, borderRadius: '16px 16px 0 0' }} />

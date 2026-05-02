@@ -140,7 +140,7 @@ export default function DrilldownDrawer({
         style={{
           position: 'fixed', top: 0, right: 0, bottom: 0,
           width: 'min(640px, 92vw)',
-          background: 'rgba(13,19,33,0.97)',
+          background: 'var(--bg-card)',
           boxShadow: '-32px 0 80px -20px rgba(15, 23, 42, 0.18), -8px 0 24px -10px rgba(15, 23, 42, 0.08)',
           transform: open ? 'translateX(0)' : 'translateX(100%)',
           transition: 'transform 320ms cubic-bezier(0.16, 1, 0.3, 1)',
@@ -184,13 +184,13 @@ function DrawerHeader({ data, pivot, loading, onClose }) {
   return (
     <header style={{
       padding: '20px 24px 18px',
-      borderBottom: '1px solid rgba(15, 23, 42, 0.06)',
+      borderBottom: '1px solid var(--border-subtle)',
       display: 'flex', alignItems: 'flex-start', gap: 14,
-      background: 'linear-gradient(to bottom, #FCFDFE, #FFFFFF)',
+      background: 'var(--bg-card)',
     }}>
       <span style={{
         width: 38, height: 38, borderRadius: 10,
-        background: 'var(--bg-elevated)', color: '#F1F5F9',
+        background: 'var(--bg-elevated)', color: 'var(--text-primary)',
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
       }}>
         <Icon size={18} strokeWidth={2.2} />
@@ -202,7 +202,7 @@ function DrawerHeader({ data, pivot, loading, onClose }) {
         <h2 style={{
           fontFamily: 'var(--font-display)',
           fontSize: 20, fontWeight: 800,
-          color: '#F1F5F9', letterSpacing: '-0.02em',
+          color: 'var(--text-primary)', letterSpacing: '-0.02em',
           margin: 0, lineHeight: 1.15,
           overflow: 'hidden', textOverflow: 'ellipsis',
         }} title={title}>
@@ -219,8 +219,8 @@ function DrawerHeader({ data, pivot, loading, onClose }) {
       <button onClick={onClose} title="Close (Esc)"
         style={{
           width: 34, height: 34, borderRadius: 10,
-          border: '1px solid rgba(15,23,42,0.08)',
-          background: 'rgba(13,19,33,0.97)', cursor: 'pointer',
+          border: '1px solid var(--border-default)',
+          background: 'var(--bg-card)', cursor: 'pointer',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0,
           transition: 'background 160ms ease, transform 160ms ease',
@@ -341,7 +341,7 @@ function DrawerBody({ data, pivot, valuation, lensMode }) {
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
           padding: '6px 12px', borderRadius: 999,
-          background: 'rgba(15, 23, 42, 0.04)',
+          background: 'var(--bg-elevated)',
           border: '1px solid rgba(15, 23, 42, 0.06)',
           fontSize: 11, fontWeight: 700, color: 'var(--text-muted)',
           marginBottom: 22, letterSpacing: '0.01em',
@@ -469,7 +469,7 @@ function RankList({ title, rows, renderLeft, renderRight, emptyText, limit = 15,
       <div className="sx-eyebrow" style={{ marginBottom: 10 }}>{title}</div>
       {visible.length === 0 && (
         <div style={{ padding: 18, textAlign: 'center', fontSize: 12, fontWeight: 600,
-          color: 'var(--text-muted)', background: 'rgba(15,23,42,0.025)', borderRadius: 10 }}>
+          color: 'var(--text-muted)', background: 'var(--row-stripe)', borderRadius: 10 }}>
           {emptyText}
         </div>
       )}
@@ -498,7 +498,7 @@ function RankList({ title, rows, renderLeft, renderRight, emptyText, limit = 15,
                 }}>{i + 1}</span>
                 <div style={{ minWidth: 0 }}>
                   <div style={{
-                    fontSize: 13, fontWeight: 700, color: '#F1F5F9',
+                    fontSize: 13, fontWeight: 700, color: 'var(--text-primary)',
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>{left.primary}</div>
                   <div style={{
@@ -550,9 +550,9 @@ function MiniBreakdown({ title, rows, keyField }) {
               alignItems: 'center', gap: 10,
               padding: '6px 10px', borderRadius: 7,
             }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#F1F5F9',
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r[keyField]}</div>
-              <div style={{ background: 'rgba(15,23,42,0.06)', borderRadius: 99, height: 5, overflow: 'hidden' }}>
+              <div style={{ background: 'var(--border-default)', borderRadius: 99, height: 5, overflow: 'hidden' }}>
                 <div style={{ width: `${Math.max(2, pct)}%`, height: '100%', background: 'linear-gradient(90deg,#0B1220,#475569)' }} />
               </div>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', minWidth: 56, textAlign: 'right' }}>

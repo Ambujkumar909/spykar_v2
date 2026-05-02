@@ -946,6 +946,85 @@ aside {
 .apexcharts-canvas:hover .apexcharts-toolbar { opacity: 0.80; }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   ApexCharts — light-mode overrides
+   The block above hardcodes white-tinted strokes, dark-glass tooltips, and
+   black drop-shadows for the dark theme.  Without this override, every chart
+   on /, /sales, /network looks washed-out / illegible in light mode.
+   ═══════════════════════════════════════════════════════════════════════════ */
+html.theme-light .apexcharts-grid line,
+html.theme-light .apexcharts-gridline {
+  stroke: rgba(15, 23, 42, 0.06) !important;
+}
+html.theme-light .apexcharts-grid-borders line {
+  stroke: rgba(15, 23, 42, 0.08) !important;
+}
+html.theme-light .apexcharts-xaxis line,
+html.theme-light .apexcharts-yaxis line {
+  stroke: rgba(15, 23, 42, 0.10) !important;
+}
+html.theme-light .apexcharts-xaxis-tick,
+html.theme-light .apexcharts-yaxis-tick {
+  stroke: rgba(15, 23, 42, 0.12) !important;
+}
+html.theme-light .apexcharts-xaxis-label tspan,
+html.theme-light .apexcharts-yaxis-label tspan {
+  fill: #5B6470 !important;
+}
+html.theme-light .apexcharts-zero-line {
+  stroke: rgba(15, 23, 42, 0.18) !important;
+}
+
+/* Pie + line shadows — softer, ink-tinted */
+html.theme-light .apexcharts-pie-series path,
+html.theme-light .apexcharts-pie .apexcharts-slices path {
+  filter: drop-shadow(0 2px 6px rgba(15,23,42,0.10)) drop-shadow(0 8px 24px rgba(15,23,42,0.06));
+}
+html.theme-light .apexcharts-pie-series path:hover {
+  filter: drop-shadow(0 6px 16px rgba(15,23,42,0.18)) drop-shadow(0 14px 40px rgba(15,23,42,0.10)) brightness(1.04) saturate(1.08);
+}
+html.theme-light .apexcharts-marker {
+  filter: drop-shadow(0 1px 4px rgba(15,23,42,0.16));
+}
+
+/* Tooltip — light glass */
+html.theme-light .apexcharts-tooltip {
+  background: rgba(255, 255, 255, 0.97) !important;
+  border: 1px solid rgba(15, 23, 42, 0.10) !important;
+  box-shadow: 0 1px 3px rgba(15,23,42,0.06), 0 10px 34px rgba(15,23,42,0.10), 0 22px 70px rgba(15,23,42,0.06) !important;
+}
+html.theme-light .apexcharts-tooltip-title {
+  background: rgba(15,23,42,0.04) !important;
+  border-bottom: 1px solid rgba(15,23,42,0.08) !important;
+  color: #5B6470 !important;
+}
+html.theme-light .apexcharts-tooltip-text-y-label,
+html.theme-light .apexcharts-tooltip-text-y-value {
+  color: #0A0B0D !important;
+}
+html.theme-light .apexcharts-xaxistooltip,
+html.theme-light .apexcharts-yaxistooltip {
+  background: rgba(255, 255, 255, 0.97) !important;
+  color: #0A0B0D !important;
+  border: 1px solid rgba(15, 23, 42, 0.12) !important;
+  box-shadow: 0 6px 18px rgba(15,23,42,0.10) !important;
+}
+html.theme-light .apexcharts-tooltip-marker {
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.85), 0 2px 6px rgba(15,23,42,0.18);
+}
+
+/* Legend — light hover tint */
+html.theme-light .apexcharts-legend-series:hover {
+  background: rgba(15, 23, 42, 0.04);
+  box-shadow: 0 2px 8px rgba(15,23,42,0.06);
+}
+html.theme-light .apexcharts-legend-text {
+  color: #5B6470 !important;
+}
+html.theme-light .apexcharts-legend-marker {
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.80), 0 2px 6px rgba(15,23,42,0.10);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    SX-PAGE — Dark premium skin
 ═══════════════════════════════════════════════════════════════════════════ */
 
