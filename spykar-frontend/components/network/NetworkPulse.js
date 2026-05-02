@@ -160,7 +160,7 @@ export default function NetworkPulse({ filters, onParetoPick }) {
           </span>
         </div>
         <span className="sx-pill" style={{
-          background: 'rgba(15, 23, 42, 0.04)',
+          background: 'var(--bg-elevated)',
           border: '1px solid rgba(15, 23, 42, 0.06)',
           color: 'var(--text-muted)',
           fontWeight: 700, letterSpacing: '0.02em', textTransform: 'none', fontSize: 11,
@@ -597,7 +597,7 @@ function ActionCard({ accent, tint, border, icon: Icon, title, headline, bullets
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
         <div style={{
           width: 32, height: 32, borderRadius: 9,
-          background: 'rgba(255,255,255,0.06)', color: accent, border: `1px solid ${border}`,
+          background: 'var(--bg-elevated)', color: accent, border: `1px solid ${border}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <Icon size={16} strokeWidth={2.5} />

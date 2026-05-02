@@ -25,7 +25,7 @@ const T = {
   muted:   'var(--text-muted,   #64748B)',
   border:  'var(--border-subtle, rgba(255,255,255,0.07))',
   bg:      'transparent',                  // alternating row — sits on canvas
-  card:    'rgba(255,255,255,0.02)',       // even row — barely-there tint
+  card:    'var(--row-stripe)',       // even row — barely-there tint
   accent:  'var(--accent-primary, #EF4444)',
   velocity:'#0284C7',
   win:     '#10B981',
@@ -386,7 +386,7 @@ function ModePill({ value, onChange }) {
         position: 'absolute', top: 3, bottom: 3,
         left: value === 'top' ? 3 : 'calc(50% + 0px)',
         width: 'calc(50% - 3px)',
-        background: 'rgba(255,255,255,0.06)',
+        background: 'var(--bg-elevated)',
         borderRadius: 99,
         boxShadow: '0 1px 4px rgba(15,23,42,0.10)',
         transition: 'left 220ms cubic-bezier(0.16,1,0.3,1)',

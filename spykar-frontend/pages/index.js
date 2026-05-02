@@ -41,8 +41,8 @@ function ExecModePill({ mode, onChange }) {
   return (
     <div style={{
       display: 'inline-flex', position: 'relative',
-      background: 'rgba(255,255,255,0.06)',
-      border: '1px solid rgba(255,255,255,0.10)',
+      background: 'var(--bg-elevated)',
+      border: '1px solid var(--border-default)',
       borderRadius: 999, padding: 3, height: 32,
     }}>
       <span style={{
@@ -82,7 +82,7 @@ function Section({ title, hint, icon: Icon, color = '#C0392B', children, mb = 28
         }}>
           {title}
         </span>
-        <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+        <div style={{ flex: 1, height: 1, background: 'var(--bg-elevated)' }} />
       </div>
       {hint && (
         <p style={{
@@ -317,8 +317,8 @@ function SalesRankingsSection({ salesTop: initialData, loading: initialLoading }
   const colorBarH   = n => n <= 10 ? '55%' : n <= 20 ? '62%' : n <= 50 ? '70%' : '78%';
   const colorChartH = n => Math.max(320, n * (n <= 20 ? 28 : n <= 50 ? 20 : 14));
 
-  const inputStyle  = { border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '5px 10px', fontSize: 12, fontWeight: 600, color: '#CBD5E1', outline: 'none', background: 'rgba(255,255,255,0.07)' };
-  const selectStyle = { border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '5px 28px 5px 10px', fontSize: 12, fontWeight: 600, color: '#CBD5E1', outline: 'none', background: 'rgba(255,255,255,0.07)', appearance: 'none', cursor: 'pointer', minWidth: 120 };
+  const inputStyle  = { border: '1px solid var(--border-strong)', borderRadius: 8, padding: '5px 10px', fontSize: 12, fontWeight: 600, color: '#CBD5E1', outline: 'none', background: 'var(--bg-elevated)' };
+  const selectStyle = { border: '1px solid var(--border-strong)', borderRadius: 8, padding: '5px 28px 5px 10px', fontSize: 12, fontWeight: 600, color: '#CBD5E1', outline: 'none', background: 'var(--bg-elevated)', appearance: 'none', cursor: 'pointer', minWidth: 120 };
 
   return (
     <Section title="Sales Rankings" icon={BarChart3} color="#2563EB" mb={32}>
@@ -365,7 +365,7 @@ function SalesRankingsSection({ salesTop: initialData, loading: initialLoading }
         </button>
       </div>
 
-      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 16 }}>
+      <div style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 16 }}>
       {/* ── Colour chart — pastel green + Top N dropdown in header ── */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-header">
@@ -376,7 +376,7 @@ function SalesRankingsSection({ salesTop: initialData, loading: initialLoading }
             <select
               value={colorTopN}
               onChange={e => setColorTopN(Number(e.target.value))}
-              style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'rgba(255,255,255,0.07)', outline: 'none', cursor: 'pointer' }}
+              style={{ border: '1px solid var(--border-strong)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'var(--bg-elevated)', outline: 'none', cursor: 'pointer' }}
             >
               {COLOR_TOP_OPTIONS.map(n => <option key={n} value={n}>Top {n}</option>)}
             </select>
@@ -394,7 +394,7 @@ function SalesRankingsSection({ salesTop: initialData, loading: initialLoading }
                   xaxis: { labels: { style: { colors: '#64748B', fontWeight: 600, fontSize: '11px' }, formatter: fmtV }, axisBorder: { show: false }, axisTicks: { show: false } },
                   yaxis: { labels: { style: { colors: '#94A3B8', fontWeight: 700, fontSize: '12px' }, maxWidth: 130 } },
                   dataLabels: { enabled: true, textAnchor: 'start', offsetX: 6, style: { fontSize: '12px', fontWeight: 900, colors: ['#CBD5E1'] }, formatter: fmtV },
-                  grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 3 },
+                  grid: { borderColor: 'var(--chart-grid)', strokeDashArray: 3 },
                   tooltip: { theme: 'dark', style: { fontSize: '12px' }, y: { formatter: v => v.toLocaleString('en-IN') + ' units' } },
                 }}
                 series={[{ name: 'Units Sold', data: (data?.by_color || []).slice(0, colorTopN).map(r => ({ x: r.color_name, y: Number(r.units_sold) })) }]}
@@ -413,7 +413,7 @@ function SalesRankingsSection({ salesTop: initialData, loading: initialLoading }
               <select
                 value={sizeTopN}
                 onChange={e => setSizeTopN(Number(e.target.value))}
-                style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'rgba(255,255,255,0.07)', outline: 'none', cursor: 'pointer' }}
+                style={{ border: '1px solid var(--border-strong)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'var(--bg-elevated)', outline: 'none', cursor: 'pointer' }}
               >
                 {[5, 10, 15, 20, 50].map(n => <option key={n} value={n}>Top {n}</option>)}
               </select>
@@ -431,7 +431,7 @@ function SalesRankingsSection({ salesTop: initialData, loading: initialLoading }
                     xaxis: { labels: { style: { colors: '#64748B', fontWeight: 600, fontSize: '11px' }, formatter: fmtV }, axisBorder: { show: false }, axisTicks: { show: false } },
                     yaxis: { labels: { style: { colors: '#94A3B8', fontWeight: 700, fontSize: '12px' }, maxWidth: 80 } },
                     dataLabels: { enabled: true, textAnchor: 'start', offsetX: 6, style: { fontSize: '12px', fontWeight: 900, colors: ['#CBD5E1'] }, formatter: fmtV },
-                    grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 3 },
+                    grid: { borderColor: 'var(--chart-grid)', strokeDashArray: 3 },
                     tooltip: { theme: 'dark', style: { fontSize: '12px' }, y: { formatter: v => v.toLocaleString('en-IN') + ' units' } },
                   }}
                   series={[{ name: 'Units Sold', data: (data?.by_size || []).slice(0, sizeTopN).map(r => ({ x: r.size, y: Number(r.units_sold) })) }]}
@@ -448,7 +448,7 @@ function SalesRankingsSection({ salesTop: initialData, loading: initialLoading }
               <select
                 value={storeTopN}
                 onChange={e => setStoreTopN(Number(e.target.value))}
-                style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'rgba(255,255,255,0.07)', outline: 'none', cursor: 'pointer' }}
+                style={{ border: '1px solid var(--border-strong)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'var(--bg-elevated)', outline: 'none', cursor: 'pointer' }}
               >
                 {COLOR_TOP_OPTIONS.map(n => <option key={n} value={n}>Top {n}</option>)}
               </select>
@@ -466,7 +466,7 @@ function SalesRankingsSection({ salesTop: initialData, loading: initialLoading }
                     xaxis: { labels: { style: { colors: '#64748B', fontWeight: 600, fontSize: '11px' }, formatter: fmtRev }, axisBorder: { show: false }, axisTicks: { show: false } },
                     yaxis: { labels: { style: { colors: '#94A3B8', fontWeight: 700, fontSize: '12px' }, maxWidth: 130 } },
                     dataLabels: { enabled: true, textAnchor: 'start', offsetX: 6, style: { fontSize: '12px', fontWeight: 900, colors: ['#CBD5E1'] }, formatter: fmtRev },
-                    grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 3 },
+                    grid: { borderColor: 'var(--chart-grid)', strokeDashArray: 3 },
                     tooltip: { theme: 'dark', style: { fontSize: '12px' }, y: { formatter: v => '₹' + v.toLocaleString('en-IN') } },
                   }}
                   series={[{ name: 'Revenue', data: (data?.by_store || []).slice(0, storeTopN).map(r => ({ x: r.location_name, y: Number(r.sales_value) })) }]}
@@ -518,8 +518,8 @@ function ReturnsRankingsSection({ salesTop: initialSalesData }) {
   const barH   = n => n <= 10 ? '55%' : n <= 20 ? '62%' : n <= 50 ? '70%' : '78%';
   const chartH = n => Math.max(320, n * (n <= 20 ? 28 : n <= 50 ? 20 : 14));
 
-  const inputStyle  = { border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '5px 10px', fontSize: 12, fontWeight: 600, color: '#CBD5E1', outline: 'none', background: 'rgba(255,255,255,0.07)' };
-  const selectStyle = { border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '5px 28px 5px 10px', fontSize: 12, fontWeight: 600, color: '#CBD5E1', outline: 'none', background: 'rgba(255,255,255,0.07)', appearance: 'none', cursor: 'pointer', minWidth: 120 };
+  const inputStyle  = { border: '1px solid var(--border-strong)', borderRadius: 8, padding: '5px 10px', fontSize: 12, fontWeight: 600, color: '#CBD5E1', outline: 'none', background: 'var(--bg-elevated)' };
+  const selectStyle = { border: '1px solid var(--border-strong)', borderRadius: 8, padding: '5px 28px 5px 10px', fontSize: 12, fontWeight: 600, color: '#CBD5E1', outline: 'none', background: 'var(--bg-elevated)', appearance: 'none', cursor: 'pointer', minWidth: 120 };
 
   return (
     <Section title="Return Rankings" icon={TrendingDown} color="#EA580C" mb={32}>
@@ -556,7 +556,7 @@ function ReturnsRankingsSection({ salesTop: initialSalesData }) {
           style={{ padding: '5px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, background: '#f1f5f9', color: '#475569', border: '1.5px solid #e2e8f0', cursor: 'pointer' }}>Reset</button>
       </div>
 
-      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 16 }}>
+      <div style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 16 }}>
       {/* Colour chart — orange tones */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-header">
@@ -564,7 +564,7 @@ function ReturnsRankingsSection({ salesTop: initialSalesData }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>Show</span>
             <select value={colorTopN} onChange={e => setColorTopN(Number(e.target.value))}
-              style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'rgba(255,255,255,0.07)', outline: 'none', cursor: 'pointer' }}>
+              style={{ border: '1px solid var(--border-strong)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'var(--bg-elevated)', outline: 'none', cursor: 'pointer' }}>
               {COLOR_TOP_OPTIONS.map(n => <option key={n} value={n}>Top {n}</option>)}
             </select>
           </div>
@@ -581,7 +581,7 @@ function ReturnsRankingsSection({ salesTop: initialSalesData }) {
                   xaxis: { labels: { style: { colors: '#64748B', fontWeight: 600, fontSize: '11px' }, formatter: fmtV }, axisBorder: { show: false }, axisTicks: { show: false } },
                   yaxis: { labels: { style: { colors: '#94A3B8', fontWeight: 700, fontSize: '12px' }, maxWidth: 130 } },
                   dataLabels: { enabled: true, textAnchor: 'start', offsetX: 6, style: { fontSize: '12px', fontWeight: 900, colors: ['#CBD5E1'] }, formatter: fmtV },
-                  grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 3 },
+                  grid: { borderColor: 'var(--chart-grid)', strokeDashArray: 3 },
                   tooltip: { theme: 'dark', style: { fontSize: '12px' }, y: { formatter: v => v.toLocaleString('en-IN') + ' units' } },
                 }}
                 series={[{ name: 'Units Returned', data: (data?.by_color || []).slice(0, colorTopN).map(r => ({ x: r.color_name, y: Number(r.return_units) })) }]}
@@ -598,7 +598,7 @@ function ReturnsRankingsSection({ salesTop: initialSalesData }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>Show</span>
               <select value={sizeTopN} onChange={e => setSizeTopN(Number(e.target.value))}
-                style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'rgba(255,255,255,0.07)', outline: 'none', cursor: 'pointer' }}>
+                style={{ border: '1px solid var(--border-strong)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'var(--bg-elevated)', outline: 'none', cursor: 'pointer' }}>
                 {[5, 10, 15, 20, 50].map(n => <option key={n} value={n}>Top {n}</option>)}
               </select>
             </div>
@@ -615,7 +615,7 @@ function ReturnsRankingsSection({ salesTop: initialSalesData }) {
                     xaxis: { labels: { style: { colors: '#64748B', fontWeight: 600, fontSize: '11px' }, formatter: fmtV }, axisBorder: { show: false }, axisTicks: { show: false } },
                     yaxis: { labels: { style: { colors: '#94A3B8', fontWeight: 700, fontSize: '12px' }, maxWidth: 80 } },
                     dataLabels: { enabled: true, textAnchor: 'start', offsetX: 6, style: { fontSize: '12px', fontWeight: 900, colors: ['#CBD5E1'] }, formatter: fmtV },
-                    grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 3 },
+                    grid: { borderColor: 'var(--chart-grid)', strokeDashArray: 3 },
                     tooltip: { theme: 'dark', style: { fontSize: '12px' }, y: { formatter: v => v.toLocaleString('en-IN') + ' units' } },
                   }}
                   series={[{ name: 'Units Returned', data: (data?.by_size || []).slice(0, sizeTopN).map(r => ({ x: r.size, y: Number(r.return_units) })) }]}
@@ -630,7 +630,7 @@ function ReturnsRankingsSection({ salesTop: initialSalesData }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>Show</span>
               <select value={storeTopN} onChange={e => setStoreTopN(Number(e.target.value))}
-                style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'rgba(255,255,255,0.07)', outline: 'none', cursor: 'pointer' }}>
+                style={{ border: '1px solid var(--border-strong)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'var(--bg-elevated)', outline: 'none', cursor: 'pointer' }}>
                 {COLOR_TOP_OPTIONS.map(n => <option key={n} value={n}>Top {n}</option>)}
               </select>
             </div>
@@ -647,7 +647,7 @@ function ReturnsRankingsSection({ salesTop: initialSalesData }) {
                     xaxis: { labels: { style: { colors: '#64748B', fontWeight: 600, fontSize: '11px' }, formatter: fmtV }, axisBorder: { show: false }, axisTicks: { show: false } },
                     yaxis: { labels: { style: { colors: '#94A3B8', fontWeight: 700, fontSize: '12px' }, maxWidth: 130 } },
                     dataLabels: { enabled: true, textAnchor: 'start', offsetX: 6, style: { fontSize: '12px', fontWeight: 900, colors: ['#CBD5E1'] }, formatter: fmtV },
-                    grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 3 },
+                    grid: { borderColor: 'var(--chart-grid)', strokeDashArray: 3 },
                     tooltip: { theme: 'dark', style: { fontSize: '12px' }, y: { formatter: v => v.toLocaleString('en-IN') + ' units' } },
                   }}
                   series={[{ name: 'Units Returned', data: (data?.by_store || []).slice(0, storeTopN).map(r => ({ x: r.location_name, y: Number(r.return_units) })) }]}
@@ -732,8 +732,8 @@ function SizeColorSection({ initialSizes, initialColors, allStoresData, pageLoad
   const sizeColors  = sizeSlice.map((_, i)  => PIE_PALETTE[i % PIE_PALETTE.length]);
   const colorColors = colorSlice.map((_, i) => PIE_PALETTE[(i + 4) % PIE_PALETTE.length]);
 
-  const inputStyle  = { border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '5px 10px', fontSize: 12, fontWeight: 600, color: '#CBD5E1', outline: 'none', background: 'rgba(255,255,255,0.07)' };
-  const selectStyle = { border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '5px 28px 5px 10px', fontSize: 12, fontWeight: 600, color: '#CBD5E1', outline: 'none', background: 'rgba(255,255,255,0.07)', appearance: 'none', cursor: 'pointer', minWidth: 120 };
+  const inputStyle  = { border: '1px solid var(--border-strong)', borderRadius: 8, padding: '5px 10px', fontSize: 12, fontWeight: 600, color: '#CBD5E1', outline: 'none', background: 'var(--bg-elevated)' };
+  const selectStyle = { border: '1px solid var(--border-strong)', borderRadius: 8, padding: '5px 28px 5px 10px', fontSize: 12, fontWeight: 600, color: '#CBD5E1', outline: 'none', background: 'var(--bg-elevated)', appearance: 'none', cursor: 'pointer', minWidth: 120 };
 
   const legendStyle = {
     position: 'bottom', fontSize: '12px', fontWeight: 700,
@@ -781,7 +781,7 @@ function SizeColorSection({ initialSizes, initialColors, allStoresData, pageLoad
         </button>
       </div>
 
-      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 16 }}>
+      <div style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 16 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         {/* ── Size chart ── */}
         <div className="card">
@@ -794,7 +794,7 @@ function SizeColorSection({ initialSizes, initialColors, allStoresData, pageLoad
               <select
                 value={sizeTopN}
                 onChange={e => setSizeTopN(Number(e.target.value))}
-                style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'rgba(255,255,255,0.07)', outline: 'none', cursor: 'pointer' }}
+                style={{ border: '1px solid var(--border-strong)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'var(--bg-elevated)', outline: 'none', cursor: 'pointer' }}
               >
                 {SIZE_TOP_OPTIONS.map(n => <option key={n} value={n}>Top {n}</option>)}
               </select>
@@ -853,7 +853,7 @@ function SizeColorSection({ initialSizes, initialColors, allStoresData, pageLoad
               <select
                 value={colorTopN}
                 onChange={e => setColorTopN(Number(e.target.value))}
-                style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'rgba(255,255,255,0.07)', outline: 'none', cursor: 'pointer' }}
+                style={{ border: '1px solid var(--border-strong)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'var(--bg-elevated)', outline: 'none', cursor: 'pointer' }}
               >
                 {COLOR_SIZE_OPTIONS.map(n => <option key={n} value={n}>Top {n}</option>)}
               </select>
@@ -872,7 +872,7 @@ function SizeColorSection({ initialSizes, initialColors, allStoresData, pageLoad
                       xaxis: { labels: { style: { colors: '#64748B', fontWeight: 700, fontSize: '11px' }, formatter: fmtV }, axisBorder: { show: false }, axisTicks: { show: false } },
                       yaxis: { labels: { style: { colors: '#94A3B8', fontWeight: 800, fontSize: '12px' }, maxWidth: 160 } },
                       dataLabels: { enabled: true, textAnchor: 'start', offsetX: 6, style: { fontSize: '12px', fontWeight: 900, colors: ['#CBD5E1'] }, formatter: fmtV },
-                      grid: { strokeDashArray: 3, borderColor: 'rgba(255,255,255,0.05)' },
+                      grid: { strokeDashArray: 3, borderColor: 'var(--chart-grid)' },
                       tooltip: { theme: 'dark', style: { fontSize: '12px', fontFamily: "'Inter', sans-serif" }, y: { formatter: v => v.toLocaleString('en-IN') + ' units' } },
                     }}
                     series={[{ name: 'Units in Stock', data: colorSlice.map(c => ({ x: c.color_name, y: Number(c.total_stock) })) }]}
@@ -952,8 +952,8 @@ function SkuPerformanceSection({ initialTopMoving, initialSlowMoving, allStoresD
   const topMoving  = topMovingData  || [];
   const slowMoving = slowMovingData || [];
 
-  const inputStyle  = { border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '5px 10px', fontSize: 12, fontWeight: 600, color: '#CBD5E1', outline: 'none', background: 'rgba(255,255,255,0.07)' };
-  const selectStyle = { border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '5px 28px 5px 10px', fontSize: 12, fontWeight: 600, color: '#CBD5E1', outline: 'none', background: 'rgba(255,255,255,0.07)', appearance: 'none', cursor: 'pointer', minWidth: 120 };
+  const inputStyle  = { border: '1px solid var(--border-strong)', borderRadius: 8, padding: '5px 10px', fontSize: 12, fontWeight: 600, color: '#CBD5E1', outline: 'none', background: 'var(--bg-elevated)' };
+  const selectStyle = { border: '1px solid var(--border-strong)', borderRadius: 8, padding: '5px 28px 5px 10px', fontSize: 12, fontWeight: 600, color: '#CBD5E1', outline: 'none', background: 'var(--bg-elevated)', appearance: 'none', cursor: 'pointer', minWidth: 120 };
 
   return (
     <Section title="SKU Performance" icon={TrendingUp} mb={32}>
@@ -992,7 +992,7 @@ function SkuPerformanceSection({ initialTopMoving, initialSlowMoving, allStoresD
         </button>
       </div>
 
-      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 16 }}>
+      <div style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 16 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         {/* ── Top Moving SKUs ── */}
         <div className="card">
@@ -1010,7 +1010,7 @@ function SkuPerformanceSection({ initialTopMoving, initialSlowMoving, allStoresD
                     { days: slowDays, ...(selState && { state: selState }), ...(selCity && { city: selCity }), ...(selCategory && { category: selCategory }) }
                   );
                 }}
-                style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'rgba(255,255,255,0.07)', outline: 'none', cursor: 'pointer' }}
+                style={{ border: '1px solid var(--border-strong)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'var(--bg-elevated)', outline: 'none', cursor: 'pointer' }}
               >
                 {SKU_TOP_OPTIONS.map(n => <option key={n} value={n}>Top {n}</option>)}
               </select>
@@ -1071,7 +1071,7 @@ function SkuPerformanceSection({ initialTopMoving, initialSlowMoving, allStoresD
               <select
                 value={slowTopN}
                 onChange={e => setSlowTopN(Number(e.target.value))}
-                style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'rgba(255,255,255,0.07)', outline: 'none', cursor: 'pointer' }}
+                style={{ border: '1px solid var(--border-strong)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'var(--bg-elevated)', outline: 'none', cursor: 'pointer' }}
               >
                 {[5, 10, 20, 100, 200].map(n => <option key={n} value={n}>Top {n}</option>)}
               </select>
@@ -1086,7 +1086,7 @@ function SkuPerformanceSection({ initialTopMoving, initialSlowMoving, allStoresD
                     { days, ...(selState && { state: selState }), ...(selCity && { city: selCity }), ...(selCategory && { category: selCategory }) }
                   );
                 }}
-                style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'rgba(255,255,255,0.07)', outline: 'none', cursor: 'pointer' }}
+                style={{ border: '1px solid var(--border-strong)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#CBD5E1', background: 'var(--bg-elevated)', outline: 'none', cursor: 'pointer' }}
               >
                 {SKU_DAYS_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
               </select>
@@ -1929,7 +1929,7 @@ export default function Overview() {
         maxWidth: 140,
       },
     },
-    grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
+    grid: { borderColor: 'var(--chart-grid)', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
     dataLabels: {
       enabled: true,
       textAnchor: 'start',
@@ -1960,7 +1960,7 @@ export default function Overview() {
     plotOptions: { pie: { donut: { size: '62%', labels: {
       show: true,
       name: { show: true, fontSize: '12px', fontFamily: "'Inter', sans-serif", fontWeight: 800, color: '#94A3B8' },
-      value: { show: true, fontSize: '22px', fontFamily: "'Inter', sans-serif", fontWeight: 900, color: '#F1F5F9', formatter: v => formatNumber(v) },
+      value: { show: true, fontSize: '22px', fontFamily: "'Inter', sans-serif", fontWeight: 900, color: 'var(--text-primary)', formatter: v => formatNumber(v) },
       total: { show: true, label: 'Total Colours', color: '#64748B', fontSize: '11px', fontWeight: 800, fontFamily: "'Inter', sans-serif", formatter: () => colors.length },
     }}}},
     stroke: { width: 3, colors: ['#070C18'] },
@@ -2063,10 +2063,10 @@ export default function Overview() {
             onChange={e => setV2('valuation', e.target.value)}
             title="Pick the ₹ basis for every revenue figure on the page"
             style={{
-              border: '1px solid rgba(255,255,255,0.10)',
+              border: '1px solid var(--border-default)',
               borderRadius: 9, padding: '7px 30px 7px 12px', height: 32,
               fontSize: 12, fontWeight: 600, color: '#CBD5E1',
-              background: 'rgba(255,255,255,0.06)', appearance: 'none', cursor: 'pointer',
+              background: 'var(--bg-elevated)', appearance: 'none', cursor: 'pointer',
               fontFamily: 'var(--font-body)', minWidth: 178,
             }}
           >

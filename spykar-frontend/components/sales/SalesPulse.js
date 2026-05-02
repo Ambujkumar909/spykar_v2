@@ -385,7 +385,7 @@ function ActionPanel({ summary, byColor, byStore, allStores, loading }) {
       onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)';
         e.currentTarget.style.boxShadow = 'none'; }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <div style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(255,255,255,0.06)',
+        <div style={{ width: 32, height: 32, borderRadius: 9, background: 'var(--bg-elevated)',
           color: accent, border: `1px solid ${border}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Icon size={16} strokeWidth={2.5} />

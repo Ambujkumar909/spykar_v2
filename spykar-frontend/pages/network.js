@@ -70,8 +70,8 @@ function fmtNum(n) {
 }
 
 // ── Shared filter styles — refined hairline + tabular figures ────────────
-const filterInput  = { border: '1px solid rgba(255,255,255,0.10)', borderRadius: 9, padding: '7px 12px 7px 32px', fontSize: 12, fontWeight: 600, color: '#F1F5F9', outline: 'none', background: 'rgba(255,255,255,0.07)', height: 32, fontFamily: 'var(--font-body)', transition: 'border-color 200ms ease' };
-const filterSelect = { border: '1px solid rgba(255,255,255,0.10)', borderRadius: 9, padding: '7px 30px 7px 12px', fontSize: 12, fontWeight: 600, color: '#F1F5F9', outline: 'none', background: 'rgba(255,255,255,0.07)', appearance: 'none', cursor: 'pointer', height: 32, fontFamily: 'var(--font-body)', transition: 'border-color 200ms ease' };
+const filterInput  = { border: '1px solid var(--border-default)', borderRadius: 9, padding: '7px 12px 7px 32px', fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-elevated)', height: 32, fontFamily: 'var(--font-body)', transition: 'border-color 200ms ease' };
+const filterSelect = { border: '1px solid var(--border-default)', borderRadius: 9, padding: '7px 30px 7px 12px', fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-elevated)', appearance: 'none', cursor: 'pointer', height: 32, fontFamily: 'var(--font-body)', transition: 'border-color 200ms ease' };
 const SearchIcon   = () => <svg style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', opacity: 0.40 }} width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={T.primary} strokeWidth={2.2}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
 const ChevronIcon  = () => <svg style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', opacity: 0.45 }} width={10} height={10} viewBox="0 0 24 24" fill="none" stroke={T.primary} strokeWidth={2.4}><polyline points="6 9 12 15 18 9"/></svg>;
 
@@ -118,7 +118,7 @@ function SectionTitle({ icon: Icon, label }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
       <span style={{
         width: 26, height: 26, borderRadius: 8,
-        background: 'rgba(255,255,255,0.07)',
+        background: 'var(--bg-elevated)',
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         flexShrink: 0,
       }}>
@@ -157,7 +157,7 @@ function ChannelBreakdownSection({ groups, loading }) {
       <div style={{ overflowY: 'auto', maxHeight: 420 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-            <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+            <tr style={{ background: 'var(--bg-card-hover)' }}>
               {['#','Channel / Group','Billing','Distribution','Locations','Total Stock','Share %'].map(h => (
                 <th key={h} style={{ padding: '9px 14px', textAlign: ['Locations','Total Stock','Share %'].includes(h) ? 'right' : 'left', fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.10em', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
@@ -177,9 +177,9 @@ function ChannelBreakdownSection({ groups, loading }) {
                   const share    = shareNum.toFixed(1);
                   return (
                     <tr key={i}
-                      style={{ borderBottom: `1px solid ${T.border}`, background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)' }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                      onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'}
+                      style={{ borderBottom: `1px solid ${T.border}`, background: i % 2 === 0 ? 'transparent' : 'var(--row-stripe)' }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--row-hover)'}
+                      onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'var(--row-stripe)'}
                     >
                       <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: T.muted, width: 36 }}>{i + 1}</td>
                       <td style={{ padding: '9px 14px', fontSize: 13, fontWeight: 800, color: T.primary }}>{r.group_name || '—'}</td>
@@ -191,7 +191,7 @@ function ChannelBreakdownSection({ groups, loading }) {
                       <td style={{ padding: '9px 14px', width: 130 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}
                           title={`${pct}% of total stock`}>
-                          <div style={{ flex: 1, background: 'rgba(255,255,255,0.08)', borderRadius: 100, height: 6, overflow: 'hidden' }}>
+                          <div style={{ flex: 1, background: 'var(--border-default)', borderRadius: 100, height: 6, overflow: 'hidden' }}>
                             <div style={{ width: `${Math.max(1, pct)}%`, height: '100%', background: 'linear-gradient(90deg,#2563EB,#6366F1)', borderRadius: 100, transition: 'width 0.6s ease' }} />
                           </div>
                           <span style={{ fontSize: 10, fontWeight: 700, color: T.muted, minWidth: 38, textAlign: 'right' }}>{pct < 0.1 ? '<0.1%' : `${pct}%`}</span>
@@ -212,7 +212,7 @@ function ChannelBreakdownSection({ groups, loading }) {
       </div>
 
       {!loading && rows.length > 0 && (
-        <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.border}`, background: 'rgba(255,255,255,0.03)' }}>
+        <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.border}`, background: 'var(--bg-card-hover)' }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: T.muted }}>
             <strong style={{ color: T.primary }}>{rows.length}</strong> channels · Total stock: <strong style={{ color: T.primary }}>{fmtL(totalStock)}</strong> units
           </span>
@@ -251,7 +251,7 @@ function NetworkChartsSection({ groups, filteredGroups, locations, loading }) {
           style: { fontSize: '11px', fontWeight: 800, colors: ['#fff'] },
           dropShadow: { enabled: false },
         },
-        grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
+        grid: { borderColor: 'var(--chart-grid)', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
         tooltip: { y: { formatter: v => fmtNum(v) + ' units' }, style: { fontSize: '12px', fontWeight: 700 } },
         legend: { show: false },
       },
@@ -326,7 +326,7 @@ function NetworkChartsSection({ groups, filteredGroups, locations, loading }) {
           style: { fontSize: '10px', fontWeight: 800, colors: [T.primary] },
           offsetY: -6,
         },
-        grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 4 },
+        grid: { borderColor: 'var(--chart-grid)', strokeDashArray: 4 },
         tooltip: {
           y: { formatter: (v, { dataPointIndex }) => `${rows[dataPointIndex]?.name || ''}: ${fmtNum(v)} units` },
           style: { fontSize: '12px', fontWeight: 700 },
@@ -495,7 +495,7 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
       colors: ['#7C3AED'],
       fill: { type: 'gradient', gradient: { shade: 'light', type: 'horizontal', gradientToColors: ['#C4B5FD'], opacityFrom: 1, opacityTo: 0.85 } },
       dataLabels: { enabled: true, formatter: v => fmtL(v), style: { fontSize: '10px', fontWeight: 800, colors: ['#fff'] }, dropShadow: { enabled: false } },
-      grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
+      grid: { borderColor: 'var(--chart-grid)', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
       tooltip: { y: { formatter: (v, { dataPointIndex }) => `${colorRows[dataPointIndex]?.color_name || ''}: ${fmtNum(v)} units (${colorRows[dataPointIndex]?.pct_of_total || 0}%)` }, style: { fontSize: '12px', fontWeight: 700 } },
       legend: { show: false },
     },
@@ -517,7 +517,7 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
       colors: ['#DC2626'],
       fill: { type: 'gradient', gradient: { shade: 'light', type: 'horizontal', gradientToColors: ['#F87171'], opacityFrom: 1, opacityTo: 0.8 } },
       dataLabels: { enabled: true, formatter: v => fmtL(v), style: { fontSize: '10px', fontWeight: 800, colors: ['#fff'] }, dropShadow: { enabled: false } },
-      grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
+      grid: { borderColor: 'var(--chart-grid)', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
       tooltip: { y: { formatter: (v, { dataPointIndex }) => `Size ${sizeRows[dataPointIndex]?.size || ''}: ${fmtNum(v)} units (${sizeRows[dataPointIndex]?.pct_of_total || 0}%)` }, style: { fontSize: '12px', fontWeight: 700 } },
       legend: { show: false },
     },
@@ -763,7 +763,7 @@ function AllLocationsTable({
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+            <tr style={{ background: 'var(--bg-card-hover)' }}>
               {['#','Location Name','Channel / Group','Billing','State','City','Total Stock','Total Value'].map(h => (
                 <th key={h} style={{ padding: '10px 14px', textAlign: ['Total Stock','Total Value','#'].includes(h) ? 'right' : 'left', fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.10em', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
@@ -785,7 +785,7 @@ function AllLocationsTable({
                   const inPareto  = !!paretoPick && globalIdx < paretoPick.n && sortIsStockDesc && !hasFilter;
                   const baseBg    = inPareto
                     ? 'linear-gradient(90deg, rgba(192,57,43,0.06), rgba(192,57,43,0.02) 60%)'
-                    : isTop3 ? 'rgba(239,68,68,0.06)' : i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)';
+                    : isTop3 ? 'rgba(239,68,68,0.06)' : i % 2 === 0 ? 'transparent' : 'var(--row-stripe)';
                   return (
                     <tr key={r.id || i}
                       style={{
@@ -798,7 +798,7 @@ function AllLocationsTable({
                         boxShadow: inPareto ? 'inset 3px 0 0 0 #C0392B' : 'none',
                         transition: 'background 200ms ease',
                       }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--row-hover)'}
                       onMouseLeave={e => e.currentTarget.style.background = baseBg}
                     >
                       <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 12, fontWeight: 900, color: inPareto ? '#C0392B' : T.muted, width: 40 }}>
@@ -1161,7 +1161,7 @@ export default function NetworkPage() {
       {/* ── Refresh — refreshes both summary and table ── */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
         <button onClick={() => { fetchSummaryData(); fetchTableData(tableFilters); }} disabled={summaryLoading || tableLoading}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 800, color: T.primary, background: 'rgba(255,255,255,0.06)', cursor: (summaryLoading || tableLoading) ? 'default' : 'pointer', opacity: (summaryLoading || tableLoading) ? 0.6 : 1 }}>
+          style={{ display: 'flex', alignItems: 'center', gap: 6, border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 800, color: T.primary, background: 'var(--bg-elevated)', cursor: (summaryLoading || tableLoading) ? 'default' : 'pointer', opacity: (summaryLoading || tableLoading) ? 0.6 : 1 }}>
           <RefreshCw size={13} style={{ animation: (summaryLoading || tableLoading) ? 'spin 1s linear infinite' : 'none' }} strokeWidth={2.5} />
           Refresh
         </button>

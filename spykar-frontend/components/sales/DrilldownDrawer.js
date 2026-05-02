@@ -190,7 +190,7 @@ function DrawerHeader({ data, pivot, loading, onClose }) {
     }}>
       <span style={{
         width: 38, height: 38, borderRadius: 10,
-        background: 'rgba(255,255,255,0.06)', color: '#F1F5F9',
+        background: 'var(--bg-elevated)', color: '#F1F5F9',
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
       }}>
         <Icon size={18} strokeWidth={2.2} />

@@ -122,8 +122,8 @@ function SaleModePill({ mode, onChange }) {
   return (
     <div style={{
       display: 'inline-flex', position: 'relative',
-      background: 'rgba(255,255,255,0.06)',
-      border: '1px solid rgba(255,255,255,0.10)',
+      background: 'var(--bg-elevated)',
+      border: '1px solid var(--border-default)',
       borderRadius: 999, padding: 3, height: 32,
     }}>
       <span style={{
@@ -183,7 +183,7 @@ function KpiCard({ icon: Icon, label, value, sub, sub2, accent = '#0f172a', load
         </span>
       </div>
       {loading
-        ? <div style={{ height: 38, background: 'rgba(255,255,255,0.06)', borderRadius: 8, animation: 'pulse 1.5s infinite' }} />
+        ? <div style={{ height: 38, background: 'var(--bg-elevated)', borderRadius: 8, animation: 'pulse 1.5s infinite' }} />
         : <div style={{ fontSize: 32, fontWeight: 900, color: T.primary, letterSpacing: '-0.03em', lineHeight: 1 }}>
             {value}
           </div>
@@ -200,7 +200,7 @@ function SectionTitle({ icon: Icon, label }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
       <span style={{
         width: 26, height: 26, borderRadius: 8,
-        background: 'rgba(255,255,255,0.07)',
+        background: 'var(--bg-elevated)',
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         flexShrink: 0,
       }}>
@@ -218,8 +218,8 @@ function SectionTitle({ icon: Icon, label }) {
 }
 
 // ── Shared mini filter bar style — refined hairline + tabular figures ────
-const filterInput = { border: '1px solid rgba(255,255,255,0.10)', borderRadius: 9, padding: '7px 12px 7px 32px', fontSize: 12, fontWeight: 600, color: '#F1F5F9', outline: 'none', background: 'rgba(255,255,255,0.07)', height: 32, fontFamily: 'var(--font-body)', transition: 'border-color 200ms ease' };
-const filterSelect = { border: '1px solid rgba(255,255,255,0.10)', borderRadius: 9, padding: '7px 30px 7px 12px', fontSize: 12, fontWeight: 600, color: '#F1F5F9', outline: 'none', background: 'rgba(255,255,255,0.07)', appearance: 'none', cursor: 'pointer', height: 32, fontFamily: 'var(--font-body)', transition: 'border-color 200ms ease' };
+const filterInput = { border: '1px solid var(--border-default)', borderRadius: 9, padding: '7px 12px 7px 32px', fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-elevated)', height: 32, fontFamily: 'var(--font-body)', transition: 'border-color 200ms ease' };
+const filterSelect = { border: '1px solid var(--border-default)', borderRadius: 9, padding: '7px 30px 7px 12px', fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-elevated)', appearance: 'none', cursor: 'pointer', height: 32, fontFamily: 'var(--font-body)', transition: 'border-color 200ms ease' };
 const SearchIcon = () => <svg style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', opacity: 0.40 }} width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={T.primary} strokeWidth={2.2}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
 const ChevronIcon = () => <svg style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', opacity: 0.45 }} width={10} height={10} viewBox="0 0 24 24" fill="none" stroke={T.primary} strokeWidth={2.4}><polyline points="6 9 12 15 18 9"/></svg>;
 
@@ -313,7 +313,7 @@ function ColourBreakdownSection({ data, loading, lensMode = 'net', valuation = '
       <div style={{ overflowY: 'auto', maxHeight: 480 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-            <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+            <tr style={{ background: 'var(--bg-card-hover)' }}>
               <th style={{ padding: '9px 14px', textAlign: 'left',  fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.10em', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}` }}>#</th>
               <th style={{ padding: '9px 14px', textAlign: 'left',  fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.10em', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}` }}>Colour</th>
               <th style={{ padding: '9px 14px', textAlign: 'right', fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.10em', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>{lensLabel} Units</th>
@@ -339,9 +339,9 @@ function ColourBreakdownSection({ data, loading, lensMode = 'net', valuation = '
                     ? (retQty / Number(r._saleUnits || r.units_sold)) * 100 : 0;
                   return (
                     <tr key={i}
-                      style={{ borderBottom: `1px solid ${T.border}`, background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)' }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                      onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'}
+                      style={{ borderBottom: `1px solid ${T.border}`, background: i % 2 === 0 ? 'transparent' : 'var(--row-stripe)' }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--row-hover)'}
+                      onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'var(--row-stripe)'}
                     >
                       <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: T.muted, width: 36 }}>{i + 1}</td>
                       <td style={{ padding: '9px 14px', fontSize: 13, fontWeight: 800, color: T.primary }}>{r.color_name}</td>
@@ -367,7 +367,7 @@ function ColourBreakdownSection({ data, loading, lensMode = 'net', valuation = '
 
       {/* Footer: showing X of Y */}
       {!loading && allRows.length > 0 && (
-        <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)' }}>
+        <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-card-hover)' }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: T.muted }}>
             Showing <strong style={{ color: T.primary }}>{rows.length}</strong> of <strong style={{ color: T.primary }}>{allRows.length}</strong> colours
           </span>
@@ -462,7 +462,7 @@ function SizeBreakdownSection({ data, loading, lensMode = 'net', valuation = 'gr
       <div style={{ overflowY: 'auto', maxHeight: 480 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-            <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+            <tr style={{ background: 'var(--bg-card-hover)' }}>
               <th style={{ padding: '9px 14px', textAlign: 'left',  fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.10em', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}` }}>#</th>
               <th style={{ padding: '9px 14px', textAlign: 'left',  fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.10em', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}` }}>Size</th>
               <th style={{ padding: '9px 14px', textAlign: 'right', fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.10em', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>{lensLabel} Units</th>
@@ -488,9 +488,9 @@ function SizeBreakdownSection({ data, loading, lensMode = 'net', valuation = 'gr
                   const pct    = Math.min(100, Math.round(rawPct * 10) / 10);
                   return (
                     <tr key={i}
-                      style={{ borderBottom: `1px solid ${T.border}`, background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)' }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                      onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'}
+                      style={{ borderBottom: `1px solid ${T.border}`, background: i % 2 === 0 ? 'transparent' : 'var(--row-stripe)' }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--row-hover)'}
+                      onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'var(--row-stripe)'}
                     >
                       <td style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: T.muted, width: 36 }}>{i + 1}</td>
                       <td style={{ padding: '9px 14px', fontSize: 15, fontWeight: 900, color: T.primary, width: 70, letterSpacing: '-0.01em' }}>{r.size}</td>
@@ -511,7 +511,7 @@ function SizeBreakdownSection({ data, loading, lensMode = 'net', valuation = 'gr
 
       {/* Footer */}
       {!loading && allRows.length > 0 && (
-        <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)' }}>
+        <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-card-hover)' }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: T.muted }}>
             Showing <strong style={{ color: T.primary }}>{rows.length}</strong> of <strong style={{ color: T.primary }}>{allRows.length}</strong> sizes
           </span>
@@ -661,7 +661,7 @@ function AllStoresTable({ data, loading, lensMode = 'net', valuation = 'gross', 
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+            <tr style={{ background: 'var(--bg-card-hover)' }}>
               {['#', 'Store Name', 'Channel', 'State', 'City', 'Share', `${lensLabel} ${valuationLabel}`, `${lensLabel} Units`, 'Returns ₹', 'Returns Qty', 'Txns'].map(h => (
                 <th key={h} style={{ padding: '10px 14px', textAlign: ['#'].includes(h) || /^(Returns|Txns|.*\sUnits|.*Gross|.*Ex-GST|.*GST|.*MRP|.*Discount|.*Value|.*Net|.*Sales|Share)/.test(h) ? 'right' : 'left', fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.10em', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
@@ -693,27 +693,27 @@ function AllStoresTable({ data, loading, lensMode = 'net', valuation = 'gross', 
                         // tiers over the dark canvas so text stays legible.
                         background: isTop3
                           ? 'rgba(239,68,68,0.06)'
-                          : globalIdx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)',
+                          : globalIdx % 2 === 0 ? 'transparent' : 'var(--row-stripe)',
                         cursor: onStoreClick ? 'pointer' : 'default',
                       }}
                       title={onStoreClick ? `View store breakdown — ${r.location_name}` : undefined}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--row-hover)'}
                       onMouseLeave={e => e.currentTarget.style.background = isTop3
                         ? 'rgba(239,68,68,0.06)'
-                        : globalIdx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'}
+                        : globalIdx % 2 === 0 ? 'transparent' : 'var(--row-stripe)'}
                     >
                       <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 12, fontWeight: 900, color: T.muted, width: 36 }}>
                         {isTop3 ? ['🥇','🥈','🥉'][globalIdx] : globalIdx + 1}
                       </td>
                       <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, color: T.primary, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.location_name}</td>
                       <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
-                        <span style={{ background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 800, color: T.primary }}>{r.channel || '—'}</span>
+                        <span style={{ background: 'rgba(255,255,255,0.10)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 800, color: T.primary }}>{r.channel || '—'}</span>
                       </td>
                       <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: T.muted, whiteSpace: 'nowrap' }}>{r.state || '—'}</td>
                       <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: T.muted, whiteSpace: 'nowrap' }}>{r.city || '—'}</td>
                       <td style={{ padding: '10px 20px 10px 14px', width: 110 }}
                         title={`${revPct}% of total ${lensLabel.toLowerCase()} ${valuationLabel.toLowerCase()}`}>
-                        <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 4, height: 5 }}>
+                        <div style={{ background: 'var(--border-default)', borderRadius: 4, height: 5 }}>
                           <div style={{ width: `${Math.max(0.5, revPct)}%`, height: '100%', background: `linear-gradient(90deg,${lensColor},${lensColor}cc)`, borderRadius: 4 }} />
                         </div>
                         <div style={{ fontSize: 9.5, fontWeight: 700, color: T.muted, textAlign: 'right', marginTop: 3 }}>
@@ -738,7 +738,7 @@ function AllStoresTable({ data, loading, lensMode = 'net', valuation = 'gross', 
 
       {/* ── Pagination footer ── */}
       {!loading && filtered.length > 0 && (
-        <div style={{ padding: '12px 18px', borderTop: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ padding: '12px 18px', borderTop: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-card-hover)', flexWrap: 'wrap', gap: 10 }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: T.muted }}>
             Showing <strong style={{ color: T.primary }}>{(safePage - 1) * PAGE_SIZE_STORES + 1}–{Math.min(safePage * PAGE_SIZE_STORES, filtered.length)}</strong> of <strong style={{ color: T.primary }}>{filtered.length}</strong> stores
           </span>
@@ -1065,7 +1065,7 @@ export default function SalesAnalyticsPage() {
         },
         stroke: { curve: 'smooth', width: [2.5, 2.5, 2] },
         dataLabels: { enabled: false },
-        grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 4, xaxis: { lines: { show: false } } },
+        grid: { borderColor: 'var(--chart-grid)', strokeDashArray: 4, xaxis: { lines: { show: false } } },
         tooltip: {
           shared: true, intersect: false,
           x: { format: 'dd MMM yyyy' },
@@ -1115,7 +1115,7 @@ export default function SalesAnalyticsPage() {
         stroke: { width: [0, 3], curve: 'smooth' },
         markers: { size: [0, 5], strokeWidth: 2, hover: { size: 7 } },
         dataLabels: { enabled: false },
-        grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 4 },
+        grid: { borderColor: 'var(--chart-grid)', strokeDashArray: 4 },
         legend: { fontWeight: 700, fontSize: '12px', labels: { colors: T.primary } },
         tooltip: { shared: true, intersect: false, style: { fontSize: '12px', fontWeight: 700 } },
       },
@@ -1147,7 +1147,7 @@ export default function SalesAnalyticsPage() {
         },
         stroke: { curve: 'smooth', width: 2.5 },
         dataLabels: { enabled: false },
-        grid: { borderColor: 'rgba(255,255,255,0.05)', strokeDashArray: 4 },
+        grid: { borderColor: 'var(--chart-grid)', strokeDashArray: 4 },
         tooltip: { style: { fontSize: '12px', fontWeight: 700 }, y: { formatter: v => fmtCr(v) } },
       },
       series: [{ name: 'Monthly Revenue', data: rows.map(r => Number(r.sales_value)) }],
@@ -1221,11 +1221,11 @@ export default function SalesAnalyticsPage() {
             window manually even after picking a preset. */}
         <input type="date" value={dateFrom}
           onChange={e => { setDateFrom(e.target.value); setActivePreset(''); }}
-          style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '7px 11px', fontSize: 12, fontWeight: 600, color: T.primary, outline: 'none', background: 'rgba(255,255,255,0.07)', height: 32, fontFamily: 'var(--font-body)' }} />
+          style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '7px 11px', fontSize: 12, fontWeight: 600, color: T.primary, outline: 'none', background: 'var(--bg-elevated)', height: 32, fontFamily: 'var(--font-body)' }} />
         <span style={{ fontWeight: 700, color: T.muted, fontSize: 13, padding: '0 2px' }}>→</span>
         <input type="date" value={dateTo}
           onChange={e => { setDateTo(e.target.value); setActivePreset(''); }}
-          style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '7px 11px', fontSize: 12, fontWeight: 600, color: T.primary, outline: 'none', background: 'rgba(255,255,255,0.07)', height: 32, fontFamily: 'var(--font-body)' }} />
+          style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '7px 11px', fontSize: 12, fontWeight: 600, color: T.primary, outline: 'none', background: 'var(--bg-elevated)', height: 32, fontFamily: 'var(--font-body)' }} />
         {hasFilters && (
           <button
             onClick={() => { setColorName(''); setSize(''); setLocationId(''); clearV2(); setDateFrom('2025-01-01'); setDateTo('2026-01-31'); setActivePreset(''); }}
