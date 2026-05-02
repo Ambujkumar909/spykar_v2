@@ -974,21 +974,35 @@ html.theme-light .apexcharts-zero-line {
   stroke: rgba(15, 23, 42, 0.18) !important;
 }
 
-/* Bar charts — stylish modern look in light mode (no heavy halo).
-   The dark-theme rules above use heavy black drop-shadows that, on a white
-   canvas, mix with the bar fill to produce a muddy green/grey halo behind
-   each bar.  Replace with: a tight shadow for depth + a soft saturate-on-
-   hover so bars feel premium without the dark-theme baggage. */
+/* Bar charts — kill the dark-theme drop-shadows entirely in light mode.
+   The original rules apply heavy `drop-shadow(rgba(0,0,0,0.40))` for depth.
+   On a white canvas those shadows mix with red/purple bar fills to produce
+   a muddy green/grey halo around each bar.  In light mode the bars look
+   cleanest with NO drop-shadow — flat fills on white is the modern look.
+   Use `!important` here because the dark-theme rules have equal-or-higher
+   specificity per :nth-child variant; we have to win the cascade decisively.
+
+   Selector chain covers every variant the dark-theme block uses
+   (base, 3n+1, 3n+2, 3n) so no bar slips through with the heavy shadow. */
 html.theme-light .apexcharts-bar-series .apexcharts-series path,
 html.theme-light .apexcharts-bar-series .apexcharts-series path:nth-child(3n+1),
 html.theme-light .apexcharts-bar-series .apexcharts-series path:nth-child(3n+2),
-html.theme-light .apexcharts-bar-series .apexcharts-series path:nth-child(3n) {
-  filter: drop-shadow(0 1px 1px rgba(15,23,42,0.05));
-  opacity: 1;
+html.theme-light .apexcharts-bar-series .apexcharts-series path:nth-child(3n),
+html.theme-light .apexcharts-bar .apexcharts-series path,
+html.theme-light .apexcharts-bar-area .apexcharts-series path {
+  filter: none !important;
+  opacity: 1 !important;
 }
-html.theme-light .apexcharts-bar-series .apexcharts-series path:hover {
-  filter: drop-shadow(0 2px 4px rgba(15,23,42,0.10)) saturate(1.08) !important;
-  transform: scaleY(1.025);
+html.theme-light .apexcharts-bar-series .apexcharts-series path:hover,
+html.theme-light .apexcharts-bar .apexcharts-series path:hover,
+html.theme-light .apexcharts-bar-area .apexcharts-series path:hover {
+  filter: brightness(1.04) saturate(1.10) !important;
+  transform: scaleY(1.02);
+}
+/* Hover state shouldn't dim the OTHER bars in light mode either —
+   the "siblings fade to 0.40" trick reads as broken on white. */
+html.theme-light .apexcharts-bar-series:hover .apexcharts-series path {
+  opacity: 1 !important;
 }
 
 /* Pie + line shadows — softer, ink-tinted */
