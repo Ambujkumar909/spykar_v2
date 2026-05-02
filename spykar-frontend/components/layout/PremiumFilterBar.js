@@ -1,24 +1,14 @@
-// ─── SidebarFilterPanel — luxury filter cluster slotted into the sidebar ───
-// Renders at the BOTTOM of the left navigation rail (below "User
-// Management"), only on /network and /sales, and only when the rail is
-// in its hovered/expanded state.  Mode (Active/Inactive/All) lives on
-// each page — the panel is purely dimensional filters.
+// ─── SidebarFilterPanel — premium luxury filter cluster ─────────────────────
+// Lives at the bottom of the left navigation rail, mounts on hover, only on
+// /network and /sales.  This is the version after the "make it actually
+// premium" pass — every pill is embossed, every selection lights a left-edge
+// accent bar, the LENS wordmark sits in a gold-bordered chip with a shimmer
+// that sweeps every six seconds, sections are separated by a fading gold
+// hairline, and group expand cascades each child pill in with a tiny stagger.
 //
-// Why mount-on-hover (not always-on-hidden):
-//   • 13 MultiSelect instances are heavy.  Keeping them mounted-but-hidden
-//     bleeds memory and triggers reflows on every render.
-//   • When the cursor leaves the sidebar, any open MultiSelect popover
-//     (portaled to <body>) would otherwise float disconnected.  Unmounting
-//     the panel with the rail collapses every popover for free.
-//   • The mount cost is ~5–10 ms on a CEO laptop because options are
-//     pre-warmed in the module-level cache (prefetchOptions fires the
-//     unfiltered bundle the moment the provider mounts the page).
-//
-// Aesthetic notes:
-//   • Champagne-gold "LENS" wordmark, brand-red gradient text-fill
-//   • Each filter group is a chevron-collapsible section
-//   • Spring-eased opening (320 ms cubic-bezier)
-//   • Theme-symmetric — dark mode swaps to deep-navy automatically
+// Reference: Hermès digital catalogue, Bloomberg Terminal v2 boxes, Apple
+// Pro Display Settings sliders.  The goal is "this software costs more than
+// the laptop it runs on" — without leaving Spykar's brand red.
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
@@ -33,6 +23,7 @@ const FILTER_ROUTES = new Set(['/network', '/sales']);
 const FILTER_GROUPS = [
   {
     name: 'Product',
+    eyebrow: 'What it is',
     dims: [
       { key: 'gender_name', label: 'Gender',      apiKey: 'gender'      },
       { key: 'category',    label: 'Category',    apiKey: 'category'    },
@@ -42,6 +33,7 @@ const FILTER_GROUPS = [
   },
   {
     name: 'Attributes',
+    eyebrow: 'How it looks',
     dims: [
       { key: 'size',  label: 'Size',   apiKey: 'size'  },
       { key: 'color', label: 'Colour', apiKey: 'color' },
@@ -51,6 +43,7 @@ const FILTER_GROUPS = [
   },
   {
     name: 'Location',
+    eyebrow: 'Where it lives',
     dims: [
       { key: 'state',      label: 'State', apiKey: 'state'      },
       { key: 'city',       label: 'City',  apiKey: 'city'       },
@@ -59,6 +52,7 @@ const FILTER_GROUPS = [
   },
   {
     name: 'Business',
+    eyebrow: 'Who & when',
     dims: [
       { key: 'season',     label: 'Season', apiKey: 'season'     },
       { key: 'group_name', label: 'Party',  apiKey: 'group_name' },
@@ -79,9 +73,6 @@ function filterOptionsCacheKey(params) {
   return `flt:opts:${JSON.stringify(norm)}`;
 }
 
-// Module-level prefetch — fires the unfiltered options bundle into cache the
-// moment a filter-aware page mounts.  Single in-flight promise, never refetched
-// in the same tab.  By the time the user hovers the sidebar, the cache is hot.
 let _prefetched = null;
 export function prefetchFilterOptions() {
   if (_prefetched) return _prefetched;
@@ -105,23 +96,17 @@ export default function PremiumFilterBar({ isOpen = false }) {
   const api = useSharedFilters();
   const visible = api && FILTER_ROUTES.has(router.pathname);
 
-  // Kick the prefetch as soon as the panel is mountable, even before the
-  // user hovers.  This is the secret to "0-latency" hover.
   useEffect(() => {
     if (visible) prefetchFilterOptions();
   }, [visible]);
 
   if (!visible) return null;
 
-  // Mount-on-hover: when the sidebar is collapsed we render only the
-  // outer wrapper (so the layout reserves no extra space) and skip all
-  // MultiSelect children entirely.  Open popovers are torn down with
-  // the panel — they can't get stranded outside the rail.
   return (
-    <div className={`px-side${isOpen ? ' is-open' : ''}`} aria-hidden={!isOpen}>
+    <div className={`lux${isOpen ? ' is-open' : ''}`} aria-hidden={!isOpen}>
       {isOpen && <Panel api={api} />}
       <style jsx>{`
-        .px-side {
+        .lux {
           display: grid;
           grid-template-rows: 0fr;
           opacity: 0;
@@ -131,7 +116,7 @@ export default function PremiumFilterBar({ isOpen = false }) {
           margin: 6px 0 0;
           pointer-events: none;
         }
-        .px-side.is-open {
+        .lux.is-open {
           grid-template-rows: 1fr;
           opacity: 1;
           pointer-events: auto;
@@ -144,8 +129,6 @@ export default function PremiumFilterBar({ isOpen = false }) {
 function Panel({ api }) {
   const { filters, setFilter, clearAll, activeCount } = api;
 
-  // Synchronous read from the prefetched cache so first paint is already
-  // populated — no spinners, no first-hover stall.
   const [optionsByDim, setOptionsByDim] = useState(() => {
     const c = getCached(filterOptionsCacheKey({}));
     return c || {};
@@ -200,18 +183,19 @@ function Panel({ api }) {
   }, [JSON.stringify(filters)]);
 
   return (
-    <div className="px-side__inner">
-      {/* ─── Header — gold "LENS" wordmark + active count + reset ─── */}
-      <div className="px-side__head">
-        <div className="px-side__brand">
-          <Sparkles size={12} className="px-side__brand-icon" />
-          <span className="px-side__brand-text">Lens</span>
+    <div className="lux__inner">
+      {/* ─── Wordmark — sits in a gold-bordered chip with a slow shimmer ─── */}
+      <div className="lux__crown">
+        <div className="lux__mark">
+          <Sparkles size={11} className="lux__mark-icon" />
+          <span className="lux__mark-text">Lens</span>
+          <span className="lux__shimmer" aria-hidden />
         </div>
-        {activeCount > 0 && <span className="px-side__count">{activeCount}</span>}
+        {activeCount > 0 && <span className="lux__count">{activeCount}</span>}
         {activeCount > 0 && (
           <button
             type="button"
-            className="px-side__reset"
+            className="lux__reset"
             onClick={clearAll}
             title="Clear every filter"
           >
@@ -222,7 +206,7 @@ function Panel({ api }) {
       </div>
 
       {/* ─── Filter groups ─── */}
-      <div className="px-side__groups">
+      <div className="lux__groups">
         {FILTER_GROUPS.map((group) => (
           <FilterGroup
             key={group.name}
@@ -236,43 +220,92 @@ function Panel({ api }) {
       </div>
 
       <style jsx>{`
-        .px-side__inner {
+        .lux__inner {
           min-height: 0;
           overflow: hidden;
-          padding: 4px 6px 0;
-          border-top: 1px solid var(--border-subtle);
-          margin-top: 6px;
+          padding: 4px 4px 8px;
+          /* Top hairline that fades in from accent → transparent so the
+             panel reads as a continuation of the rail above. */
+          margin-top: 8px;
+          position: relative;
         }
-        .px-side__head {
+        .lux__inner::before {
+          content: '';
+          position: absolute;
+          left: 12px; right: 12px; top: 0;
+          height: 1px;
+          background: linear-gradient(
+            90deg,
+            transparent 0%,
+            rgba(225,29,46,0.30) 50%,
+            transparent 100%);
+          opacity: 0.7;
+        }
+
+        /* ─── Crown (wordmark + count + reset) ─── */
+        .lux__crown {
           display: flex;
           align-items: center;
           gap: 8px;
-          padding: 8px 4px 10px;
+          padding: 14px 6px 12px;
         }
-        .px-side__brand {
+        .lux__mark {
+          position: relative;
           display: inline-flex;
           align-items: center;
           gap: 6px;
+          height: 22px;
+          padding: 0 10px 0 8px;
+          border-radius: 999px;
+          background: linear-gradient(
+            135deg,
+            rgba(225,29,46,0.10) 0%,
+            rgba(225,29,46,0.02) 100%);
+          border: 1px solid rgba(225,29,46,0.32);
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.06),
+            0 1px 4px rgba(225,29,46,0.18);
+          overflow: hidden;
         }
-        .px-side__brand-icon {
+        .lux__mark-icon {
           color: var(--accent-primary);
-          filter: drop-shadow(0 0 6px rgba(225,29,46,0.30));
+          filter: drop-shadow(0 0 4px rgba(225,29,46,0.50));
         }
-        .px-side__brand-text {
+        .lux__mark-text {
           font-family: var(--font-display);
           font-size: 10px;
           font-weight: 800;
-          letter-spacing: 0.22em;
+          letter-spacing: 0.24em;
           text-transform: uppercase;
-          background: linear-gradient(135deg, var(--text-secondary) 0%, var(--accent-primary) 130%);
-          -webkit-background-clip: text;
-          background-clip: text;
-          -webkit-text-fill-color: transparent;
+          color: var(--accent-primary);
+          /* No gradient text-fill on dark surfaces — washes out.  The chip
+             frame already establishes the brand, the text just needs to
+             read clearly. */
         }
-        .px-side__count {
-          min-width: 18px;
-          height: 18px;
-          padding: 0 5px;
+        /* Slow shimmer that sweeps across the chip every 6s — barely there
+           but unmistakably "alive". */
+        .lux__shimmer {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(
+            105deg,
+            transparent 30%,
+            rgba(255,255,255,0.18) 50%,
+            transparent 70%);
+          transform: translateX(-100%);
+          animation: luxShimmer 6s cubic-bezier(0.4,0,0.2,1) infinite;
+          pointer-events: none;
+        }
+        @keyframes luxShimmer {
+          0%   { transform: translateX(-100%); }
+          60%  { transform: translateX(100%); }
+          100% { transform: translateX(100%); }
+        }
+
+        .lux__count {
+          min-width: 20px;
+          height: 20px;
+          padding: 0 6px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
@@ -280,29 +313,30 @@ function Panel({ api }) {
           background: linear-gradient(135deg, var(--accent-primary) 0%, #B91020 100%);
           color: #fff;
           font-family: var(--font-body);
-          font-size: 9px;
+          font-size: 10px;
           font-weight: 800;
           line-height: 1;
           font-variant-numeric: tabular-nums;
           box-shadow:
-            0 1px 4px rgba(225,29,46,0.40),
-            inset 0 1px 0 rgba(255,255,255,0.25);
+            0 1px 4px rgba(225,29,46,0.45),
+            inset 0 1px 0 rgba(255,255,255,0.30);
         }
-        .px-side__reset {
+        .lux__reset {
           margin-left: auto;
           display: inline-flex;
           align-items: center;
           gap: 4px;
-          height: 22px;
-          padding: 0 8px;
+          height: 24px;
+          padding: 0 10px;
           background: transparent;
           border: 1px solid var(--border-default);
           border-radius: 999px;
           color: var(--text-muted);
           font-family: var(--font-body);
-          font-size: 9.5px;
+          font-size: 10px;
           font-weight: 700;
-          letter-spacing: 0.04em;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
           cursor: pointer;
           transition:
             color 200ms cubic-bezier(0.4,0,0.2,1),
@@ -310,26 +344,28 @@ function Panel({ api }) {
             background 200ms cubic-bezier(0.4,0,0.2,1),
             transform 240ms cubic-bezier(0.16,1,0.3,1);
         }
-        .px-side__reset:hover {
+        .lux__reset:hover {
           color: var(--accent-primary);
           border-color: var(--accent-border);
           background: var(--accent-glow);
           transform: translateY(-1px);
         }
-        .px-side__groups {
+
+        /* ─── Groups list ─── */
+        .lux__groups {
           padding: 2px 0 8px;
-          max-height: calc(100vh - 320px);
+          max-height: calc(100vh - 280px);
           overflow-y: auto;
           overflow-x: hidden;
           scrollbar-width: thin;
-          scrollbar-color: var(--border-default) transparent;
+          scrollbar-color: rgba(255,255,255,0.10) transparent;
         }
-        .px-side__groups::-webkit-scrollbar { width: 5px; }
-        .px-side__groups::-webkit-scrollbar-thumb {
-          background: var(--border-default);
+        .lux__groups::-webkit-scrollbar { width: 4px; }
+        .lux__groups::-webkit-scrollbar-thumb {
+          background: rgba(255,255,255,0.10);
           border-radius: 6px;
         }
-        .px-side__groups::-webkit-scrollbar-track { background: transparent; }
+        .lux__groups::-webkit-scrollbar-track { background: transparent; }
       `}</style>
     </div>
   );
@@ -343,68 +379,111 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
   }, 0);
 
   return (
-    <div className="px-grp">
+    <div className="grp">
       <button
         type="button"
-        className={`px-grp__head${open ? ' is-open' : ''}`}
+        className={`grp__head${open ? ' is-open' : ''}`}
         onClick={() => setOpen(o => !o)}
       >
-        <span className="px-grp__title">{group.name}</span>
-        {groupActive > 0 && <span className="px-grp__badge">{groupActive}</span>}
-        <span className="px-grp__caret"><ChevronDown size={12} strokeWidth={2.2} /></span>
+        <div className="grp__title-wrap">
+          <span className="grp__title">{group.name}</span>
+          <span className="grp__eyebrow">{group.eyebrow}</span>
+        </div>
+        {groupActive > 0 && <span className="grp__badge">{groupActive}</span>}
+        <span className="grp__caret"><ChevronDown size={12} strokeWidth={2.2} /></span>
       </button>
 
-      <div className={`px-grp__body${open ? ' is-open' : ''}`}>
-        <div className="px-grp__body-inner">
-          {group.dims.map(d => (
-            <div key={d.key} className="px-grp__row">
-              <MultiSelect
-                label={d.label}
-                options={optionsByDim[d.apiKey] || []}
-                value={filters[d.key] || []}
-                onChange={(v) => setFilter(d.key, v)}
-                loading={loading && !optionsByDim[d.apiKey]}
-                placeholder="All"
-                compact
-              />
-            </div>
-          ))}
+      <div className={`grp__body${open ? ' is-open' : ''}`}>
+        <div className="grp__body-inner">
+          {group.dims.map((d, i) => {
+            const value = filters[d.key];
+            const hasValue = Array.isArray(value) ? value.length > 0 : Boolean(value);
+            return (
+              <div
+                key={d.key}
+                className={`pill${hasValue ? ' is-active' : ''}`}
+                style={{ '--stagger': `${i * 28}ms` }}
+              >
+                <MultiSelect
+                  label={d.label}
+                  options={optionsByDim[d.apiKey] || []}
+                  value={filters[d.key] || []}
+                  onChange={(v) => setFilter(d.key, v)}
+                  loading={loading && !optionsByDim[d.apiKey]}
+                  placeholder="—"
+                  compact
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
 
       <style jsx>{`
-        .px-grp {
+        /* ─── Group container ─── */
+        .grp {
           padding: 2px 0;
-          border-bottom: 1px solid var(--border-subtle);
+          position: relative;
         }
-        .px-grp:last-child { border-bottom: none; }
+        /* Fading gold hairline between sections instead of a solid border */
+        .grp:not(:last-child)::after {
+          content: '';
+          position: absolute;
+          left: 12px; right: 12px; bottom: 0;
+          height: 1px;
+          background: linear-gradient(
+            90deg,
+            transparent 0%,
+            rgba(225,29,46,0.16) 22%,
+            rgba(255,255,255,0.04) 50%,
+            rgba(225,29,46,0.16) 78%,
+            transparent 100%);
+        }
 
-        .px-grp__head {
+        /* ─── Section header ─── */
+        .grp__head {
           width: 100%;
           display: flex;
           align-items: center;
-          gap: 6px;
-          padding: 8px 4px;
+          gap: 8px;
+          padding: 12px 6px 10px;
           background: transparent;
           border: none;
           cursor: pointer;
           color: var(--text-muted);
           transition: color 200ms cubic-bezier(0.4,0,0.2,1);
         }
-        .px-grp__head:hover { color: var(--text-primary); }
-        .px-grp__head.is-open { color: var(--text-secondary); }
-
-        .px-grp__title {
-          font-family: var(--font-body);
-          font-size: 9.5px;
-          font-weight: 800;
-          letter-spacing: 0.18em;
-          text-transform: uppercase;
+        .grp__head:hover { color: var(--text-primary); }
+        .grp__head.is-open { color: var(--text-secondary); }
+        .grp__title-wrap {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 2px;
+          min-width: 0;
         }
-        .px-grp__badge {
-          min-width: 14px;
-          height: 14px;
-          padding: 0 4px;
+        .grp__title {
+          font-family: var(--font-body);
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: 0.20em;
+          text-transform: uppercase;
+          line-height: 1;
+        }
+        .grp__eyebrow {
+          font-family: var(--font-display);
+          font-style: italic;
+          font-size: 10px;
+          font-weight: 500;
+          letter-spacing: 0.01em;
+          color: var(--text-disabled);
+          line-height: 1;
+        }
+        .grp__badge {
+          margin-left: auto;
+          min-width: 16px;
+          height: 16px;
+          padding: 0 5px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
@@ -412,40 +491,148 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
           color: var(--accent-primary);
           border: 1px solid var(--accent-border);
           border-radius: 999px;
-          font-size: 8.5px;
+          font-size: 9px;
           font-weight: 800;
           line-height: 1;
         }
-        .px-grp__caret {
-          margin-left: auto;
+        .grp__caret {
+          margin-left: ${groupActive > 0 ? '6px' : 'auto'};
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          color: var(--text-muted);
-          transition: transform 280ms cubic-bezier(0.16,1,0.3,1);
+          color: var(--text-disabled);
+          transition:
+            transform 280ms cubic-bezier(0.16,1,0.3,1),
+            color 200ms cubic-bezier(0.4,0,0.2,1);
         }
-        .px-grp__head.is-open .px-grp__caret {
+        .grp__head:hover .grp__caret { color: var(--text-secondary); }
+        .grp__head.is-open .grp__caret {
           transform: rotate(180deg);
           color: var(--accent-primary);
         }
 
-        .px-grp__body {
+        /* ─── Group body — collapsible ─── */
+        .grp__body {
           display: grid;
           grid-template-rows: 0fr;
           transition: grid-template-rows 320ms cubic-bezier(0.16,1,0.3,1);
         }
-        .px-grp__body.is-open { grid-template-rows: 1fr; }
-        .px-grp__body-inner {
+        .grp__body.is-open { grid-template-rows: 1fr; }
+        .grp__body-inner {
           min-height: 0;
           overflow: hidden;
+          padding-bottom: 10px;
         }
-        .px-grp__row {
-          padding: 3px 0 6px;
+
+        /* ─── Pill (each MultiSelect) ─── */
+        .pill {
+          position: relative;
+          padding: 3px 4px 6px;
+          opacity: 0;
+          transform: translateY(-4px);
+          transition:
+            opacity 320ms cubic-bezier(0.16,1,0.3,1) var(--stagger),
+            transform 360ms cubic-bezier(0.16,1,0.3,1) var(--stagger);
         }
-        .px-grp__row :global(button) {
+        .grp__body.is-open .pill {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        /* Left accent bar — only when this dimension has a value */
+        .pill::before {
+          content: '';
+          position: absolute;
+          left: 0;
+          top: 9px; bottom: 12px;
+          width: 2px;
+          border-radius: 2px;
+          background: linear-gradient(180deg, var(--accent-primary), #B91020);
+          box-shadow: 0 0 8px rgba(225,29,46,0.45);
+          opacity: 0;
+          transform: scaleY(0.4);
+          transform-origin: center;
+          transition:
+            opacity 220ms cubic-bezier(0.4,0,0.2,1),
+            transform 320ms cubic-bezier(0.16,1,0.3,1);
+        }
+        .pill.is-active::before {
+          opacity: 1;
+          transform: scaleY(1);
+        }
+
+        /* ─── Embossed MultiSelect button — overrides MultiSelect's inline
+             styles via :global + !important ───────────────────────────── */
+        .pill :global(button) {
           width: 100% !important;
           max-width: none !important;
           min-width: 0 !important;
+          height: 36px !important;
+          padding: 0 12px !important;
+          background: linear-gradient(
+            180deg,
+            rgba(255,255,255,0.04) 0%,
+            rgba(255,255,255,0.015) 100%) !important;
+          border: 1px solid rgba(255,255,255,0.06) !important;
+          border-radius: 10px !important;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.04),
+            0 1px 2px rgba(0,0,0,0.30) !important;
+          transition:
+            transform 220ms cubic-bezier(0.16,1,0.3,1),
+            border-color 220ms cubic-bezier(0.4,0,0.2,1),
+            box-shadow 220ms cubic-bezier(0.4,0,0.2,1) !important;
+        }
+        .pill :global(button:hover) {
+          transform: translateY(-1px) !important;
+          border-color: rgba(225,29,46,0.32) !important;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.06),
+            0 4px 14px rgba(0,0,0,0.45),
+            0 0 0 1px rgba(225,29,46,0.10) !important;
+        }
+        .pill.is-active :global(button) {
+          background: linear-gradient(
+            180deg,
+            rgba(225,29,46,0.10) 0%,
+            rgba(225,29,46,0.03) 100%) !important;
+          border-color: rgba(225,29,46,0.28) !important;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.06),
+            0 1px 2px rgba(0,0,0,0.30),
+            0 0 0 1px rgba(225,29,46,0.10) !important;
+        }
+        .pill.is-active :global(button:hover) {
+          border-color: rgba(225,29,46,0.45) !important;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.08),
+            0 4px 14px rgba(225,29,46,0.20),
+            0 0 0 1px rgba(225,29,46,0.18) !important;
+        }
+
+        /* Light-mode override — flip surface + shadows */
+        :global(html.theme-light) .pill :global(button) {
+          background: linear-gradient(
+            180deg,
+            rgba(255,255,255,0.92) 0%,
+            rgba(248,250,252,0.78) 100%) !important;
+          border: 1px solid rgba(15,23,42,0.08) !important;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.80),
+            0 1px 2px rgba(15,23,42,0.06) !important;
+        }
+        :global(html.theme-light) .pill :global(button:hover) {
+          border-color: rgba(225,29,46,0.30) !important;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.90),
+            0 4px 14px rgba(15,23,42,0.10),
+            0 0 0 1px rgba(225,29,46,0.10) !important;
+        }
+        :global(html.theme-light) .pill.is-active :global(button) {
+          background: linear-gradient(
+            180deg,
+            rgba(255,255,255,1) 0%,
+            rgba(254,242,243,0.96) 100%) !important;
+          border-color: rgba(225,29,46,0.35) !important;
         }
       `}</style>
     </div>
