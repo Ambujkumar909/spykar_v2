@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { FiltersProvider } from '../lib/FiltersContext';
+import ModePill from '../components/filters/ModePill';
 import FilterChips from '../components/filters/FilterChips';
 import PremiumKpi from '../components/ui/PremiumKpi';
 import NetworkPulse from '../components/network/NetworkPulse';
@@ -1132,10 +1133,18 @@ export default function NetworkPage() {
           numbers all inherit the refined hairlines + Plus Jakarta numbers. */}
       <div className="sx-page sx-fade">
 
-      {/* The 13-dimension filter strip now lives in the global navbar
-          (PremiumFilterBar mounted by DashboardLayout).  We keep FilterChips
-          in-page so a CEO scrolling the table still sees what lens is
-          active and can remove a single dimension without scrolling back up. */}
+      {/* Mode + chips strip — dimensional filters live in the sidebar
+          (LENS cluster).  Mode (Active/Inactive/All) stays on-page so it's
+          one click away regardless of sidebar state. */}
+      <div style={{
+        display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12,
+        padding: '14px 24px 0',
+      }}>
+        <ModePill
+          mode={v2Filters.mode || 'active'}
+          onChange={(m) => setV2('mode', m)}
+        />
+      </div>
       <FilterChips
         filters={v2Filters}
         setFilter={setV2}

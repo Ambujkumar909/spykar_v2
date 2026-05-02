@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import FilterChips from '../components/filters/FilterChips';
+import ModePill from '../components/filters/ModePill';
 import { FiltersProvider } from '../lib/FiltersContext';
 import SalesPulse, { SalesPulseTables } from '../components/sales/SalesPulse';
 import SkuPerformance from '../components/sales/SkuPerformance';
@@ -1166,10 +1167,18 @@ export default function SalesAnalyticsPage() {
           chips, and numbers all share the refined visual language. */}
       <div className="sx-page sx-fade">
 
-      {/* The 13-dimension lens lives in the global navbar
-          (PremiumFilterBar mounted by DashboardLayout).  FilterChips stays
-          in-page so an executive scrolling deep into the sales tables can
-          still see what dimensions are active and remove one in a tap. */}
+      {/* Mode + chips strip — the dimensional filters live in the sidebar
+          panel (luxury LENS cluster).  Mode (Active/Inactive/All) belongs
+          on-page so it's always one click away regardless of sidebar state. */}
+      <div style={{
+        display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12,
+        padding: '14px 24px 0',
+      }}>
+        <ModePill
+          mode={v2Filters.mode || 'active'}
+          onChange={(m) => setV2('mode', m)}
+        />
+      </div>
       <FilterChips
         filters={v2Filters}
         setFilter={setV2}

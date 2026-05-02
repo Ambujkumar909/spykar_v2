@@ -1,25 +1,24 @@
-// ─── SidebarFilterPanel — luxury filter cluster slotted INTO the sidebar ───
-// Renders BELOW the active nav item ("Sales & Returns" or "Network") inside
-// the existing left navigation rail.  Visible only when the sidebar is in
-// its expanded (hovered) state — labels and dropdowns need ~240 px to read
-// well, and the user wants the panel to reveal on hover, not eat space when
-// the rail is collapsed to 64 px.
+// ─── SidebarFilterPanel — luxury filter cluster slotted into the sidebar ───
+// Renders at the BOTTOM of the left navigation rail (below "User
+// Management"), only on /network and /sales, and only when the rail is
+// in its hovered/expanded state.  Mode (Active/Inactive/All) lives on
+// each page — the panel is purely dimensional filters.
+//
+// Why mount-on-hover (not always-on-hidden):
+//   • 13 MultiSelect instances are heavy.  Keeping them mounted-but-hidden
+//     bleeds memory and triggers reflows on every render.
+//   • When the cursor leaves the sidebar, any open MultiSelect popover
+//     (portaled to <body>) would otherwise float disconnected.  Unmounting
+//     the panel with the rail collapses every popover for free.
+//   • The mount cost is ~5–10 ms on a CEO laptop because options are
+//     pre-warmed in the module-level cache (prefetchOptions fires the
+//     unfiltered bundle the moment the provider mounts the page).
 //
 // Aesthetic notes:
-//   • Continuous with the sidebar — same gradient surface, same hairlines
-//   • Champagne-gold "LENS" wordmark to mark this as the luxury control
-//   • Smooth 320 ms cubic-bezier reveal (no janky height transitions)
-//   • Each filter group is a quietly-collapsible section with a chevron
-//     that rotates on open
-//   • All MultiSelects compact + 100 % column width
-//
-// Latency:
-//   • Options are prefetched the moment the FiltersProvider mounts the page
-//     (module-level promise + dashboardCache), so by the time a CEO hovers
-//     the rail every dropdown is already populated from memory — 0 wait.
-//
-// The panel is exported as the default; the file keeps the original name
-// (PremiumFilterBar) for import-path compatibility.
+//   • Champagne-gold "LENS" wordmark, brand-red gradient text-fill
+//   • Each filter group is a chevron-collapsible section
+//   • Spring-eased opening (320 ms cubic-bezier)
+//   • Theme-symmetric — dark mode swaps to deep-navy automatically
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
@@ -80,12 +79,11 @@ function filterOptionsCacheKey(params) {
   return `flt:opts:${JSON.stringify(norm)}`;
 }
 
-// ── Module-level prefetch — fire the unfiltered options bundle into cache
-// the moment a filter-aware page mounts the provider, so by the time the
-// user hovers the sidebar every dropdown paints from memory.  De-duped via
-// a single in-flight promise.
+// Module-level prefetch — fires the unfiltered options bundle into cache the
+// moment a filter-aware page mounts.  Single in-flight promise, never refetched
+// in the same tab.  By the time the user hovers the sidebar, the cache is hot.
 let _prefetched = null;
-function prefetchOptions() {
+export function prefetchFilterOptions() {
   if (_prefetched) return _prefetched;
   const cacheKey = filterOptionsCacheKey({});
   if (getCached(cacheKey) && isFresh(cacheKey)) {
@@ -98,57 +96,81 @@ function prefetchOptions() {
       setCached(cacheKey, opts);
       return opts;
     })
-    .catch(() => null)
-    .finally(() => { /* keep _prefetched so we don't refetch */ });
+    .catch(() => null);
   return _prefetched;
 }
 
-// Public component — sidebar mounts <PremiumFilterBar isOpen={expanded} />
-// to render the panel inline.  When `isOpen` is false the panel collapses
-// to 0 height with smooth animation; when true it expands.  Renders nothing
-// at all on routes outside FILTER_ROUTES, so other pages aren't affected.
 export default function PremiumFilterBar({ isOpen = false }) {
   const router = useRouter();
   const api = useSharedFilters();
   const visible = api && FILTER_ROUTES.has(router.pathname);
 
-  // Kick prefetch as soon as the panel mounts.  Even if the user never hovers
-  // the rail, this only costs one HTTP round-trip and warms cache for the
-  // FilterChips bar in-page.
+  // Kick the prefetch as soon as the panel is mountable, even before the
+  // user hovers.  This is the secret to "0-latency" hover.
   useEffect(() => {
-    if (visible) prefetchOptions();
+    if (visible) prefetchFilterOptions();
   }, [visible]);
 
   if (!visible) return null;
-  return <Panel api={api} isOpen={isOpen} />;
+
+  // Mount-on-hover: when the sidebar is collapsed we render only the
+  // outer wrapper (so the layout reserves no extra space) and skip all
+  // MultiSelect children entirely.  Open popovers are torn down with
+  // the panel — they can't get stranded outside the rail.
+  return (
+    <div className={`px-side${isOpen ? ' is-open' : ''}`} aria-hidden={!isOpen}>
+      {isOpen && <Panel api={api} />}
+      <style jsx>{`
+        .px-side {
+          display: grid;
+          grid-template-rows: 0fr;
+          opacity: 0;
+          transition:
+            grid-template-rows 320ms cubic-bezier(0.16,1,0.3,1),
+            opacity 220ms cubic-bezier(0.4,0,0.2,1);
+          margin: 6px 0 0;
+          pointer-events: none;
+        }
+        .px-side.is-open {
+          grid-template-rows: 1fr;
+          opacity: 1;
+          pointer-events: auto;
+        }
+      `}</style>
+    </div>
+  );
 }
 
-function Panel({ api, isOpen }) {
+function Panel({ api }) {
   const { filters, setFilter, clearAll, activeCount } = api;
 
+  // Synchronous read from the prefetched cache so first paint is already
+  // populated — no spinners, no first-hover stall.
   const [optionsByDim, setOptionsByDim] = useState(() => {
     const c = getCached(filterOptionsCacheKey({}));
     return c || {};
   });
-  const [loading, setLoading] = useState(() => Object.keys(getCached(filterOptionsCacheKey({})) || {}).length === 0);
-  const debounceRef = useRef(null);
-  const requestId   = useRef(0);
+  const [loading, setLoading] = useState(() => {
+    const c = getCached(filterOptionsCacheKey({}));
+    return !c || Object.keys(c).length === 0;
+  });
+  const debounceRef  = useRef(null);
+  const requestId    = useRef(0);
   const activeKeyRef = useRef('');
 
   const fetchOptions = async (params, cacheKey) => {
-    const myId      = ++requestId.current;
-    const issuedFor = cacheKey;
+    const myId = ++requestId.current;
     try {
       const r = await filterService.getAllOptions(params);
       if (myId !== requestId.current) return;
       const opts = r.data?.options || {};
-      setCached(issuedFor, opts);
-      if (activeKeyRef.current === issuedFor) {
+      setCached(cacheKey, opts);
+      if (activeKeyRef.current === cacheKey) {
         setOptionsByDim(opts);
         setLoading(false);
       }
     } catch (e) {
-      if (myId === requestId.current && activeKeyRef.current === issuedFor) setLoading(false);
+      if (myId === requestId.current && activeKeyRef.current === cacheKey) setLoading(false);
     }
   };
 
@@ -177,77 +199,55 @@ function Panel({ api, isOpen }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(filters)]);
 
-  const mode = filters.mode || 'active';
-
   return (
-    <div className={`px-side${isOpen ? ' is-open' : ''}`} aria-hidden={!isOpen}>
-      <div className="px-side__inner">
-        {/* ─── Header — gold "LENS" wordmark + active count + reset ─── */}
-        <div className="px-side__head">
-          <div className="px-side__brand">
-            <Sparkles size={12} className="px-side__brand-icon" />
-            <span className="px-side__brand-text">Lens</span>
-          </div>
-          {activeCount > 0 && <span className="px-side__count">{activeCount}</span>}
-          {activeCount > 0 && (
-            <button type="button" className="px-side__reset" onClick={clearAll} title="Clear every filter except mode">
-              <RotateCcw size={10} strokeWidth={2.4} />
-              <span>Reset</span>
-            </button>
-          )}
+    <div className="px-side__inner">
+      {/* ─── Header — gold "LENS" wordmark + active count + reset ─── */}
+      <div className="px-side__head">
+        <div className="px-side__brand">
+          <Sparkles size={12} className="px-side__brand-icon" />
+          <span className="px-side__brand-text">Lens</span>
         </div>
+        {activeCount > 0 && <span className="px-side__count">{activeCount}</span>}
+        {activeCount > 0 && (
+          <button
+            type="button"
+            className="px-side__reset"
+            onClick={clearAll}
+            title="Clear every filter"
+          >
+            <RotateCcw size={10} strokeWidth={2.4} />
+            <span>Reset</span>
+          </button>
+        )}
+      </div>
 
-        {/* ─── Mode pill ─── */}
-        <div className="px-side__mode-wrap">
-          <ModePill mode={mode} onChange={(m) => setFilter('mode', m)} />
-        </div>
-
-        {/* ─── Filter groups ─── */}
-        <div className="px-side__groups">
-          {FILTER_GROUPS.map((group) => (
-            <FilterGroup
-              key={group.name}
-              group={group}
-              filters={filters}
-              setFilter={setFilter}
-              optionsByDim={optionsByDim}
-              loading={loading}
-            />
-          ))}
-        </div>
+      {/* ─── Filter groups ─── */}
+      <div className="px-side__groups">
+        {FILTER_GROUPS.map((group) => (
+          <FilterGroup
+            key={group.name}
+            group={group}
+            filters={filters}
+            setFilter={setFilter}
+            optionsByDim={optionsByDim}
+            loading={loading}
+          />
+        ))}
       </div>
 
       <style jsx>{`
-        .px-side {
-          /* Sits inline within the sidebar's <nav>.  Animates open/closed
-             via grid-template-rows so we get smooth height transitions
-             without measuring scrollHeight in JS. */
-          display: grid;
-          grid-template-rows: 0fr;
-          opacity: 0;
-          transition:
-            grid-template-rows 320ms cubic-bezier(0.16,1,0.3,1),
-            opacity 220ms cubic-bezier(0.4,0,0.2,1);
-          margin: 4px 0 8px;
-          pointer-events: none;
-        }
-        .px-side.is-open {
-          grid-template-rows: 1fr;
-          opacity: 1;
-          pointer-events: auto;
-        }
         .px-side__inner {
           min-height: 0;
           overflow: hidden;
+          padding: 4px 6px 0;
+          border-top: 1px solid var(--border-subtle);
+          margin-top: 6px;
         }
-
         .px-side__head {
           display: flex;
           align-items: center;
           gap: 8px;
-          padding: 6px 6px 8px;
-          border-top: 1px solid var(--border-subtle);
-          margin-top: 4px;
+          padding: 8px 4px 10px;
         }
         .px-side__brand {
           display: inline-flex;
@@ -264,10 +264,7 @@ function Panel({ api, isOpen }) {
           font-weight: 800;
           letter-spacing: 0.22em;
           text-transform: uppercase;
-          background: linear-gradient(
-            135deg,
-            var(--text-secondary) 0%,
-            var(--accent-primary) 130%);
+          background: linear-gradient(135deg, var(--text-secondary) 0%, var(--accent-primary) 130%);
           -webkit-background-clip: text;
           background-clip: text;
           -webkit-text-fill-color: transparent;
@@ -319,15 +316,9 @@ function Panel({ api, isOpen }) {
           background: var(--accent-glow);
           transform: translateY(-1px);
         }
-
-        .px-side__mode-wrap {
-          padding: 0 4px 8px;
-          border-bottom: 1px solid var(--border-subtle);
-        }
-
         .px-side__groups {
-          padding: 4px 0 0;
-          max-height: calc(100vh - 420px);
+          padding: 2px 0 8px;
+          max-height: calc(100vh - 320px);
           overflow-y: auto;
           overflow-x: hidden;
           scrollbar-width: thin;
@@ -344,7 +335,6 @@ function Panel({ api, isOpen }) {
   );
 }
 
-// ─── Filter group — chevron-collapsible vertical section ────────────────────
 function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
   const [open, setOpen] = useState(true);
   const groupActive = group.dims.reduce((n, d) => {
@@ -456,88 +446,6 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
           width: 100% !important;
           max-width: none !important;
           min-width: 0 !important;
-        }
-      `}</style>
-    </div>
-  );
-}
-
-// ─── ModePill — Active / Inactive / All sliding indicator ──────────────────
-function ModePill({ mode, onChange }) {
-  const OPTS = [
-    { key: 'active',   label: 'Active'   },
-    { key: 'inactive', label: 'Inactive' },
-    { key: 'all',      label: 'All'      },
-  ];
-  const idx = Math.max(0, OPTS.findIndex(o => o.key === mode));
-  const segPct = 100 / OPTS.length;
-
-  return (
-    <div className="px-mode">
-      <span
-        className="px-mode__indicator"
-        style={{
-          left:  `calc(${idx * segPct}% + 3px)`,
-          width: `calc(${segPct}% - 6px)`,
-        }}
-      />
-      {OPTS.map(opt => (
-        <button
-          key={opt.key}
-          type="button"
-          onClick={() => onChange(opt.key)}
-          className={`px-mode__btn${mode === opt.key ? ' is-active' : ''}`}
-        >
-          {opt.label}
-        </button>
-      ))}
-
-      <style jsx>{`
-        .px-mode {
-          position: relative;
-          display: flex;
-          align-items: center;
-          width: 100%;
-          height: 30px;
-          padding: 3px;
-          border-radius: 999px;
-          background: var(--bg-elevated);
-          border: 1px solid var(--border-default);
-          box-shadow: inset 0 1px 2px rgba(15,23,42,0.06);
-        }
-        .px-mode__indicator {
-          position: absolute;
-          top: 3px;
-          bottom: 3px;
-          background: linear-gradient(135deg, var(--accent-primary) 0%, #B91020 100%);
-          border-radius: 999px;
-          box-shadow:
-            0 2px 6px rgba(225,29,46,0.32),
-            inset 0 1px 0 rgba(255,255,255,0.20);
-          transition:
-            left 320ms cubic-bezier(0.16,1,0.3,1),
-            width 320ms cubic-bezier(0.16,1,0.3,1);
-        }
-        .px-mode__btn {
-          position: relative;
-          z-index: 1;
-          flex: 1;
-          background: transparent;
-          border: none;
-          cursor: pointer;
-          height: 100%;
-          font-family: var(--font-body);
-          font-size: 10px;
-          font-weight: 700;
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
-          color: var(--text-muted);
-          transition: color 240ms cubic-bezier(0.4,0,0.2,1);
-        }
-        .px-mode__btn:hover { color: var(--text-primary); }
-        .px-mode__btn.is-active {
-          color: #ffffff;
-          text-shadow: 0 1px 2px rgba(0,0,0,0.20);
         }
       `}</style>
     </div>

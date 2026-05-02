@@ -7,10 +7,6 @@ import {
 import { useAuth } from '../../lib/auth-context';
 import PremiumFilterBar from './PremiumFilterBar';
 
-// Routes whose nav item, when active, drops the luxury filter cluster
-// directly underneath it inside the rail.  Mapping nav-href → boolean.
-const FILTER_HREFS = new Set(['/network', '/sales']);
-
 const NAV = [
   {
     section: 'Main',
@@ -137,8 +133,7 @@ export default function Sidebar() {
                 const active = isActive(item.href);
 
                 return (
-                  <div key={item.href}>
-                  <Link href={item.href} style={{ textDecoration: 'none' }}>
+                  <Link key={item.href} href={item.href} style={{ textDecoration: 'none' }}>
                     <div
                       className="nav-item"
                       style={{
@@ -233,20 +228,20 @@ export default function Sidebar() {
                       )}
                     </div>
                   </Link>
-                  {/* Luxury filter cluster — drops in directly under the
-                      ACTIVE Network or Sales row when the sidebar is in its
-                      hovered/expanded state.  Reads filters from
-                      FiltersContext (set by the page).  Renders nothing
-                      when the rail is collapsed or on routes outside
-                      FILTER_HREFS. */}
-                  {active && FILTER_HREFS.has(item.href) && (
-                    <PremiumFilterBar isOpen={expanded} />
-                  )}
-                  </div>
                 );
               })}
           </div>
         ))}
+
+        {/* ─── Luxury filter cluster ───────────────────────────────────
+            Sits at the BOTTOM of the nav rail, below every nav item
+            (including User Management).  Visible only on /network and
+            /sales (the panel returns null elsewhere) and only when the
+            rail is hovered open.  Mounts on hover / unmounts on leave
+            so the heavy MultiSelects don't pay a render cost when the
+            rail is collapsed and any open dropdown closes naturally
+            when the cursor leaves the sidebar. ─────────────────────── */}
+        <PremiumFilterBar isOpen={expanded} />
       </nav>
 
       {/* ── User footer ── */}
