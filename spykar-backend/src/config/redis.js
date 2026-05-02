@@ -219,12 +219,17 @@ const TTL = {
   DISPATCH_STATUS: 120,         // 2 min — frequently changing
   LOCATION_MASTER: 3600,        // 1 hour — rarely changes
   AUTH_TOKEN_BLACKLIST: 86400,  // 24 hours
-  SALES_ANALYTICS: 1800,        // 30 min — heavy mega-CTE; data refreshes only at daily sync, so 30 min is safe and well within the 4-min re-warm cycle
-  STOCK_AGEING: 1800,           // 30 min — ageing buckets, static per sync; matches re-warm cycle
-  STOCK_ALERTS: 1800,           // 30 min — heavy 570K-row payload, low change rate within sync window
-  NETWORK_OVERVIEW: 1800,       // 30 min — network KPIs; data refreshes at sync only
-  FILL_RATE: 1800,              // 30 min — same daily-sync refresh model
-  FILTER_OPTIONS: 1800,         // 30 min — distinct values barely change within a day
+  // The Spykar ERP feed is a once-a-day batch.  Data DOES NOT change between
+  // syncs — so any cache entry built from that data is valid for the rest of
+  // the day.  TTLs below reflect that reality: long enough that a CEO
+  // toggling filters or revisiting yesterday's view never pays a cold scan,
+  // short enough that the next-day sync wipes them within an hour.
+  SALES_ANALYTICS: 7200,        // 2 hours — was 30 min; mega-CTE is ~6s cold, the re-warm cron refreshes every 4 min anyway
+  STOCK_AGEING: 7200,           // 2 hours
+  STOCK_ALERTS: 7200,           // 2 hours
+  NETWORK_OVERVIEW: 7200,       // 2 hours
+  FILL_RATE: 7200,              // 2 hours
+  FILTER_OPTIONS: 14400,        // 4 hours — distinct values are practically static between syncs
 };
 
 module.exports = {

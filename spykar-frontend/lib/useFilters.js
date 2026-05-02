@@ -43,7 +43,11 @@ function decode(qs) {
   const out = {};
   Object.keys(qs).forEach(k => {
     const v = qs[k];
-    if (v === undefined || v === '') return;
+    // Defensive: null/undefined/empty string are all treated as "not set"
+    // so a stray null in router.query (rare but possible after manual
+    // window.history mutations) doesn't get coerced into the literal
+    // string "null" and saved as a value.
+    if (v === undefined || v === null || v === '') return;
     if (ARRAY_DIMS.has(k)) {
       out[k] = String(v).split(',').map(s => s.trim()).filter(Boolean);
     } else {

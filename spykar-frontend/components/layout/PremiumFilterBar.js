@@ -89,6 +89,13 @@ function filterOptionsCacheKey(params) {
 // hover.  Defaults match what /network and /sales pass into useFilters.
 const PREFETCH_DEFAULTS = { mode: 'active' };
 
+// Aggressive multi-mode prefetch: warm options for ALL THREE modes so a CEO
+// flipping Active ↔ Inactive ↔ All on the page renders from memory in
+// micros, not 200-300 ms over the wire.  Active fires immediately (the
+// default the panel will use); the other two fire lazily on idle so they
+// don't compete with first paint.
+const PREFETCH_MODES = ['active', 'inactive', 'all'];
+
 let _prefetched = null;
 export function prefetchFilterOptions() {
   if (_prefetched) return _prefetched;
@@ -96,15 +103,31 @@ export function prefetchFilterOptions() {
   const cacheKey = filterOptionsCacheKey(params);
   if (getCached(cacheKey) && isFresh(cacheKey)) {
     _prefetched = Promise.resolve(getCached(cacheKey));
-    return _prefetched;
+  } else {
+    _prefetched = filterService.getAllOptions(params)
+      .then(r => {
+        const opts = r?.data?.options || {};
+        setCached(cacheKey, opts);
+        return opts;
+      })
+      .catch(() => null);
   }
-  _prefetched = filterService.getAllOptions(params)
-    .then(r => {
-      const opts = r?.data?.options || {};
-      setCached(cacheKey, opts);
-      return opts;
-    })
-    .catch(() => null);
+  // Lazy-warm the other two modes after the active one lands.  Uses
+  // requestIdleCallback so we don't compete with the page's own data
+  // fetch — the warmup is gravy, not blocking.
+  _prefetched.then(() => {
+    if (typeof window === 'undefined') return;
+    const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1));
+    idle(() => {
+      PREFETCH_MODES.filter(m => m !== PREFETCH_DEFAULTS.mode).forEach(mode => {
+        const k = filterOptionsCacheKey({ mode });
+        if (getCached(k) && isFresh(k)) return;
+        filterService.getAllOptions({ mode })
+          .then(r => setCached(k, r?.data?.options || {}))
+          .catch(() => {});
+      });
+    });
+  });
   return _prefetched;
 }
 
