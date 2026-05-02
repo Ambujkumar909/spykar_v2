@@ -104,6 +104,10 @@ function IconButton({ children, onClick, title, ariaLabel }) {
 export default function TopBar({
   preset,
   onPresetChange,
+  // Custom date range — only used when preset === 'custom'
+  fromISO,
+  toISO,
+  onCustomRangeChange,
   lastSyncAt,
   isDark,
   onToggleTheme,
@@ -113,19 +117,25 @@ export default function TopBar({
   user,
   activeFilterCount = 0,
 }) {
+  const showCustomPickers = preset === 'custom';
   return (
     <header
       style={{
         display: 'flex',
         alignItems: 'center',
         gap: 16,
-        height: 64,
-        padding: '0 24px',
+        // When the custom date row is visible, header grows from 64 to 96
+        // so the pickers sit cleanly below the time control without
+        // floating over the page content.
+        minHeight: 64,
+        padding: showCustomPickers ? '10px 24px' : '0 24px',
         background: 'var(--v2-bg-card)',
         borderBottom: '1px solid var(--v2-border)',
         position: 'sticky',
         top: 0,
         zIndex: 50,
+        flexWrap: 'wrap',
+        rowGap: 10,
       }}
     >
       {/* Left — brand */}
@@ -233,6 +243,90 @@ export default function TopBar({
           {(user?.full_name || user?.email || 'S').slice(0, 1).toUpperCase()}
         </div>
       </div>
+
+      {/* Custom range pickers — only render when the user has chosen
+          "Custom" in the time pill.  Sits on its own line below the
+          rest of the header so it never crowds the existing controls. */}
+      {showCustomPickers && (
+        <div
+          style={{
+            flexBasis: '100%',
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '6px 0 0',
+            borderTop: '1px solid var(--v2-border)',
+            marginTop: 6,
+          }}
+        >
+          <span style={{
+            fontSize: 10, fontWeight: 800, letterSpacing: '0.10em',
+            textTransform: 'uppercase',
+            color: 'var(--v2-fg-tertiary)',
+            paddingRight: 6,
+          }}>
+            Custom range
+          </span>
+          <DateField
+            label="From"
+            value={fromISO}
+            max={toISO}
+            onChange={(v) => onCustomRangeChange?.(v, toISO)}
+          />
+          <span style={{ color: 'var(--v2-fg-tertiary)', fontSize: 13 }}>→</span>
+          <DateField
+            label="To"
+            value={toISO}
+            min={fromISO}
+            onChange={(v) => onCustomRangeChange?.(fromISO, v)}
+          />
+          <span style={{
+            marginLeft: 'auto',
+            fontSize: 11, fontWeight: 600,
+            color: 'var(--v2-fg-tertiary)',
+          }}>
+            Pick a from-date and to-date — every KPI, chart and the right rail re-fetches
+          </span>
+        </div>
+      )}
     </header>
+  );
+}
+
+// Tight date-field used by the custom range row.  Native <input type="date">
+// keeps keyboard accessibility + OS calendar popup free; we just style the
+// chrome to match the rest of the TopBar.
+function DateField({ label, value, min, max, onChange }) {
+  return (
+    <label style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      height: 34, padding: '0 10px',
+      background: 'var(--v2-bg-elevated)',
+      border: '1px solid var(--v2-border)',
+      borderRadius: 10,
+      cursor: 'pointer',
+    }}>
+      <span style={{
+        fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
+        textTransform: 'uppercase',
+        color: 'var(--v2-fg-tertiary)',
+      }}>
+        {label}
+      </span>
+      <input
+        type="date"
+        value={value || ''}
+        min={min || undefined}
+        max={max || undefined}
+        onChange={(e) => onChange?.(e.target.value)}
+        style={{
+          background: 'transparent',
+          border: 'none', outline: 'none',
+          fontFamily: 'var(--v2-font-body)',
+          fontSize: 12, fontWeight: 600,
+          color: 'var(--v2-fg-primary)',
+          padding: 0,
+          minWidth: 110,
+        }}
+      />
+    </label>
   );
 }

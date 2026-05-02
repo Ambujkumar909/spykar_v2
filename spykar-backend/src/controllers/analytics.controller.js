@@ -1675,7 +1675,10 @@ async function getSalesSummary(req, res, next) {
   try {
     const { date_from, date_to, mode = 'active' } = req.query;
     const ttl = Number(req.query.ttl_override) || 300;
-    const cacheKey = `analytics:sales-summary:v2:${date_from || ''}:${date_to || ''}:m${mode}`;
+    // v3: payload now carries the ex_gst / gst / mrp lens values so the
+    // dashboard can re-pivot revenue without a second round-trip.  Bump the
+    // cache key so old v2 entries don't shadow the new fields.
+    const cacheKey = `analytics:sales-summary:v3:${date_from || ''}:${date_to || ''}:m${mode}`;
 
     const data = await getOrSet(cacheKey, async () => {
       const from = date_from || '2024-04-01';
@@ -1702,6 +1705,9 @@ async function getSalesSummary(req, res, next) {
       const eligibleStoreCount = eligibleRes.rows[0]?.eligible || 0;
 
       // Single-pass aggregate: summary + daily + by_channel from one scan.
+      // The mov CTE joins skus so we can compute the valuation lens fields
+      // (ex-GST, GST collected, MRP) from one pass — same gst-rate / mrp
+      // defaults the heavy /analytics/sales endpoint uses for legacy rows.
       const result = await query(`
         WITH mov AS (
           SELECT
@@ -1709,11 +1715,19 @@ async function getSalesSummary(req, res, next) {
             m.movement_type,
             ABS(m.qty_change)::int          AS qty,
             COALESCE(m.sale_value, 0)       AS val,
+            -- Valuation augmentations
+            (ABS(m.qty_change)::numeric * COALESCE(s.mrp, 0))                 AS mrp_val,
+            (COALESCE(m.sale_value, 0)::numeric * COALESCE(s.gst_rate, 12)
+              / NULLIF(100 + COALESCE(s.gst_rate, 12), 0))                    AS gst_val,
+            (COALESCE(m.sale_value, 0)::numeric
+              - COALESCE(m.sale_value, 0)::numeric * COALESCE(s.gst_rate, 12)
+                / NULLIF(100 + COALESCE(s.gst_rate, 12), 0))                  AS ex_gst_val,
             m.location_id,
             COALESCE(l.group_name, l.type::text) AS channel,
             l.type AS location_type
           FROM inventory_movements m
           JOIN locations l ON l.id = m.location_id
+          JOIN skus s      ON s.id = m.sku_id
           WHERE m.moved_at >= $1::date
             AND m.moved_at <  $2::date + interval '1 day'
             AND m.movement_type IN ('SALE','RETURN')
@@ -1729,6 +1743,24 @@ async function getSalesSummary(req, res, next) {
                                   - COALESCE(SUM(qty) FILTER (WHERE movement_type='RETURN'),0))::int,
             'net_value',         (COALESCE(SUM(val) FILTER (WHERE movement_type='SALE'),  0)
                                   - COALESCE(SUM(val) FILTER (WHERE movement_type='RETURN'),0))::bigint,
+            -- Valuation-lens variants — net_ values are sale - return for
+            -- each lens, matching how the /sales page reads them.
+            'sales_ex_gst_value',  ROUND(COALESCE(SUM(ex_gst_val) FILTER (WHERE movement_type='SALE'),  0))::bigint,
+            'return_ex_gst_value', ROUND(COALESCE(SUM(ex_gst_val) FILTER (WHERE movement_type='RETURN'),0))::bigint,
+            'net_ex_gst_value',    ROUND(COALESCE(SUM(ex_gst_val) FILTER (WHERE movement_type='SALE'),  0)
+                                       - COALESCE(SUM(ex_gst_val) FILTER (WHERE movement_type='RETURN'),0))::bigint,
+            'sales_gst_collected', ROUND(COALESCE(SUM(gst_val) FILTER (WHERE movement_type='SALE'),     0))::bigint,
+            'return_gst_collected',ROUND(COALESCE(SUM(gst_val) FILTER (WHERE movement_type='RETURN'),   0))::bigint,
+            'net_gst_collected',   ROUND(COALESCE(SUM(gst_val) FILTER (WHERE movement_type='SALE'),     0)
+                                       - COALESCE(SUM(gst_val) FILTER (WHERE movement_type='RETURN'),  0))::bigint,
+            'sales_mrp_value',     ROUND(COALESCE(SUM(mrp_val) FILTER (WHERE movement_type='SALE'),     0))::bigint,
+            'return_mrp_value',    ROUND(COALESCE(SUM(mrp_val) FILTER (WHERE movement_type='RETURN'),   0))::bigint,
+            'net_mrp_value',       ROUND(COALESCE(SUM(mrp_val) FILTER (WHERE movement_type='SALE'),     0)
+                                       - COALESCE(SUM(mrp_val) FILTER (WHERE movement_type='RETURN'),  0))::bigint,
+            -- Discount = MRP - actual selling value (gross). Net of returns.
+            'sales_discount_value', GREATEST(0, ROUND(
+              COALESCE(SUM(mrp_val) FILTER (WHERE movement_type='SALE'),0)
+              - COALESCE(SUM(val)   FILTER (WHERE movement_type='SALE'),0)))::bigint,
             'sales_txns',        COUNT(*) FILTER (WHERE movement_type='SALE')::int,
             'return_txns',       COUNT(*) FILTER (WHERE movement_type='RETURN')::int,
             'stores_with_sales', COUNT(DISTINCT location_id) FILTER (WHERE movement_type='SALE')::int,

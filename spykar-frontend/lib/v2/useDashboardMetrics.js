@@ -50,7 +50,37 @@ function returnRateSparkline(daily) {
   });
 }
 
-export function useDashboardMetrics({ fromISO, toISO, mode = 'active' } = {}) {
+// Map the valuation lens onto the slim-summary fields.  The backend's
+// getSalesSummary returns parallel families:
+//   gross    → sales_value      / return_value      / net_value
+//   ex_gst   → sales_ex_gst_value / return_ex_gst_value / net_ex_gst_value
+//   gst      → sales_gst_collected / return_gst_collected / net_gst_collected
+//   mrp      → sales_mrp_value  / return_mrp_value  / net_mrp_value
+//   discount → sales_discount_value (no return/net family — pure delta)
+function pickNet(summary, valuation) {
+  const c = summary || {};
+  switch (valuation) {
+    case 'ex_gst':   return Number(c.net_ex_gst_value     || 0);
+    case 'gst':      return Number(c.net_gst_collected    || 0);
+    case 'mrp':      return Number(c.net_mrp_value        || 0);
+    case 'discount': return Number(c.sales_discount_value || 0);
+    case 'gross':
+    default:         return Number(c.net_value || c.net_gross_value || 0);
+  }
+}
+
+function pickSalesField(valuation) {
+  switch (valuation) {
+    case 'ex_gst':   return 'sales_ex_gst_value';
+    case 'gst':      return 'sales_gst_collected';
+    case 'mrp':      return 'sales_mrp_value';
+    case 'discount': return 'sales_discount_value';
+    case 'gross':
+    default:         return 'sales_value';
+  }
+}
+
+export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation = 'gross' } = {}) {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
@@ -92,7 +122,8 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active' } = {}) {
         const dailyLy  = ly?.data?.data?.daily || [];
         const byChannel = cur?.data?.data?.by_channel || [];
 
-        const netValue   = Number(c.net_value || c.net_gross_value || 0);
+        const netValue   = pickNet(c, valuation);
+        const salesField = pickSalesField(valuation);
         const unitsSold  = Number(c.units_sold || 0);
         const returnRate = Number(c.return_rate_pct || 0);
         const invValue   = Number(stock.total_mrp_value || totals.total_stock_value || 0);
@@ -104,7 +135,7 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active' } = {}) {
           ? (unitsSold / (unitsSold + invUnits)) * 100
           : 0;
 
-        const lyNet     = Number(lyS.net_value || lyS.net_gross_value || 0);
+        const lyNet     = pickNet(lyS, valuation);
         const lyUnits   = Number(lyS.units_sold || 0);
         const lyReturn  = Number(lyS.return_rate_pct || 0);
         // No prior-year inventory or sell-through — leave deltas null so the
@@ -117,7 +148,7 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active' } = {}) {
           netSales: {
             value: netValue,
             delta: pctDelta(netValue, lyNet),
-            spark: realSparkline(dailyCur, 'sales_value'),
+            spark: realSparkline(dailyCur, salesField),
             footnote: c.units_sold > 0
               ? `avg ₹${Math.round(netValue / Math.max(1, c.units_sold)).toLocaleString('en-IN')} per unit`
               : null,
@@ -326,7 +357,7 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active' } = {}) {
       });
 
     return () => { alive = false; };
-  }, [fromISO, toISO, mode]);
+  }, [fromISO, toISO, mode, valuation]);
 
   return { data, loading, error };
 }

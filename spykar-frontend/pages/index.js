@@ -51,14 +51,14 @@ export default function Overview() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const { isDark, toggle: toggleTheme } = useTheme();
-  const { preset, setPreset, fromISO, toISO } = useTimeRange('mtd');
+  const { preset, setPreset, fromISO, toISO, setCustom } = useTimeRange('mtd');
   const [mode,      setMode]      = useState(DEFAULT_MODE);
   const [valuation, setValuation] = useState(DEFAULT_VALUATION);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [savedViewId, setSavedViewId] = useState('ceo');
 
   const { data: metrics, loading: metricsLoading } = useDashboardMetrics({
-    fromISO, toISO, mode,
+    fromISO, toISO, mode, valuation,
   });
   const lastSyncAt = metrics?.syncStatus?.completed_at
     || metrics?.syncStatus?.last_sync_at
@@ -127,6 +127,9 @@ export default function Overview() {
           <TopBar
             preset={preset}
             onPresetChange={setPreset}
+            fromISO={fromISO}
+            toISO={toISO}
+            onCustomRangeChange={setCustom}
             lastSyncAt={lastSyncAt}
             isDark={isDark}
             onToggleTheme={toggleTheme}
