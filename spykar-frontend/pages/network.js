@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import DashboardLayout from '../components/layout/DashboardLayout';
-import FilterBar from '../components/filters/FilterBar';
+import { FiltersProvider } from '../lib/FiltersContext';
 import FilterChips from '../components/filters/FilterChips';
 import PremiumKpi from '../components/ui/PremiumKpi';
 import NetworkPulse from '../components/network/NetworkPulse';
@@ -866,8 +866,9 @@ export default function NetworkPage() {
   // narrow the per-location stock total — the table still shows every
   // location matching the location-side filters with total_stock = 0 when
   // no SKUs match.
-  const { filters: v2Filters, setFilter: setV2, clearAll: clearV2, activeCount: v2Active } =
+  const v2FilterApi =
     useFilters({ defaults: { mode: 'active' }, persist: ['mode'] });
+  const { filters: v2Filters, setFilter: setV2, clearAll: clearV2, activeCount: v2Active } = v2FilterApi;
 
   // ── Table state (affected by filters) ─────────────────────────────────────
   // Initialized from module-level cache so tab-switches don't refetch / flash.
@@ -1124,23 +1125,17 @@ export default function NetworkPage() {
   }, [groupSummary]);
 
   return (
+    <FiltersProvider value={v2FilterApi}>
     <DashboardLayout title="Network" subtitle="Retail network — inventory positions across all locations and channels">
       {/* Premium skin layer — same .sx-page tokens as the Sales page so
           both pages share one visual language. Cards, tables, chips, and
           numbers all inherit the refined hairlines + Plus Jakarta numbers. */}
       <div className="sx-page sx-fade">
 
-      {/* ── v2 Universal FilterBar + active-filter chips ──────────────────
-          Sticky glass surface with 13 multi-select dimensions, mode toggle
-          (Active vs All), and a chips bar that materialises every active
-          filter as a removable pill — the single biggest UX win over Power
-          BI/Tableau/Zoho where filters hide in side panels. ─────────────── */}
-      <FilterBar
-        filters={v2Filters}
-        setFilter={setV2}
-        clearAll={clearV2}
-        activeCount={v2Active}
-      />
+      {/* The 13-dimension filter strip now lives in the global navbar
+          (PremiumFilterBar mounted by DashboardLayout).  We keep FilterChips
+          in-page so a CEO scrolling the table still sees what lens is
+          active and can remove a single dimension without scrolling back up. */}
       <FilterChips
         filters={v2Filters}
         setFilter={setV2}
@@ -1205,5 +1200,6 @@ export default function NetworkPage() {
       `}</style>
       </div>{/* /.sx-page */}
     </DashboardLayout>
+    </FiltersProvider>
   );
 }

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import DashboardLayout from '../components/layout/DashboardLayout';
-import FilterBar from '../components/filters/FilterBar';
 import FilterChips from '../components/filters/FilterChips';
+import { FiltersProvider } from '../lib/FiltersContext';
 import SalesPulse, { SalesPulseTables } from '../components/sales/SalesPulse';
 import SkuPerformance from '../components/sales/SkuPerformance';
 import DistributionDonuts from '../components/sales/DistributionDonuts';
@@ -778,11 +778,12 @@ export default function SalesAnalyticsPage() {
   // (gender, sub_product, product, category, style, shade, color, size,
   // season, state, city, party, store) plus the Active/Inactive/All mode pill
   // and a Sale/Return/Net lens specific to this page.
-  const { filters: v2Filters, setFilter: setV2, clearAll: clearV2, activeCount: v2Active } =
+  const v2FilterApi =
     useFilters({
       defaults: { mode: 'active', sale_mode: 'net', valuation: 'gross' },
       persist:  ['mode', 'sale_mode', 'valuation'],
     });
+  const { filters: v2Filters, setFilter: setV2, clearAll: clearV2, activeCount: v2Active } = v2FilterApi;
 
   // Date range stays local (sales-specific UX with presets). Default = full
   // ERP window; user picks tighter ranges via the preset chips below.
@@ -1158,21 +1159,17 @@ export default function SalesAnalyticsPage() {
   const hasFilters = colorName || size || locationId || category || dateFrom !== '2025-01-01' || dateTo !== '2026-01-31' || v2Active > 0;
 
   return (
+    <FiltersProvider value={v2FilterApi}>
     <DashboardLayout title="Sales & Returns Analytics" subtitle="Day-basis sales intelligence — units, revenue, colour, size, store">
       {/* Premium skin layer — activates the .sx-* design tokens defined in
           styles/globals.css. Wraps every child in the page so cards, tables,
           chips, and numbers all share the refined visual language. */}
       <div className="sx-page sx-fade">
 
-      {/* ── v2 Universal FilterBar — same 15 dimensions + Active/Inactive/All
-          mode pill that drive every other page. URL-synced, multi-select,
-          dependency-narrowing dropdowns. ────────────────────────────────── */}
-      <FilterBar
-        filters={v2Filters}
-        setFilter={setV2}
-        clearAll={clearV2}
-        activeCount={v2Active}
-      />
+      {/* The 13-dimension lens lives in the global navbar
+          (PremiumFilterBar mounted by DashboardLayout).  FilterChips stays
+          in-page so an executive scrolling deep into the sales tables can
+          still see what dimensions are active and remove one in a tap. */}
       <FilterChips
         filters={v2Filters}
         setFilter={setV2}
@@ -1393,6 +1390,7 @@ export default function SalesAnalyticsPage() {
 
       </div>{/* /.sx-page */}
     </DashboardLayout>
+    </FiltersProvider>
   );
 }
 

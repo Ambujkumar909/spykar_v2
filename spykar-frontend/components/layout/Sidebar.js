@@ -5,6 +5,11 @@ import {
   LayoutDashboard, Globe, TrendingUp, RefreshCw, LogOut, UserCog,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth-context';
+import PremiumFilterBar from './PremiumFilterBar';
+
+// Routes whose nav item, when active, drops the luxury filter cluster
+// directly underneath it inside the rail.  Mapping nav-href → boolean.
+const FILTER_HREFS = new Set(['/network', '/sales']);
 
 const NAV = [
   {
@@ -132,7 +137,8 @@ export default function Sidebar() {
                 const active = isActive(item.href);
 
                 return (
-                  <Link key={item.href} href={item.href} style={{ textDecoration: 'none' }}>
+                  <div key={item.href}>
+                  <Link href={item.href} style={{ textDecoration: 'none' }}>
                     <div
                       className="nav-item"
                       style={{
@@ -227,6 +233,16 @@ export default function Sidebar() {
                       )}
                     </div>
                   </Link>
+                  {/* Luxury filter cluster — drops in directly under the
+                      ACTIVE Network or Sales row when the sidebar is in its
+                      hovered/expanded state.  Reads filters from
+                      FiltersContext (set by the page).  Renders nothing
+                      when the rail is collapsed or on routes outside
+                      FILTER_HREFS. */}
+                  {active && FILTER_HREFS.has(item.href) && (
+                    <PremiumFilterBar isOpen={expanded} />
+                  )}
+                  </div>
                 );
               })}
           </div>
