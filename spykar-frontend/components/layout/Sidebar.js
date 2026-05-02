@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
-  LayoutDashboard, Globe, TrendingUp, RefreshCw, LogOut, UserCog, Sparkles,
+  LayoutDashboard, Globe, TrendingUp, RefreshCw, LogOut, UserCog,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth-context';
 
@@ -11,7 +11,6 @@ const NAV = [
     section: 'Main',
     items: [
       { label: 'Overview',      href: '/',        icon: LayoutDashboard, color: '#EF4444', glow: 'rgba(239,68,68,0.15)' },
-      { label: 'Overview v2',   href: '/dashboard-v2', icon: Sparkles,   color: '#F03A4A', glow: 'rgba(240,58,74,0.20)', badge: 'NEW' },
       { label: 'Network',       href: '/network', icon: Globe,           color: '#3B82F6', glow: 'rgba(59,130,246,0.15)' },
       { label: 'Sales & Returns', href: '/sales', icon: TrendingUp,      color: '#10B981', glow: 'rgba(16,185,129,0.15)' },
     ],
