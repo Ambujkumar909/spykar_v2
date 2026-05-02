@@ -974,6 +974,23 @@ html.theme-light .apexcharts-zero-line {
   stroke: rgba(15, 23, 42, 0.18) !important;
 }
 
+/* Bar charts — stylish modern look in light mode (no heavy halo).
+   The dark-theme rules above use heavy black drop-shadows that, on a white
+   canvas, mix with the bar fill to produce a muddy green/grey halo behind
+   each bar.  Replace with: a tight shadow for depth + a soft saturate-on-
+   hover so bars feel premium without the dark-theme baggage. */
+html.theme-light .apexcharts-bar-series .apexcharts-series path,
+html.theme-light .apexcharts-bar-series .apexcharts-series path:nth-child(3n+1),
+html.theme-light .apexcharts-bar-series .apexcharts-series path:nth-child(3n+2),
+html.theme-light .apexcharts-bar-series .apexcharts-series path:nth-child(3n) {
+  filter: drop-shadow(0 1px 1px rgba(15,23,42,0.05));
+  opacity: 1;
+}
+html.theme-light .apexcharts-bar-series .apexcharts-series path:hover {
+  filter: drop-shadow(0 2px 4px rgba(15,23,42,0.10)) saturate(1.08) !important;
+  transform: scaleY(1.025);
+}
+
 /* Pie + line shadows — softer, ink-tinted */
 html.theme-light .apexcharts-pie-series path,
 html.theme-light .apexcharts-pie .apexcharts-slices path {
