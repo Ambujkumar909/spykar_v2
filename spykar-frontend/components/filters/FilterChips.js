@@ -63,7 +63,7 @@ export default function FilterChips({ filters, setFilter, clearAll }) {
       style={{
         display: 'flex', flexWrap: 'wrap', gap: 6,
         padding: '8px 24px 14px',
-        background: 'rgba(7,12,24,0.90)',
+        background: 'var(--bg-card)',
         backdropFilter: 'blur(16px)',
         WebkitBackdropFilter: 'blur(16px)',
         borderBottom: '1px solid var(--border-subtle)',

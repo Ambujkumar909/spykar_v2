@@ -186,7 +186,7 @@ export default function PremiumKpi({
         <span style={{
           fontFamily: 'var(--font-body)',
           fontSize: 10, fontWeight: 800,
-          color: '#475569',
+          color: 'var(--text-muted)',
           textTransform: 'uppercase',
           letterSpacing: '0.10em',
           flex: 1,
@@ -219,7 +219,7 @@ export default function PremiumKpi({
                 fontWeight: 800,
                 letterSpacing: '-0.04em',
                 lineHeight: 1,
-                color: '#F1F5F9',
+                color: 'var(--text-primary)',
                 fontFeatureSettings: "'tnum' 1, 'lnum' 1",
                 cursor: 'help',
                 marginBottom: breakdowns.length > 0 ? 10 : 6,
@@ -252,12 +252,12 @@ export default function PremiumKpi({
                   border: `1px solid ${b.color ? `${b.color}28` : 'rgba(255,255,255,0.08)'}`,
                 }}>
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: b.color || '#475569', flexShrink: 0 }} />
-                <span style={{ fontFamily: 'var(--font-body)', fontSize: 10.5, fontWeight: 600, color: '#64748B' }}>{b.label}</span>
-                <span style={{ fontFamily: 'var(--font-display)', fontSize: 11.5, fontWeight: 800, color: '#CBD5E1', letterSpacing: '-0.01em' }}>
+                <span style={{ fontFamily: 'var(--font-body)', fontSize: 10.5, fontWeight: 600, color: 'var(--text-muted)' }}>{b.label}</span>
+                <span style={{ fontFamily: 'var(--font-display)', fontSize: 11.5, fontWeight: 800, color: 'var(--text-secondary)', letterSpacing: '-0.01em' }}>
                   {typeof b.value === 'number' ? fmtIndian(b.value) : (b.value ?? '—')}
                 </span>
                 {pct && (
-                  <span style={{ fontFamily: 'var(--font-body)', fontSize: 10, fontWeight: 700, color: '#334155' }}>· {pct}</span>
+                  <span style={{ fontFamily: 'var(--font-body)', fontSize: 10, fontWeight: 700, color: 'var(--text-disabled)' }}>· {pct}</span>
                 )}
               </div>
             );
@@ -269,7 +269,7 @@ export default function PremiumKpi({
       {context && (
         <div style={{
           fontFamily: 'var(--font-body)', fontSize: 11, fontWeight: 500,
-          color: '#334155', marginTop: 4,
+          color: 'var(--text-disabled)', marginTop: 4,
         }}>{context}</div>
       )}
     </div>

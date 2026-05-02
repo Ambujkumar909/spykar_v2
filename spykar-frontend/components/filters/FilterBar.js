@@ -191,13 +191,13 @@ export default function FilterBar({ filters, setFilter, clearAll, activeCount })
       className="v2-filterbar"
       style={{
         position: 'sticky', top: 0, zIndex: 100,
-        background: 'rgba(7,12,24,0.92)',
+        background: 'var(--bg-card)',
         backdropFilter: 'blur(20px) saturate(180%)',
         WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        borderBottom: '1px solid var(--border-subtle)',
         padding: '10px 24px',
         marginBottom: 16,
-        boxShadow: '0 1px 0 rgba(255,255,255,0.04)',
+        boxShadow: 'var(--shadow-card)',
       }}
     >
       {/* Top row — header + active count + clear all */}
@@ -267,7 +267,7 @@ export default function FilterBar({ filters, setFilter, clearAll, activeCount })
               style={{
                 display: 'flex', flexDirection: 'column', gap: 8,
                 paddingLeft: gi === 0 ? 0 : 14,
-                borderLeft: gi === 0 ? 'none' : '1px solid rgba(255,255,255,0.05)',
+                borderLeft: gi === 0 ? 'none' : '1px solid var(--border-subtle)',
                 minWidth: 0,
               }}
             >

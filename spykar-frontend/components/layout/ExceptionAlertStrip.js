@@ -35,8 +35,8 @@ export default function ExceptionAlertStrip() {
         left: 'var(--sidebar-width)',
         right: 0,
         height: 'var(--alert-strip-height)',
-        background: 'rgba(7,12,24,0.95)',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
+        background: 'var(--bg-card)',
+        borderBottom: '1px solid var(--border-subtle)',
         display: 'flex',
         alignItems: 'center',
         paddingLeft: 20,
@@ -56,8 +56,8 @@ export default function ExceptionAlertStrip() {
         left: 'var(--sidebar-width)',
         right: 0,
         height: 'var(--alert-strip-height)',
-        background: 'rgba(7,12,24,0.95)',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
+        background: 'var(--bg-card)',
+        borderBottom: '1px solid var(--border-subtle)',
         display: 'flex',
         alignItems: 'center',
         padding: '0 20px',
@@ -82,8 +82,8 @@ export default function ExceptionAlertStrip() {
       left: 'var(--sidebar-width)',
       right: 0,
       height: 'var(--alert-strip-height)',
-      background: 'rgba(7,12,24,0.96)',
-      borderBottom: '1px solid rgba(255,255,255,0.06)',
+      background: 'var(--bg-card)',
+      borderBottom: '1px solid var(--border-subtle)',
       display: 'flex',
       alignItems: 'center',
       zIndex: 88,
@@ -96,7 +96,7 @@ export default function ExceptionAlertStrip() {
         alignItems: 'center',
         gap: 14,
         padding: '0 16px',
-        borderRight: '1px solid rgba(255,255,255,0.06)',
+        borderRight: '1px solid var(--border-subtle)',
         height: '100%',
         background: 'rgba(239,68,68,0.06)',
       }}>
@@ -145,12 +145,12 @@ export default function ExceptionAlertStrip() {
         {/* Fade edges */}
         <div style={{
           position: 'absolute', left: 0, top: 0, bottom: 0, width: 40,
-          background: 'linear-gradient(to right, rgba(7,12,24,0.96), transparent)',
+          background: 'linear-gradient(to right, var(--bg-card), transparent)',
           zIndex: 2, pointerEvents: 'none',
         }} />
         <div style={{
           position: 'absolute', right: 0, top: 0, bottom: 0, width: 40,
-          background: 'linear-gradient(to left, rgba(7,12,24,0.96), transparent)',
+          background: 'linear-gradient(to left, var(--bg-card), transparent)',
           zIndex: 2, pointerEvents: 'none',
         }} />
 
@@ -188,7 +188,7 @@ export default function ExceptionAlertStrip() {
                 }}>
                   {cfg.label}
                 </span>
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#94A3B8', fontFamily: 'var(--font-body)' }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                   {alert.store_name || alert.store_code || 'Unknown store'}
                   {alert.product && ` · ${alert.product}`}
                   {alert.qty !== undefined && ` · ${Number(alert.qty).toLocaleString('en-IN')} units`}

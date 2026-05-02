@@ -38,7 +38,7 @@ export default function DashboardLayout({ children, title, subtitle, allowedRole
           animation: 'pulse 1.5s ease infinite',
           boxShadow: '0 0 24px rgba(239,68,68,0.40)',
         }} />
-        <div style={{ color: '#475569', fontSize: 13, fontFamily: 'var(--font-body)' }}>Loading Spykar IQ…</div>
+        <div style={{ color: 'var(--text-muted)', fontSize: 13, fontFamily: 'var(--font-body)' }}>Loading Spykar IQ…</div>
         <style>{`@keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.5; transform:scale(0.9); } }`}</style>
       </div>
     );

@@ -46,21 +46,21 @@ export default function Sidebar() {
         position: 'fixed',
         top: 0, left: 0, bottom: 0,
         width: expanded ? W_OPEN : W_CLOSED,
-        background: 'linear-gradient(180deg, #0D1525 0%, #070C18 100%)',
-        borderRight: '1px solid rgba(255,255,255,0.06)',
+        background: 'linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-canvas) 100%)',
+        borderRight: '1px solid var(--border-subtle)',
         display: 'flex',
         flexDirection: 'column',
         zIndex: 100,
         overflow: 'hidden',
         transition: 'width 280ms cubic-bezier(0.16,1,0.3,1)',
-        boxShadow: expanded ? '4px 0 32px rgba(0,0,0,0.60)' : '1px 0 0 rgba(255,255,255,0.04)',
+        boxShadow: expanded ? '4px 0 32px rgba(15,23,42,0.16)' : 'none',
       }}
     >
       {/* ── Logo ── */}
       <div style={{
         height: 64,
         padding: '0 16px',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        borderBottom: '1px solid var(--border-subtle)',
         display: 'flex',
         alignItems: 'center',
         gap: 12,
@@ -97,8 +97,8 @@ export default function Sidebar() {
             style={{ height: 26, width: 'auto', maxWidth: 120, objectFit: 'contain', objectPosition: 'left center', display: 'block' }}
             onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }}
           />
-          <div style={{ display: 'none', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 16, color: '#F1F5F9' }}>Spykar IQ</div>
-          <div style={{ fontSize: 9, color: '#475569', letterSpacing: '0.12em', fontWeight: 700, textTransform: 'uppercase', marginTop: 2 }}>
+          <div style={{ display: 'none', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 16, color: 'var(--text-primary)' }}>Spykar IQ</div>
+          <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 700, textTransform: 'uppercase', marginTop: 2 }}>
             Intelligence
           </div>
         </div>
@@ -111,7 +111,7 @@ export default function Sidebar() {
             {/* Section label — visible only when expanded */}
             <div style={{
               fontSize: 9, fontWeight: 800,
-              color: '#334155',
+              color: 'var(--text-disabled)',
               letterSpacing: '0.14em',
               textTransform: 'uppercase',
               padding: '0 8px',
@@ -147,7 +147,7 @@ export default function Sidebar() {
                         cursor: 'pointer',
                         transition: 'all 0.15s ease',
                         background: active ? item.glow : 'transparent',
-                        color: active ? item.color : '#64748B',
+                        color: active ? item.color : 'var(--text-muted)',
                         border: active ? `1px solid ${item.color}30` : '1px solid transparent',
                         position: 'relative',
                         overflow: 'hidden',
@@ -237,7 +237,7 @@ export default function Sidebar() {
       {/* ── User footer ── */}
       <div style={{
         padding: '10px 8px',
-        borderTop: '1px solid rgba(255,255,255,0.06)',
+        borderTop: '1px solid var(--border-subtle)',
         flexShrink: 0,
       }}>
         <div style={{
@@ -271,14 +271,14 @@ export default function Sidebar() {
           }}>
             <div style={{
               fontSize: 13, fontWeight: 600,
-              color: '#F1F5F9',
+              color: 'var(--text-primary)',
               fontFamily: 'var(--font-body)',
               overflow: 'hidden', textOverflow: 'ellipsis',
             }}>
               {user?.name || 'User'}
             </div>
             <div style={{
-              fontSize: 10, color: '#475569',
+              fontSize: 10, color: 'var(--text-muted)',
               fontFamily: 'var(--font-body)',
               fontWeight: 600, letterSpacing: '0.04em',
               textTransform: 'uppercase',
@@ -293,17 +293,17 @@ export default function Sidebar() {
               title="Logout"
               style={{
                 background: 'none', border: 'none', cursor: 'pointer',
-                color: '#475569', padding: 6, borderRadius: 8,
+                color: 'var(--text-muted)', padding: 6, borderRadius: 8,
                 display: 'flex', alignItems: 'center',
                 transition: 'all 0.15s',
                 flexShrink: 0,
               }}
               onMouseEnter={e => {
-                e.currentTarget.style.color = '#EF4444';
-                e.currentTarget.style.background = 'rgba(239,68,68,0.12)';
+                e.currentTarget.style.color = 'var(--accent-primary)';
+                e.currentTarget.style.background = 'var(--accent-glow)';
               }}
               onMouseLeave={e => {
-                e.currentTarget.style.color = '#475569';
+                e.currentTarget.style.color = 'var(--text-muted)';
                 e.currentTarget.style.background = 'none';
               }}
             >
