@@ -44,7 +44,7 @@ export const distributorService = {
 
 // ─── Locations ────────────────────────────────────────────────────────────────
 export const locationService = {
-  list: (params = {}) => api.get('/locations', { params }),
+  list: (params = {}, config = {}) => api.get('/locations', { params, ...config }),
   listZones: () => api.get('/locations/zones'),
   getById: (id) => api.get(`/locations/${id}`),
   getSummary: (id) => api.get(`/locations/${id}/summary`),
@@ -87,7 +87,7 @@ export const analyticsService = {
   getColorDistribution: (params = {}) => api.get('/analytics/color-distribution', { params }),
   getZoneHeatmap: () => api.get('/analytics/zone-heatmap'),
   getFillRate: (params = {}) => api.get('/analytics/fill-rate', { params }),
-  getSalesAnalytics: (params = {}) => api.get('/analytics/sales', { params }),
+  getSalesAnalytics: (params = {}, config = {}) => api.get('/analytics/sales', { params, ...config }),
   // v2 dashboard — slim version: only summary + daily + by_channel.  ~240 ms
   // cold vs ~8 s for /analytics/sales.  See backend controller for the why.
   getSalesSummary:  (params = {}) => api.get('/analytics/sales/summary', { params }),

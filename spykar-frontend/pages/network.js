@@ -950,6 +950,10 @@ export default function NetworkPage() {
   // was firing in parallel on every filter change (it hit the same endpoint
   // with slightly different params, doubling backend load and adding ~1.5s
   // of cold latency to every filter switch).
+  // AbortController per in-flight table fetch — same rationale as /sales:
+  // a fast filter sequence shouldn't queue 4 redundant /locations scans.
+  const tableFetchRef = useRef(null);
+
   const fetchTableData = useCallback(async (filters = {}) => {
     const tableKey = `net:table:v4:${filters.sort_by || 'total_stock'}|${filters.page || 1}|m${filters.mode||'active'}|gn${filters.group_name||''}|st${filters.state||''}|ct${filters.city||''}|sc${filters.store_code||''}|q${filters.search||''}|cat${filters.category||''}|g${filters.gender||''}|sp${filters.sub_product||''}|pr${filters.product||''}|sty${filters.style||''}|sh${filters.shade||''}|cl${filters.color||''}|sz${filters.size||''}|se${filters.season||''}`;
     const cached = getCached(tableKey);
@@ -971,6 +975,9 @@ export default function NetworkPage() {
     } else {
       setTableLoading(true);
     }
+    if (tableFetchRef.current) tableFetchRef.current.abort();
+    const ac = new AbortController();
+    tableFetchRef.current = ac;
     try {
       const params = {
         page:        filters.page        || 1,
@@ -993,7 +1000,7 @@ export default function NetworkPage() {
         store_code:  filters.store_code  || undefined,
         mode:        filters.mode        || 'active',
       };
-      const res = await locationService.list(params);
+      const res = await locationService.list(params, { signal: ac.signal });
       const data       = res.data.data        || [];
       const pag        = res.data.pagination  || null;
       const cities     = res.data.cities      || [];
@@ -1013,6 +1020,10 @@ export default function NetworkPage() {
       setSummaryLoading(false);
       setCached(tableKey, { data, pagination: pag, cities, groups: groupsR, summary: summaryR, states: statesR });
     } catch (err) {
+      // Aborts are first-class — caller superseded us, not a real failure.
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED' || err?.message === 'canceled') {
+        return;
+      }
       notifyApiError(err, 'Failed to load locations');
     } finally {
       setTableLoading(false);
@@ -1061,12 +1072,17 @@ export default function NetworkPage() {
       mode:        v2Filters.mode             || 'active',
     };
     setTableFilters(prev => ({ ...prev, ...merged }));
-    // ONE call to /locations: returns rows + groups + summary + states + cities.
-    // fetchSummaryData no longer fires on filter change (it duplicated the
-    // backend work; that's now piggy-backed onto fetchTableData's response).
-    fetchTableData(merged);
+    // 250 ms debounce so a CEO clicking through four filter pills in a
+    // second only fires the LAST scan, not all four.  fetchTableData has
+    // its own AbortController; combined, the server pays for at most one
+    // request per "settled" filter state.
+    const t = setTimeout(() => fetchTableData(merged), 250);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [v2FiltersJson]);
+
+  // Abort any in-flight table request on unmount.
+  useEffect(() => () => { tableFetchRef.current?.abort(); }, []);
 
   // Table filter changes → only re-fetch table, never touch summary.
   // Critical: re-apply the v2 FilterBar values on top so a sort/page click

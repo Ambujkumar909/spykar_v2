@@ -840,9 +840,20 @@ export default function SalesAnalyticsPage() {
   const activeKeyRef = useRef(cacheKey);
   useEffect(() => { activeKeyRef.current = cacheKey; }, [cacheKey]);
 
+  // AbortController per in-flight fetch.  When the user picks another
+  // filter while a request is mid-flight we abort the stale one so the
+  // server stops chewing through a mega-CTE that's already obsolete and
+  // the connection pool isn't pinned.  The race-guard via activeKeyRef
+  // would have ignored the stale response anyway — aborting just stops
+  // paying for it.
+  const inFlightRef = useRef(null);
+
   const fetch = useCallback(async () => {
     const issuedFor = cacheKey;
     if (!getCached(issuedFor)) setLoading(true);
+    if (inFlightRef.current) inFlightRef.current.abort();
+    const ac = new AbortController();
+    inFlightRef.current = ac;
     try {
       const csv = (v) => Array.isArray(v) ? v.join(',') : (v || undefined);
       const res = await analyticsService.getSalesAnalytics({
@@ -873,7 +884,7 @@ export default function SalesAnalyticsPage() {
         // picked in the filter drawer.
         sale_mode:   v2Filters.sale_mode        || 'net',
         valuation:   v2Filters.valuation       || 'gross',
-      });
+      }, { signal: ac.signal });
       const v = res.data.data;
       // Always cache under the key this fetch was issued for, so future
       // returns to that category are instant. But only repaint `data` if the
@@ -885,6 +896,10 @@ export default function SalesAnalyticsPage() {
         setLoading(false);
       }
     } catch (err) {
+      // Aborts are first-class — caller superseded us, not a real failure.
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED' || err?.message === 'canceled') {
+        return;
+      }
       if (activeKeyRef.current === issuedFor) setLoading(false);
       notifyApiError(err, 'Failed to load sales analytics');
     }
@@ -897,11 +912,12 @@ export default function SalesAnalyticsPage() {
     //   ③ cache miss          → KEEP previous data on screen (don't blank to
     //     zeros) and show a loading overlay; new data swaps in when ready.
     //
-    // Previously this effect did `setData(cached ?? null)` unconditionally,
-    // which made every Active↔Inactive toggle paint a zero-filled hero for
-    // 2-5 s (Redis miss for the new mode = full Postgres mega-CTE scan).
-    // Holding the old payload while refetching keeps the page populated and
-    // lets the activeKeyRef race-guard ensure only the right response wins.
+    // PLUS — 250 ms debounce on the fetch trigger.  A CEO clicking through
+    // four filters in a second used to fire four mega-CTE scans; only the
+    // LAST one's result was used (race-guard), but the server still paid
+    // 4× the work and the response landed late because it was queued
+    // behind its predecessors.  Now: only the user's settled filter state
+    // hits the wire.
     const cached = getCached(cacheKey);
     if (cached) {
       setData(cached);
@@ -910,8 +926,14 @@ export default function SalesAnalyticsPage() {
     } else {
       setLoading(true);    // keep prior `data` visible under a loading flag
     }
-    fetch();
+    // Cache hits paint synchronously; only the network call itself is
+    // debounced.  If the user lands on a cached combo there is no wait.
+    const t = setTimeout(() => { fetch(); }, 250);
+    return () => clearTimeout(t);
   }, [fetch, cacheKey]);
+
+  // Abort any in-flight request when the page unmounts.
+  useEffect(() => () => { inFlightRef.current?.abort(); }, []);
 
   // Mode-toggle prefetch removed (cold-load fix #A).  Eagerly fetching the
   // other two modes via requestIdleCallback after the visible call landed
