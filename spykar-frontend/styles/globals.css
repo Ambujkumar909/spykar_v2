@@ -971,6 +971,25 @@ aside {
   --sx-rule:          rgba(255, 255, 255, 0.05);
 }
 
+/* Light-mode override for the .sx-page scoped tokens.  Without this the
+   sx-card / sx-page surfaces stay dark even when the rest of the portal
+   flips, because these tokens live on .sx-page (not :root) and don't see
+   the html.theme-light cascade unless we explicitly target them. */
+html.theme-light .sx-page {
+  --sx-border:        rgba(15, 23, 42, 0.06);
+  --sx-border-strong: rgba(15, 23, 42, 0.11);
+  --sx-shadow-card:   0 1px 2px rgba(10,11,13,0.04), 0 2px 8px rgba(10,11,13,0.04);
+  --sx-shadow-hover:  0 1px 2px rgba(10,11,13,0.06), 0 8px 24px -10px rgba(10,11,13,0.10);
+  --sx-shadow-elev:   0 1px 2px rgba(10,11,13,0.06), 0 16px 40px -16px rgba(10,11,13,0.14);
+  --sx-ink:           #0A0B0D;
+  --sx-ink-soft:      #1F2937;
+  --sx-ink-muted:     #5B6470;
+  --sx-ink-subtle:    #8A929D;
+  --sx-canvas:        #F7F8FB;
+  --sx-card-bg:       #FFFFFF;
+  --sx-rule:          rgba(15, 23, 42, 0.06);
+}
+
 .sx-page,
 .sx-page table,
 .sx-page input,
