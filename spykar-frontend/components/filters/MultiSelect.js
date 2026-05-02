@@ -64,6 +64,10 @@ export default function MultiSelect({
   placeholder = 'All',
   width = 200,
   compact = false,
+  // Optional class name applied to the portal-rendered popover.  Lets a
+  // parent (e.g. PremiumFilterBar's "lux-pop" class) re-skin the dropdown
+  // without forking the entire component.
+  popoverClassName = '',
 }) {
   const [open, setOpen]               = useState(false);
   const [search, setSearch]           = useState('');
@@ -342,6 +346,7 @@ export default function MultiSelect({
         <div
           ref={popRef}
           onKeyDown={onPopKey}
+          className={popoverClassName}
           style={{
             position: 'fixed',
             top: pos.top, left: pos.left,

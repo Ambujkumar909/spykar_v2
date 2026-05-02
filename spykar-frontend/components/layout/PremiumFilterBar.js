@@ -1,18 +1,26 @@
-// ─── SidebarFilterPanel — premium luxury filter cluster ─────────────────────
-// Lives at the bottom of the left navigation rail, mounts on hover, only on
-// /network and /sales.  This is the version after the "make it actually
-// premium" pass — every pill is embossed, every selection lights a left-edge
-// accent bar, the LENS wordmark sits in a gold-bordered chip with a shimmer
-// that sweeps every six seconds, sections are separated by a fading gold
-// hairline, and group expand cascades each child pill in with a tiny stagger.
+// ─── SidebarFilterPanel — luxury LENS cluster (rich edition) ────────────────
+// Sits at the bottom of the left navigation rail, mounts on hover, only on
+// /network and /sales.  Every dimension has its own icon, every pill is
+// embossed with a deep cushion shadow, the LENS chip glows softly behind
+// itself, and the dropdown popover is fully re-skinned via a className we
+// thread through MultiSelect (popoverClassName="lux-pop").
 //
-// Reference: Hermès digital catalogue, Bloomberg Terminal v2 boxes, Apple
-// Pro Display Settings sliders.  The goal is "this software costs more than
-// the laptop it runs on" — without leaving Spykar's brand red.
+// Design cues borrowed from:
+//   • Hermès Faubourg digital catalogue — deep felt-black surfaces, gold
+//     accent hairlines, italic display eyebrows
+//   • Bloomberg Terminal v2 boxes — tight typographic rhythm, tabular nums
+//   • Linear / Things 3 — staggered reveal, spring easings
+//   • Apple Pro Display Settings — pillows + pressed-in pills
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
-import { Sparkles, RotateCcw, ChevronDown } from 'lucide-react';
+import {
+  Sparkles, RotateCcw, ChevronDown,
+  Users, Tag, Shirt, Layers,
+  Ruler, Palette, Droplets, Brush,
+  MapPin, Building2, Store,
+  CalendarRange, Briefcase,
+} from 'lucide-react';
 import MultiSelect from '../filters/MultiSelect';
 import { filterService } from '../../lib/services';
 import { getCached, setCached, isFresh } from '../../lib/dashboardCache';
@@ -20,42 +28,45 @@ import { useSharedFilters } from '../../lib/FiltersContext';
 
 const FILTER_ROUTES = new Set(['/network', '/sales']);
 
+// Each dimension carries a tiny lucide glyph rendered to the LEFT of the
+// MultiSelect trigger.  Adds richness without clutter — a CEO scans icons
+// faster than text labels.
 const FILTER_GROUPS = [
   {
     name: 'Product',
     eyebrow: 'What it is',
     dims: [
-      { key: 'gender_name', label: 'Gender',      apiKey: 'gender'      },
-      { key: 'category',    label: 'Category',    apiKey: 'category'    },
-      { key: 'product',     label: 'Product',     apiKey: 'product'     },
-      { key: 'sub_product', label: 'Sub-product', apiKey: 'sub_product' },
+      { key: 'gender_name', label: 'Gender',      apiKey: 'gender',      Icon: Users  },
+      { key: 'category',    label: 'Category',    apiKey: 'category',    Icon: Tag    },
+      { key: 'product',     label: 'Product',     apiKey: 'product',     Icon: Shirt  },
+      { key: 'sub_product', label: 'Sub-product', apiKey: 'sub_product', Icon: Layers },
     ],
   },
   {
     name: 'Attributes',
     eyebrow: 'How it looks',
     dims: [
-      { key: 'size',  label: 'Size',   apiKey: 'size'  },
-      { key: 'color', label: 'Colour', apiKey: 'color' },
-      { key: 'shade', label: 'Shade',  apiKey: 'shade' },
-      { key: 'style', label: 'Style',  apiKey: 'style' },
+      { key: 'size',  label: 'Size',   apiKey: 'size',  Icon: Ruler    },
+      { key: 'color', label: 'Colour', apiKey: 'color', Icon: Palette  },
+      { key: 'shade', label: 'Shade',  apiKey: 'shade', Icon: Droplets },
+      { key: 'style', label: 'Style',  apiKey: 'style', Icon: Brush    },
     ],
   },
   {
     name: 'Location',
     eyebrow: 'Where it lives',
     dims: [
-      { key: 'state',      label: 'State', apiKey: 'state'      },
-      { key: 'city',       label: 'City',  apiKey: 'city'       },
-      { key: 'store_code', label: 'Store', apiKey: 'store_code' },
+      { key: 'state',      label: 'State', apiKey: 'state',      Icon: MapPin     },
+      { key: 'city',       label: 'City',  apiKey: 'city',       Icon: Building2  },
+      { key: 'store_code', label: 'Store', apiKey: 'store_code', Icon: Store      },
     ],
   },
   {
     name: 'Business',
     eyebrow: 'Who & when',
     dims: [
-      { key: 'season',     label: 'Season', apiKey: 'season'     },
-      { key: 'group_name', label: 'Party',  apiKey: 'group_name' },
+      { key: 'season',     label: 'Season', apiKey: 'season',     Icon: CalendarRange },
+      { key: 'group_name', label: 'Party',  apiKey: 'group_name', Icon: Briefcase     },
     ],
   },
 ];
@@ -105,6 +116,7 @@ export default function PremiumFilterBar({ isOpen = false }) {
   return (
     <div className={`lux${isOpen ? ' is-open' : ''}`} aria-hidden={!isOpen}>
       {isOpen && <Panel api={api} />}
+      <LuxPopoverStyles />
       <style jsx>{`
         .lux {
           display: grid;
@@ -184,8 +196,9 @@ function Panel({ api }) {
 
   return (
     <div className="lux__inner">
-      {/* ─── Wordmark — sits in a gold-bordered chip with a slow shimmer ─── */}
+      {/* ─── Crown — wordmark + ambient glow + count + reset ─── */}
       <div className="lux__crown">
+        <span className="lux__halo" aria-hidden />
         <div className="lux__mark">
           <Sparkles size={11} className="lux__mark-icon" />
           <span className="lux__mark-text">Lens</span>
@@ -221,14 +234,21 @@ function Panel({ api }) {
 
       <style jsx>{`
         .lux__inner {
+          position: relative;
           min-height: 0;
           overflow: hidden;
-          padding: 4px 4px 8px;
-          /* Top hairline that fades in from accent → transparent so the
-             panel reads as a continuation of the rail above. */
+          padding: 6px 4px 8px;
           margin-top: 8px;
-          position: relative;
+          /* Subtle vertical gradient sheen — almost imperceptible but lifts
+             the panel off the sidebar background and gives it presence. */
+          background: linear-gradient(
+            180deg,
+            rgba(225,29,46,0.04) 0%,
+            rgba(225,29,46,0.00) 22%,
+            rgba(255,255,255,0.00) 80%,
+            rgba(225,29,46,0.02) 100%);
         }
+        /* Top hairline that fades through accent red */
         .lux__inner::before {
           content: '';
           position: absolute;
@@ -237,75 +257,94 @@ function Panel({ api }) {
           background: linear-gradient(
             90deg,
             transparent 0%,
-            rgba(225,29,46,0.30) 50%,
+            rgba(225,29,46,0.34) 50%,
             transparent 100%);
-          opacity: 0.7;
         }
 
-        /* ─── Crown (wordmark + count + reset) ─── */
+        /* ─── Crown ─── */
         .lux__crown {
+          position: relative;
           display: flex;
           align-items: center;
           gap: 8px;
-          padding: 14px 6px 12px;
+          padding: 16px 6px 14px;
         }
+        /* Soft red halo behind the LENS chip — pure ambience */
+        .lux__halo {
+          position: absolute;
+          top: -10px;
+          left: -10px;
+          width: 110px;
+          height: 60px;
+          background: radial-gradient(
+            ellipse at center,
+            rgba(225,29,46,0.32) 0%,
+            rgba(225,29,46,0.08) 35%,
+            transparent 70%);
+          filter: blur(14px);
+          pointer-events: none;
+          opacity: 0.85;
+          animation: luxHaloPulse 5s ease-in-out infinite;
+        }
+        @keyframes luxHaloPulse {
+          0%, 100% { opacity: 0.85; transform: scale(1); }
+          50%      { opacity: 0.55; transform: scale(0.94); }
+        }
+
         .lux__mark {
           position: relative;
           display: inline-flex;
           align-items: center;
-          gap: 6px;
-          height: 22px;
-          padding: 0 10px 0 8px;
+          gap: 7px;
+          height: 24px;
+          padding: 0 11px 0 9px;
           border-radius: 999px;
           background: linear-gradient(
             135deg,
-            rgba(225,29,46,0.10) 0%,
-            rgba(225,29,46,0.02) 100%);
-          border: 1px solid rgba(225,29,46,0.32);
+            rgba(225,29,46,0.16) 0%,
+            rgba(225,29,46,0.04) 100%);
+          border: 1px solid rgba(225,29,46,0.40);
           box-shadow:
-            inset 0 1px 0 rgba(255,255,255,0.06),
-            0 1px 4px rgba(225,29,46,0.18);
+            inset 0 1px 0 rgba(255,255,255,0.10),
+            inset 0 -1px 0 rgba(0,0,0,0.20),
+            0 1px 6px rgba(225,29,46,0.28);
           overflow: hidden;
         }
         .lux__mark-icon {
           color: var(--accent-primary);
-          filter: drop-shadow(0 0 4px rgba(225,29,46,0.50));
+          filter: drop-shadow(0 0 6px rgba(225,29,46,0.70));
         }
         .lux__mark-text {
           font-family: var(--font-display);
-          font-size: 10px;
+          font-size: 10.5px;
           font-weight: 800;
-          letter-spacing: 0.24em;
+          letter-spacing: 0.26em;
           text-transform: uppercase;
-          color: var(--accent-primary);
-          /* No gradient text-fill on dark surfaces — washes out.  The chip
-             frame already establishes the brand, the text just needs to
-             read clearly. */
+          color: #FFFFFF;
+          text-shadow: 0 1px 2px rgba(225,29,46,0.40);
         }
-        /* Slow shimmer that sweeps across the chip every 6s — barely there
-           but unmistakably "alive". */
         .lux__shimmer {
           position: absolute;
           inset: 0;
           background: linear-gradient(
             105deg,
             transparent 30%,
-            rgba(255,255,255,0.18) 50%,
+            rgba(255,255,255,0.22) 50%,
             transparent 70%);
           transform: translateX(-100%);
-          animation: luxShimmer 6s cubic-bezier(0.4,0,0.2,1) infinite;
+          animation: luxShimmer 5.5s cubic-bezier(0.4,0,0.2,1) infinite;
           pointer-events: none;
         }
         @keyframes luxShimmer {
           0%   { transform: translateX(-100%); }
-          60%  { transform: translateX(100%); }
-          100% { transform: translateX(100%); }
+          55%  { transform: translateX(140%); }
+          100% { transform: translateX(140%); }
         }
 
         .lux__count {
-          min-width: 20px;
-          height: 20px;
-          padding: 0 6px;
+          min-width: 22px;
+          height: 22px;
+          padding: 0 7px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
@@ -313,23 +352,24 @@ function Panel({ api }) {
           background: linear-gradient(135deg, var(--accent-primary) 0%, #B91020 100%);
           color: #fff;
           font-family: var(--font-body);
-          font-size: 10px;
+          font-size: 10.5px;
           font-weight: 800;
           line-height: 1;
           font-variant-numeric: tabular-nums;
           box-shadow:
-            0 1px 4px rgba(225,29,46,0.45),
-            inset 0 1px 0 rgba(255,255,255,0.30);
+            0 2px 6px rgba(225,29,46,0.50),
+            inset 0 1px 0 rgba(255,255,255,0.30),
+            inset 0 -1px 0 rgba(0,0,0,0.16);
         }
         .lux__reset {
           margin-left: auto;
           display: inline-flex;
           align-items: center;
-          gap: 4px;
+          gap: 5px;
           height: 24px;
           padding: 0 10px;
-          background: transparent;
-          border: 1px solid var(--border-default);
+          background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.00));
+          border: 1px solid rgba(255,255,255,0.10);
           border-radius: 999px;
           color: var(--text-muted);
           font-family: var(--font-body);
@@ -338,6 +378,7 @@ function Panel({ api }) {
           letter-spacing: 0.06em;
           text-transform: uppercase;
           cursor: pointer;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
           transition:
             color 200ms cubic-bezier(0.4,0,0.2,1),
             border-color 200ms cubic-bezier(0.4,0,0.2,1),
@@ -346,8 +387,8 @@ function Panel({ api }) {
         }
         .lux__reset:hover {
           color: var(--accent-primary);
-          border-color: var(--accent-border);
-          background: var(--accent-glow);
+          border-color: rgba(225,29,46,0.45);
+          background: linear-gradient(180deg, rgba(225,29,46,0.14), rgba(225,29,46,0.04));
           transform: translateY(-1px);
         }
 
@@ -358,12 +399,15 @@ function Panel({ api }) {
           overflow-y: auto;
           overflow-x: hidden;
           scrollbar-width: thin;
-          scrollbar-color: rgba(255,255,255,0.10) transparent;
+          scrollbar-color: rgba(225,29,46,0.22) transparent;
         }
         .lux__groups::-webkit-scrollbar { width: 4px; }
         .lux__groups::-webkit-scrollbar-thumb {
-          background: rgba(255,255,255,0.10);
+          background: linear-gradient(180deg, rgba(225,29,46,0.30), rgba(225,29,46,0.14));
           border-radius: 6px;
+        }
+        .lux__groups::-webkit-scrollbar-thumb:hover {
+          background: linear-gradient(180deg, rgba(225,29,46,0.55), rgba(225,29,46,0.30));
         }
         .lux__groups::-webkit-scrollbar-track { background: transparent; }
       `}</style>
@@ -398,12 +442,16 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
           {group.dims.map((d, i) => {
             const value = filters[d.key];
             const hasValue = Array.isArray(value) ? value.length > 0 : Boolean(value);
+            const Icon = d.Icon;
             return (
               <div
                 key={d.key}
                 className={`pill${hasValue ? ' is-active' : ''}`}
-                style={{ '--stagger': `${i * 28}ms` }}
+                style={{ '--stagger': `${i * 32}ms` }}
               >
+                <span className="pill__icon" aria-hidden>
+                  <Icon size={12} strokeWidth={2} />
+                </span>
                 <MultiSelect
                   label={d.label}
                   options={optionsByDim[d.apiKey] || []}
@@ -412,6 +460,7 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
                   loading={loading && !optionsByDim[d.apiKey]}
                   placeholder="—"
                   compact
+                  popoverClassName="lux-pop"
                 />
               </div>
             );
@@ -420,33 +469,27 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
       </div>
 
       <style jsx>{`
-        /* ─── Group container ─── */
-        .grp {
-          padding: 2px 0;
-          position: relative;
-        }
-        /* Fading gold hairline between sections instead of a solid border */
+        .grp { padding: 2px 0; position: relative; }
         .grp:not(:last-child)::after {
           content: '';
           position: absolute;
-          left: 12px; right: 12px; bottom: 0;
+          left: 14px; right: 14px; bottom: 0;
           height: 1px;
           background: linear-gradient(
             90deg,
             transparent 0%,
-            rgba(225,29,46,0.16) 22%,
-            rgba(255,255,255,0.04) 50%,
-            rgba(225,29,46,0.16) 78%,
+            rgba(225,29,46,0.18) 28%,
+            rgba(255,255,255,0.06) 50%,
+            rgba(225,29,46,0.18) 72%,
             transparent 100%);
         }
 
-        /* ─── Section header ─── */
         .grp__head {
           width: 100%;
           display: flex;
           align-items: center;
           gap: 8px;
-          padding: 12px 6px 10px;
+          padding: 14px 6px 12px;
           background: transparent;
           border: none;
           cursor: pointer;
@@ -459,14 +502,14 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
           display: flex;
           flex-direction: column;
           align-items: flex-start;
-          gap: 2px;
+          gap: 3px;
           min-width: 0;
         }
         .grp__title {
           font-family: var(--font-body);
           font-size: 10px;
           font-weight: 800;
-          letter-spacing: 0.20em;
+          letter-spacing: 0.22em;
           text-transform: uppercase;
           line-height: 1;
         }
@@ -481,19 +524,22 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
         }
         .grp__badge {
           margin-left: auto;
-          min-width: 16px;
-          height: 16px;
-          padding: 0 5px;
+          min-width: 18px;
+          height: 18px;
+          padding: 0 6px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          background: var(--accent-glow);
+          background: linear-gradient(135deg, rgba(225,29,46,0.18), rgba(225,29,46,0.06));
           color: var(--accent-primary);
-          border: 1px solid var(--accent-border);
+          border: 1px solid rgba(225,29,46,0.45);
           border-radius: 999px;
-          font-size: 9px;
+          font-size: 9.5px;
           font-weight: 800;
           line-height: 1;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.04),
+            0 1px 3px rgba(225,29,46,0.20);
         }
         .grp__caret {
           margin-left: ${groupActive > 0 ? '6px' : 'auto'};
@@ -511,7 +557,6 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
           color: var(--accent-primary);
         }
 
-        /* ─── Group body — collapsible ─── */
         .grp__body {
           display: grid;
           grid-template-rows: 0fr;
@@ -521,13 +566,16 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
         .grp__body-inner {
           min-height: 0;
           overflow: hidden;
-          padding-bottom: 10px;
+          padding-bottom: 12px;
         }
 
-        /* ─── Pill (each MultiSelect) ─── */
+        /* ─── Pill: row that wraps the trigger button + the dimension icon ── */
         .pill {
           position: relative;
-          padding: 3px 4px 6px;
+          display: flex;
+          align-items: center;
+          gap: 0;
+          padding: 4px 4px 7px;
           opacity: 0;
           transform: translateY(-4px);
           transition:
@@ -538,16 +586,18 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
           opacity: 1;
           transform: translateY(0);
         }
-        /* Left accent bar — only when this dimension has a value */
+        /* Left accent bar — only when the dimension has a value */
         .pill::before {
           content: '';
           position: absolute;
-          left: 0;
-          top: 9px; bottom: 12px;
+          left: -2px;
+          top: 11px; bottom: 14px;
           width: 2px;
-          border-radius: 2px;
+          border-radius: 0 2px 2px 0;
           background: linear-gradient(180deg, var(--accent-primary), #B91020);
-          box-shadow: 0 0 8px rgba(225,29,46,0.45);
+          box-shadow:
+            0 0 10px rgba(225,29,46,0.55),
+            0 0 2px rgba(225,29,46,0.85);
           opacity: 0;
           transform: scaleY(0.4);
           transform-origin: center;
@@ -560,23 +610,63 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
           transform: scaleY(1);
         }
 
+        /* Dimension icon — sits in a small embossed circle to the left of
+           the trigger.  Brightens when the pill is active, the same way the
+           accent bar lights up. */
+        .pill__icon {
+          flex-shrink: 0;
+          width: 22px; height: 22px;
+          margin-right: 7px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--text-disabled);
+          background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.00));
+          border: 1px solid rgba(255,255,255,0.05);
+          border-radius: 7px;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.04),
+            0 1px 2px rgba(0,0,0,0.30);
+          transition:
+            color 220ms cubic-bezier(0.4,0,0.2,1),
+            border-color 220ms cubic-bezier(0.4,0,0.2,1),
+            box-shadow 220ms cubic-bezier(0.4,0,0.2,1);
+        }
+        .pill.is-active .pill__icon {
+          color: var(--accent-primary);
+          border-color: rgba(225,29,46,0.40);
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.06),
+            0 1px 2px rgba(0,0,0,0.30),
+            0 0 10px rgba(225,29,46,0.30);
+        }
+        .pill:hover .pill__icon {
+          color: var(--text-secondary);
+          border-color: rgba(255,255,255,0.10);
+        }
+
         /* ─── Embossed MultiSelect button — overrides MultiSelect's inline
-             styles via :global + !important ───────────────────────────── */
+             styles via :global + !important.  Deeper cushion shadow than v1
+             so it really reads as a pressed-in pill. ─────────────────── */
         .pill :global(button) {
+          flex: 1;
           width: 100% !important;
           max-width: none !important;
           min-width: 0 !important;
-          height: 36px !important;
+          height: 38px !important;
           padding: 0 12px !important;
           background: linear-gradient(
             180deg,
-            rgba(255,255,255,0.04) 0%,
-            rgba(255,255,255,0.015) 100%) !important;
-          border: 1px solid rgba(255,255,255,0.06) !important;
-          border-radius: 10px !important;
+            rgba(255,255,255,0.05) 0%,
+            rgba(255,255,255,0.01) 60%,
+            rgba(0,0,0,0.10) 100%) !important;
+          border: 1px solid rgba(255,255,255,0.07) !important;
+          border-radius: 11px !important;
           box-shadow:
-            inset 0 1px 0 rgba(255,255,255,0.04),
-            0 1px 2px rgba(0,0,0,0.30) !important;
+            inset 0 1px 0 rgba(255,255,255,0.06),
+            inset 0 -1px 0 rgba(0,0,0,0.20),
+            0 2px 4px rgba(0,0,0,0.36),
+            0 1px 1px rgba(0,0,0,0.20) !important;
           transition:
             transform 220ms cubic-bezier(0.16,1,0.3,1),
             border-color 220ms cubic-bezier(0.4,0,0.2,1),
@@ -584,57 +674,237 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
         }
         .pill :global(button:hover) {
           transform: translateY(-1px) !important;
-          border-color: rgba(225,29,46,0.32) !important;
+          border-color: rgba(225,29,46,0.36) !important;
           box-shadow:
-            inset 0 1px 0 rgba(255,255,255,0.06),
-            0 4px 14px rgba(0,0,0,0.45),
-            0 0 0 1px rgba(225,29,46,0.10) !important;
+            inset 0 1px 0 rgba(255,255,255,0.10),
+            inset 0 -1px 0 rgba(0,0,0,0.16),
+            0 6px 18px rgba(0,0,0,0.46),
+            0 0 0 1px rgba(225,29,46,0.14),
+            0 0 24px rgba(225,29,46,0.08) !important;
         }
         .pill.is-active :global(button) {
           background: linear-gradient(
             180deg,
-            rgba(225,29,46,0.10) 0%,
-            rgba(225,29,46,0.03) 100%) !important;
-          border-color: rgba(225,29,46,0.28) !important;
-          box-shadow:
-            inset 0 1px 0 rgba(255,255,255,0.06),
-            0 1px 2px rgba(0,0,0,0.30),
-            0 0 0 1px rgba(225,29,46,0.10) !important;
-        }
-        .pill.is-active :global(button:hover) {
-          border-color: rgba(225,29,46,0.45) !important;
+            rgba(225,29,46,0.14) 0%,
+            rgba(225,29,46,0.04) 70%,
+            rgba(0,0,0,0.10) 100%) !important;
+          border-color: rgba(225,29,46,0.32) !important;
           box-shadow:
             inset 0 1px 0 rgba(255,255,255,0.08),
-            0 4px 14px rgba(225,29,46,0.20),
-            0 0 0 1px rgba(225,29,46,0.18) !important;
+            inset 0 -1px 0 rgba(0,0,0,0.20),
+            0 2px 4px rgba(0,0,0,0.36),
+            0 0 0 1px rgba(225,29,46,0.14),
+            0 0 18px rgba(225,29,46,0.16) !important;
+        }
+        .pill.is-active :global(button:hover) {
+          border-color: rgba(225,29,46,0.50) !important;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.10),
+            inset 0 -1px 0 rgba(0,0,0,0.16),
+            0 6px 18px rgba(225,29,46,0.26),
+            0 0 0 1px rgba(225,29,46,0.22),
+            0 0 28px rgba(225,29,46,0.18) !important;
         }
 
-        /* Light-mode override — flip surface + shadows */
+        /* Light-mode parity */
         :global(html.theme-light) .pill :global(button) {
           background: linear-gradient(
             180deg,
-            rgba(255,255,255,0.92) 0%,
-            rgba(248,250,252,0.78) 100%) !important;
-          border: 1px solid rgba(15,23,42,0.08) !important;
+            rgba(255,255,255,1) 0%,
+            rgba(248,250,252,0.86) 100%) !important;
+          border: 1px solid rgba(15,23,42,0.10) !important;
           box-shadow:
-            inset 0 1px 0 rgba(255,255,255,0.80),
-            0 1px 2px rgba(15,23,42,0.06) !important;
+            inset 0 1px 0 rgba(255,255,255,0.92),
+            0 1px 2px rgba(15,23,42,0.06),
+            0 2px 6px rgba(15,23,42,0.04) !important;
         }
         :global(html.theme-light) .pill :global(button:hover) {
-          border-color: rgba(225,29,46,0.30) !important;
+          border-color: rgba(225,29,46,0.32) !important;
           box-shadow:
-            inset 0 1px 0 rgba(255,255,255,0.90),
-            0 4px 14px rgba(15,23,42,0.10),
-            0 0 0 1px rgba(225,29,46,0.10) !important;
+            inset 0 1px 0 rgba(255,255,255,1),
+            0 6px 18px rgba(15,23,42,0.12),
+            0 0 0 1px rgba(225,29,46,0.12) !important;
         }
         :global(html.theme-light) .pill.is-active :global(button) {
           background: linear-gradient(
             180deg,
             rgba(255,255,255,1) 0%,
             rgba(254,242,243,0.96) 100%) !important;
-          border-color: rgba(225,29,46,0.35) !important;
+          border-color: rgba(225,29,46,0.40) !important;
+        }
+        :global(html.theme-light) .pill__icon {
+          background: linear-gradient(180deg, rgba(255,255,255,1), rgba(248,250,252,0.92));
+          border: 1px solid rgba(15,23,42,0.10);
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.92),
+            0 1px 2px rgba(15,23,42,0.06);
+          color: var(--text-muted);
         }
       `}</style>
     </div>
+  );
+}
+
+// ─── Luxury popover styles — applied globally via the lux-pop class threaded
+// through MultiSelect's popoverClassName prop.  Kept in a sibling component
+// so the rules stay loaded even between mounts of the panel. ────────────────
+function LuxPopoverStyles() {
+  return (
+    <style jsx global>{`
+      .lux-pop {
+        background:
+          radial-gradient(
+            ellipse at top right,
+            rgba(225,29,46,0.10) 0%,
+            transparent 55%),
+          linear-gradient(
+            180deg,
+            rgba(18,22,36,0.96) 0%,
+            rgba(11,16,32,0.94) 100%) !important;
+        border: 1px solid rgba(225,29,46,0.22) !important;
+        border-radius: 14px !important;
+        box-shadow:
+          0 24px 64px rgba(0,0,0,0.64),
+          0 0 0 1px rgba(0,0,0,0.30),
+          inset 0 1px 0 rgba(255,255,255,0.04),
+          0 0 32px rgba(225,29,46,0.12) !important;
+        padding: 10px !important;
+      }
+      html.theme-light .lux-pop {
+        background:
+          radial-gradient(
+            ellipse at top right,
+            rgba(225,29,46,0.06) 0%,
+            transparent 55%),
+          linear-gradient(
+            180deg,
+            rgba(255,255,255,0.98) 0%,
+            rgba(250,250,253,0.96) 100%) !important;
+        border: 1px solid rgba(225,29,46,0.20) !important;
+        box-shadow:
+          0 24px 64px rgba(15,23,42,0.18),
+          0 0 0 1px rgba(15,23,42,0.04),
+          inset 0 1px 0 rgba(255,255,255,1),
+          0 0 32px rgba(225,29,46,0.08) !important;
+      }
+
+      /* Search input — pearl-bezel with focus ring */
+      .lux-pop input[type="text"],
+      .lux-pop input:not([type]) {
+        background: rgba(255,255,255,0.04) !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        border-radius: 9px !important;
+        color: var(--text-primary) !important;
+        font-family: var(--font-body) !important;
+        font-size: 12px !important;
+        font-weight: 500 !important;
+        letter-spacing: 0.01em !important;
+        box-shadow: inset 0 1px 0 rgba(0,0,0,0.20) !important;
+        transition: border-color 200ms, box-shadow 200ms !important;
+      }
+      .lux-pop input:focus {
+        outline: none !important;
+        border-color: rgba(225,29,46,0.45) !important;
+        box-shadow:
+          inset 0 1px 0 rgba(0,0,0,0.20),
+          0 0 0 3px rgba(225,29,46,0.18) !important;
+      }
+      html.theme-light .lux-pop input[type="text"],
+      html.theme-light .lux-pop input:not([type]) {
+        background: rgba(15,23,42,0.04) !important;
+        border-color: rgba(15,23,42,0.10) !important;
+        box-shadow: inset 0 1px 0 rgba(15,23,42,0.04) !important;
+      }
+      html.theme-light .lux-pop input:focus {
+        border-color: rgba(225,29,46,0.50) !important;
+        box-shadow:
+          inset 0 1px 0 rgba(15,23,42,0.04),
+          0 0 0 3px rgba(225,29,46,0.16) !important;
+      }
+
+      /* Branded checkboxes — replace MultiSelect's plain circles with
+         pill-radius squares that fill with brand-red gradient when checked.
+         MultiSelect renders them as inline-styled <span> elements, so we
+         target them with attribute / structural selectors. */
+      .lux-pop [role="option"] > span:first-child,
+      .lux-pop label > span:first-child {
+        border-radius: 6px !important;
+        border: 1.5px solid rgba(255,255,255,0.18) !important;
+        background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.04)) !important;
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,0.04),
+          0 1px 2px rgba(0,0,0,0.30) !important;
+        transition:
+          background 200ms cubic-bezier(0.4,0,0.2,1),
+          border-color 200ms cubic-bezier(0.4,0,0.2,1),
+          box-shadow 200ms cubic-bezier(0.4,0,0.2,1) !important;
+      }
+      /* Checked state — selected option has aria-selected="true" or has a
+         fill colour set inline by MultiSelect. */
+      .lux-pop [aria-selected="true"] > span:first-child,
+      .lux-pop [role="option"][data-selected="true"] > span:first-child {
+        background: linear-gradient(135deg, var(--accent-primary), #B91020) !important;
+        border-color: rgba(225,29,46,0.95) !important;
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,0.30),
+          0 0 0 2px rgba(225,29,46,0.18),
+          0 2px 6px rgba(225,29,46,0.45) !important;
+      }
+      html.theme-light .lux-pop [role="option"] > span:first-child,
+      html.theme-light .lux-pop label > span:first-child {
+        border-color: rgba(15,23,42,0.20) !important;
+        background: rgba(255,255,255,1) !important;
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,1),
+          0 1px 2px rgba(15,23,42,0.06) !important;
+      }
+
+      /* Option rows — gentle hover wash + selected accent tint */
+      .lux-pop [role="option"]:hover,
+      .lux-pop label:hover {
+        background: rgba(225,29,46,0.08) !important;
+        border-radius: 8px !important;
+      }
+      .lux-pop [aria-selected="true"] {
+        background: linear-gradient(
+          90deg,
+          rgba(225,29,46,0.12) 0%,
+          rgba(225,29,46,0.04) 100%) !important;
+        border-radius: 8px !important;
+      }
+
+      /* "All" / "Select all" toggle at the top — re-skin to a luxury chip */
+      .lux-pop button[type="button"] {
+        background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02)) !important;
+        border: 1px solid rgba(255,255,255,0.10) !important;
+        border-radius: 9px !important;
+        font-family: var(--font-body) !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.04em !important;
+        text-transform: uppercase !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.06) !important;
+      }
+      .lux-pop button[type="button"]:hover {
+        border-color: rgba(225,29,46,0.40) !important;
+        background: linear-gradient(180deg, rgba(225,29,46,0.16), rgba(225,29,46,0.04)) !important;
+        color: var(--accent-primary) !important;
+      }
+      html.theme-light .lux-pop button[type="button"] {
+        background: rgba(255,255,255,1) !important;
+        border-color: rgba(15,23,42,0.10) !important;
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,1),
+          0 1px 2px rgba(15,23,42,0.06) !important;
+      }
+
+      /* Custom scrollbar inside the popover list */
+      .lux-pop ::-webkit-scrollbar { width: 5px; height: 5px; }
+      .lux-pop ::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(225,29,46,0.40), rgba(225,29,46,0.16));
+        border-radius: 6px;
+      }
+      .lux-pop ::-webkit-scrollbar-track { background: transparent; }
+    `}</style>
   );
 }
