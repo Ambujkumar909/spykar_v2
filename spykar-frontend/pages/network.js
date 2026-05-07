@@ -8,13 +8,15 @@ import PremiumKpi from '../components/ui/PremiumKpi';
 import NetworkPulse from '../components/network/NetworkPulse';
 import { useFilters } from '../lib/useFilters';
 import { locationService, analyticsService } from '../lib/services';
+import { useAlerts } from '../lib/useAlerts';
 import { getCached, setCached, isFresh } from '../lib/dashboardCache';
 import toast from 'react-hot-toast';
 import { notifyApiError } from '../lib/notifyApiError';
 import {
   Globe, Package, MapPin, PieChart, BarChart2, IndianRupee,
   RefreshCw, TrendingUp, Layers, Activity, Skull, AlertTriangle, Zap, Target,
-  Building2, Calendar, Sparkles,
+  Building2, Calendar, Sparkles, XCircle, PackageMinus, ShieldAlert,
+  ChevronRight, AlertCircle, Heart,
 } from 'lucide-react';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
@@ -140,6 +142,11 @@ function ChannelBreakdownSection({ groups, loading }) {
   const rows = useMemo(() => {
     return [...(groups || [])].sort((a, b) => Number(b.stock || 0) - Number(a.stock || 0));
   }, [groups]);
+  // SWR: only show shimmer rows on the cold load (no prior data). On
+  // subsequent refetches keep the populated rows visible — a subtle
+  // dim signals "refreshing" without the chart blanking and snapping back.
+  const isCold = loading && rows.length === 0;
+  const isRefreshing = loading && rows.length > 0;
 
   const totalStock = rows.reduce((s, r) => s + Number(r.stock || 0), 0);
   const maxStock   = rows[0] ? Number(rows[0].stock || 0) : 1;
@@ -150,12 +157,12 @@ function ChannelBreakdownSection({ groups, loading }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <PieChart size={13} color={T.primary} strokeWidth={2.2} />
           <span style={{ fontSize: 11, fontWeight: 800, color: T.primary, letterSpacing: '0.10em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Channel Breakdown</span>
-          {!loading && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#EF4444', borderRadius: 100, padding: '2px 7px' }}>{rows.length}</span>}
+          {rows.length > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#EF4444', borderRadius: 100, padding: '2px 7px' }}>{rows.length}</span>}
         </div>
         <span style={{ fontSize: 10, fontWeight: 700, color: T.muted }}>Sorted by highest stock</span>
       </div>
 
-      <div style={{ overflowY: 'auto', maxHeight: 420 }}>
+      <div style={{ overflowY: 'auto', maxHeight: 420, opacity: isRefreshing ? 0.6 : 1, transition: 'opacity 200ms ease' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
             <tr style={{ background: 'var(--bg-card-hover)' }}>
@@ -165,7 +172,7 @@ function ChannelBreakdownSection({ groups, loading }) {
             </tr>
           </thead>
           <tbody>
-            {loading
+            {isCold
               ? Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i}><td colSpan={7} style={{ padding: '9px 14px' }}><div className="sx-shimmer" style={{ height: 13, borderRadius: 4 }} /></td></tr>
                 ))
@@ -212,7 +219,7 @@ function ChannelBreakdownSection({ groups, loading }) {
         </table>
       </div>
 
-      {!loading && rows.length > 0 && (
+      {rows.length > 0 && (
         <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.border}`, background: 'var(--bg-card-hover)' }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: T.muted }}>
             <strong style={{ color: T.primary }}>{rows.length}</strong> channels · Total stock: <strong style={{ color: T.primary }}>{fmtL(totalStock)}</strong> units
@@ -423,10 +430,18 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
   const [showColor, setShowColor] = useState(10);
   const [showSize,  setShowSize]  = useState(10);
 
-  // Data
-  const [colorData, setColorData] = useState([]);
-  const [sizeData,  setSizeData]  = useState([]);
-  const [loading,   setLoading]   = useState(false);
+  // Data — hydrate from module cache so re-mount / re-visit paints synchronously.
+  const [colorData, setColorData] = useState(() => getCached('net:bd:color') ?? []);
+  const [sizeData,  setSizeData]  = useState(() => getCached('net:bd:size')  ?? []);
+  // `loading` is the COLD-load flag: only true when there is no prior data
+  // to show. Subsequent refetches keep the existing chart on screen (SWR) so
+  // the user never sees the chart blank out and snap back. A subtle
+  // `refreshing` flag drives an opacity dim only.
+  const [loading,    setLoading]    = useState(() => !getCached('net:bd:color'));
+  const [refreshing, setRefreshing] = useState(false);
+  // AbortController + activeKey ref — supersede stale fetches.
+  const abortRef    = useRef(null);
+  const activeKeyRef = useRef('');
 
   // Build v2 query params from the universal filter bar — these are AND-ed
   // with the section's own dropdowns so picking "Mens" globally + "Pune"
@@ -447,30 +462,79 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
   }), [JSON.stringify(v2Filters)]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchBreakdown = useCallback(async (state, city, category, v2) => {
-    setLoading(true);
+    const params = {
+      state:    state    || csv(v2Filters.state) || undefined,
+      city:     city     || csv(v2Filters.city)  || undefined,
+      category: category || csv(v2Filters.category) || undefined,
+      ...v2,
+    };
+    // Stable cache key per filter combo — re-visiting a previously seen
+    // combo paints synchronously from cache and we skip the network call.
+    const key = `net:bd:v2:${JSON.stringify(params)}`;
+    activeKeyRef.current = key;
+
+    const cached = getCached(key);
+    if (cached) {
+      setColorData(cached.color);
+      setSizeData(cached.size);
+      setCityOpts(cached.cities);
+      setLoading(false);
+      if (isFresh(key)) return; // fresh hit → no refetch
+      // stale cached entry → background revalidate, KEEP UI populated
+    }
+
+    // SWR: don't blank to skeleton if we already have prior data on screen.
+    if (!cached && colorData.length === 0) setLoading(true);
+    setRefreshing(true);
+
+    if (abortRef.current) abortRef.current.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+
     try {
-      const params = {
-        state:    state    || csv(v2Filters.state) || undefined,
-        city:     city     || csv(v2Filters.city)  || undefined,
-        category: category || csv(v2Filters.category) || undefined,
-        ...v2,
-      };
       // locationService.list doesn't understand category — strip it for city opts
       const locParams = { state: params.state, city: params.city, limit: 1 };
       const [colorRes, sizeRes, locRes] = await Promise.all([
-        analyticsService.getColorDistribution(params),
-        analyticsService.getSizeDistribution(params),
-        locationService.list(locParams), // just for city options
+        analyticsService.getColorDistribution(params, { signal: ac.signal }),
+        analyticsService.getSizeDistribution(params,  { signal: ac.signal }),
+        locationService.list(locParams,               { signal: ac.signal }),
       ]);
-      setColorData(colorRes.data.data || []);
-      setSizeData(sizeRes.data.data   || []);
-      setCityOpts(locRes.data.cities  || []);
-    } catch { /* silent */ }
-    finally { setLoading(false); }
+      // Race-guard: bail if a newer filter combo has been requested since.
+      if (activeKeyRef.current !== key) return;
+      const color  = colorRes.data.data || [];
+      const size   = sizeRes.data.data  || [];
+      const cities = locRes.data.cities || [];
+      setColorData(color);
+      setSizeData(size);
+      setCityOpts(cities);
+      // Persist for instant repaint on next mount / filter revisit.
+      setCached(key, { color, size, cities });
+      setCached('net:bd:color', color);
+      setCached('net:bd:size',  size);
+    } catch (err) {
+      // Aborts are first-class — superseded by a newer fetch, not a real failure.
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED' || err?.message === 'canceled') return;
+      /* silent on real errors — keep prior data on screen */
+    } finally {
+      if (activeKeyRef.current === key) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(v2Filters)]);
+  }, [JSON.stringify(v2Filters), colorData.length]);
 
-  useEffect(() => { fetchBreakdown(filterState, filterCity, filterCategory, v2Params); }, [filterState, filterCity, filterCategory, v2Params, fetchBreakdown]);
+  // 250ms debounce — rapid multi-select clicks coalesce into ONE fetch.
+  // Without this a user clicking 4 chips in a second fires 4 mega-CTE
+  // scans; only the last response is used (race-guard) but the server
+  // pays for all four and the final response lands queued behind them.
+  useEffect(() => {
+    const t = setTimeout(() => fetchBreakdown(filterState, filterCity, filterCategory, v2Params), 250);
+    return () => clearTimeout(t);
+  }, [filterState, filterCity, filterCategory, v2Params, fetchBreakdown]);
+
+  // Cancel any in-flight request when this section unmounts.
+  useEffect(() => () => { abortRef.current?.abort(); }, []);
 
   // Sliced rows for each chart
   const colorRows = useMemo(() =>
@@ -568,7 +632,7 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
           <div style={hdrStyle}>
             <PieChart size={13} color='#2563EB' strokeWidth={2.5} />
             <span style={ttlStyle}>Stock by Colour</span>
-            {!loading && colorData.length > 0 &&
+            {colorData.length > 0 &&
               <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#2563EB', borderRadius: 100, padding: '2px 7px' }}>{colorData.length}</span>
             }
             <div style={{ flex: 1 }} />
@@ -581,12 +645,17 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
               <ChevronIcon />
             </div>
           </div>
-          <div style={{ padding: '12px 16px 8px' }}>
-            {loading
+          <div style={{ padding: '12px 16px 8px', position: 'relative' }}>
+            {/* Cold load (no data yet) → skeleton. Subsequent refetches keep
+                the existing chart visible with a subtle dim so the user
+                never sees the chart disappear and snap back. */}
+            {loading && colorRows.length === 0
               ? <div style={{ height: Math.max(180, skeletonH), background: T.bg, borderRadius: 8 }} />
               : colorRows.length === 0
                 ? <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: T.muted }}>No colour data</div>
-                : <Chart options={colorChart.options} series={colorChart.series} type="bar" height={colorH} />
+                : <div style={{ opacity: refreshing ? 0.55 : 1, transition: 'opacity 200ms ease' }}>
+                    <Chart options={colorChart.options} series={colorChart.series} type="bar" height={colorH} />
+                  </div>
             }
           </div>
         </div>
@@ -596,7 +665,7 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
           <div style={hdrStyle}>
             <Activity size={13} color='#059669' strokeWidth={2.5} />
             <span style={ttlStyle}>Stock by Size</span>
-            {!loading && sizeData.length > 0 &&
+            {sizeData.length > 0 &&
               <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#059669', borderRadius: 100, padding: '2px 7px' }}>{sizeData.length}</span>
             }
             <div style={{ flex: 1 }} />
@@ -609,12 +678,14 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
               <ChevronIcon />
             </div>
           </div>
-          <div style={{ padding: '12px 16px 8px' }}>
-            {loading
+          <div style={{ padding: '12px 16px 8px', position: 'relative' }}>
+            {loading && sizeRows.length === 0
               ? <div style={{ height: Math.max(180, skeletonH), background: T.bg, borderRadius: 8 }} />
               : sizeRows.length === 0
                 ? <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: T.muted }}>No size data</div>
-                : <Chart options={sizeChart.options} series={sizeChart.series} type="bar" height={sizeH} />
+                : <div style={{ opacity: refreshing ? 0.55 : 1, transition: 'opacity 200ms ease' }}>
+                    <Chart options={sizeChart.options} series={sizeChart.series} type="bar" height={sizeH} />
+                  </div>
             }
           </div>
         </div>
@@ -760,8 +831,9 @@ function AllLocationsTable({
         )}
       </div>
 
-      {/* Table */}
-      <div style={{ overflowX: 'auto' }}>
+      {/* Table — SWR: existing rows stay visible during refetch with a
+          subtle dim. Skeleton only on cold load (no rows yet). */}
+      <div style={{ overflowX: 'auto', opacity: loading && locations.length > 0 ? 0.6 : 1, transition: 'opacity 200ms ease' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: 'var(--bg-card-hover)' }}>
@@ -771,7 +843,7 @@ function AllLocationsTable({
             </tr>
           </thead>
           <tbody>
-            {loading
+            {loading && locations.length === 0
               ? Array.from({ length: 12 }).map((_, i) => (
                   <tr key={i}><td colSpan={8} style={{ padding: '10px 14px' }}><div style={{ height: 14, background: T.bg, borderRadius: 4 }} /></td></tr>
                 ))
@@ -827,8 +899,9 @@ function AllLocationsTable({
         </table>
       </div>
 
-      {/* Pagination footer */}
-      {!loading && totalRecords > 0 && (
+      {/* Pagination footer — keep visible during refetch (SWR) so the user
+          doesn't watch the page chrome jitter on every filter click. */}
+      {totalRecords > 0 && (
         <div style={{ padding: '12px 18px', borderTop: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: T.bg, flexWrap: 'wrap', gap: 10 }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: T.muted }}>
             Showing <strong style={{ color: T.primary }}>{globalOffset + 1}–{Math.min(globalOffset + locations.length, totalRecords)}</strong> of <strong style={{ color: T.primary }}>{fmtNum(totalRecords)}</strong> locations
@@ -1154,18 +1227,21 @@ export default function NetworkPage() {
           one click away regardless of sidebar state. */}
       <div style={{
         display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12,
-        padding: '14px 24px 0',
+        padding: '8px 24px 6px',
       }}>
+        <div style={{ flex: 1 }} />
         <ModePill
           mode={v2Filters.mode || 'active'}
           onChange={(m) => setV2('mode', m)}
         />
       </div>
-      <FilterChips
-        filters={v2Filters}
-        setFilter={setV2}
-        clearAll={clearV2}
-      />
+      <div style={{ marginTop: 28 }}>
+        <FilterChips
+          filters={v2Filters}
+          setFilter={setV2}
+          clearAll={clearV2}
+        />
+      </div>
 
       {/* ── Network Pulse — god-tier hero section ──
           Hero KPI strip with current-status splits · Pareto reveal ·
@@ -1202,6 +1278,13 @@ export default function NetworkPage() {
       {/* ── Colour & Size Stock Distribution — narrows with v2 filter bar ── */}
       <StockBreakdownSection stateOptions={stateOptions} v2Filters={v2Filters} />
 
+      {/* ── Stock Health · Out-of-Stock / Reorder / Low Stock ──
+          Uses the deduped useAlerts() hook (60s TTL, no extra request).
+          Filters client-side based on v2Filters so no new API call when the
+          user changes filters. Renders as 3 severity cards + critical drill
+          list, matching the dashboard's NeedsAttention pattern. ─────────────*/}
+      <NetworkStockHealth v2Filters={v2Filters} />
+
       {/* ── All Locations Table ── */}
       {/* Anchor lives on a wrapping div so the smooth-scroll target is
           stable even if the table conditionally renders during refetch. */}
@@ -1226,5 +1309,268 @@ export default function NetworkPage() {
       </div>{/* /.sx-page */}
     </DashboardLayout>
     </FiltersProvider>
+  );
+}
+
+// ─── NetworkStockHealth — out-of-stock / reorder / low-stock panel ───────────
+// Latency: zero extra network calls. Reuses useAlerts() (module-level cache,
+// 60s TTL, single in-flight request shared across consumers — see
+// lib/useAlerts.js). v2Filters narrow the alerts client-side via useMemo, so
+// changing a filter never refetches.
+function NetworkStockHealth({ v2Filters = {} }) {
+  // Top-N picker for the critical drill list. Pure client-side slicing on the
+  // already-loaded alerts array — no extra fetch, no DB hit, sub-millisecond
+  // re-render even at N=200. Persisted so leadership doesn't lose the choice.
+  const [topN, setTopN] = useState(() => {
+    if (typeof window === 'undefined') return 10;
+    const saved = parseInt(localStorage.getItem('networkStockHealthTopN'), 10);
+    return [10, 20, 50, 200].includes(saved) ? saved : 10;
+  });
+  useEffect(() => {
+    if (typeof window !== 'undefined') localStorage.setItem('networkStockHealthTopN', String(topN));
+  }, [topN]);
+
+  // Mode (Active / Inactive / All) is wired to the page-level ModePill at the
+  // top right of the page (drives v2Filters.mode). One source of truth — when
+  // the user flips the pill there, this panel re-keys useAlerts() and either
+  // hits the per-mode Redis cache (sub-50ms response) or fires a fresh fetch.
+  // No localStorage / no in-panel toggle / no double state.
+  const mode = ['active', 'inactive', 'all'].includes(v2Filters.mode) ? v2Filters.mode : 'active';
+
+  const { alerts, summary, loading } = useAlerts({ mode });
+
+  // Normalise filter values to lowercase sets for cheap matching.
+  const filterSet = useMemo(() => {
+    const toSet = (v) => {
+      if (!v) return null;
+      const arr = Array.isArray(v) ? v : String(v).split(',');
+      const trimmed = arr.map(x => String(x).trim().toLowerCase()).filter(Boolean);
+      return trimmed.length ? new Set(trimmed) : null;
+    };
+    return {
+      state:      toSet(v2Filters.state),
+      city:       toSet(v2Filters.city),
+      group_name: toSet(v2Filters.group_name),
+      color:      toSet(v2Filters.color),
+      size:       toSet(v2Filters.size),
+    };
+  }, [v2Filters]);
+
+  const hasActiveFilter = !!(filterSet.state || filterSet.city || filterSet.group_name || filterSet.color || filterSet.size);
+
+  // Two passes:
+  //   • headline counts → use TRUE network summary when no filter is active
+  //     (authoritative, not capped by detail-row LIMIT)
+  //   • drill-list + filtered counts → derive from `alerts` rows because
+  //     summary is unfiltered. When filters narrow the scope, the cards
+  //     show the filtered-row count and a hint that we're looking at a
+  //     sample.
+  // Bucketize once per (alerts × filterSet). Slicing to topN happens in a
+  // separate memo so changing the Top-N picker is O(N), not O(alerts.length).
+  const filteredBuckets = useMemo(() => {
+    const oosArr = [], reorderArr = [], lowArr = [];
+    for (const a of alerts) {
+      if (filterSet.state      && !filterSet.state.has((a.state || '').toLowerCase()))           continue;
+      if (filterSet.city       && !filterSet.city.has((a.city || '').toLowerCase()))             continue;
+      if (filterSet.group_name && !filterSet.group_name.has((a.location_type || '').toLowerCase())) continue;
+      if (filterSet.color      && !filterSet.color.has((a.color_name || '').toLowerCase()))      continue;
+      if (filterSet.size       && !filterSet.size.has(String(a.size || '').toLowerCase()))       continue;
+      if (a.alert_level === 'OUT_OF_STOCK')      oosArr.push(a);
+      else if (a.alert_level === 'REORDER_NOW')  reorderArr.push(a);
+      else                                        lowArr.push(a);
+    }
+    // Pre-rank the critical pool (OOS first, then reorder by shortfall %)
+    // ONCE here. Slicing the head is then constant-time per topN change.
+    const ranked = [...oosArr, ...reorderArr].sort((x, y) => {
+      const sx = x.alert_level === 'OUT_OF_STOCK' ? 1e9 : (x.shortfall_pct || 0);
+      const sy = y.alert_level === 'OUT_OF_STOCK' ? 1e9 : (y.shortfall_pct || 0);
+      return sy - sx;
+    });
+    return { oosArr, reorderArr, lowArr, ranked };
+  }, [alerts, filterSet]);
+
+  // True authoritative counts (no row cap) when no filter is active;
+  // filtered counts otherwise.
+  const oos     = hasActiveFilter ? filteredBuckets.oosArr.length     : (summary?.out_of_stock || 0);
+  const reorder = hasActiveFilter ? filteredBuckets.reorderArr.length : (summary?.reorder_now  || 0);
+  const low     = hasActiveFilter ? filteredBuckets.lowArr.length     : (summary?.low_stock    || 0);
+  const totalFiltered = oos + reorder + low;
+  // O(topN) slice of the pre-ranked pool — constant time on Top-N change.
+  const criticalSample = useMemo(
+    () => filteredBuckets.ranked.slice(0, topN),
+    [filteredBuckets, topN]
+  );
+  const criticalAvailable = filteredBuckets.ranked.length;
+
+  const overallSev = oos > 0 ? 'critical' : reorder > 0 ? 'warn' : low > 0 ? 'info' : 'ok';
+  const sevTint = {
+    critical: { fg: '#DC2626', bg: 'rgba(220,38,38,0.10)', ring: 'rgba(220,38,38,0.45)' },
+    warn:     { fg: '#D97706', bg: 'rgba(217,119,6,0.10)', ring: 'rgba(217,119,6,0.45)' },
+    info:     { fg: '#2563EB', bg: 'rgba(37,99,235,0.10)', ring: 'rgba(37,99,235,0.40)' },
+    ok:       { fg: '#16A34A', bg: 'rgba(22,163,74,0.10)', ring: 'rgba(22,163,74,0.40)' },
+  }[overallSev];
+
+  const Card = ({ icon: Icon, title, count, total, fg, bg, subtitle }) => {
+    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+    return (
+      <div style={{
+        position: 'relative', padding: 18, borderRadius: 14,
+        background: 'var(--bg-elevated)', border: `1px solid ${T.border}`,
+        boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+        transition: 'transform 180ms ease, box-shadow 180ms ease',
+        cursor: 'default', overflow: 'hidden',
+      }}
+        onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 18px rgba(0,0,0,0.08)'; }}
+        onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)';   e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.04)'; }}
+      >
+        {/* severity rail */}
+        <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: 4, background: fg, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 }} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: bg, color: fg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Icon size={18} strokeWidth={2.4} />
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.muted }}>{title}</div>
+          </div>
+          {count > 0 && (
+            <span style={{ padding: '2px 8px', borderRadius: 999, background: bg, color: fg, fontSize: 11, fontWeight: 800 }}>{pct}%</span>
+          )}
+        </div>
+        <div style={{ fontSize: 32, fontWeight: 900, color: T.primary, lineHeight: 1, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
+          {loading ? '…' : fmtNum(count)}
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: T.secondary, marginTop: 6 }}>{subtitle}</div>
+      </div>
+    );
+  };
+
+  // Mode label for the live pill — shows which scope is currently in effect
+  // so the panel makes it obvious that the page-level toggle is steering it.
+  const modeLabel = { active: 'Active', inactive: 'Inactive', all: 'All' }[mode];
+
+  return (
+    <div style={{ marginBottom: 28 }}>
+      {/* Section header — title · live status pill (mode is wired to the
+          page-level ModePill at the top right; no separate toggle here). */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+        <SectionTitle icon={ShieldAlert} label="Stock Health — Out of Stock · Reorder · Low" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderRadius: 999, background: sevTint.bg, border: `1px solid ${sevTint.ring}` }}>
+          <span
+            style={{
+              width: 8, height: 8, borderRadius: '50%', background: sevTint.fg,
+              boxShadow: `0 0 0 0 ${sevTint.fg}`,
+              animation: totalFiltered > 0 ? 'nshPulse 1.8s ease-in-out infinite' : 'none',
+            }}
+          />
+          <span style={{ fontSize: 12, fontWeight: 800, color: sevTint.fg, letterSpacing: '0.02em' }}>
+            {loading ? 'Loading…' : totalFiltered === 0 ? 'All clear' : `${fmtNum(totalFiltered)} alerts · ${modeLabel}${hasActiveFilter ? ' · filtered' : ''}`}
+          </span>
+        </div>
+      </div>
+
+      {/* 3 KPI cards — Out of Stock / Reorder Now / Low Stock
+          Headline numbers come from the backend SUMMARY (true network total,
+          NOT capped by detail-row LIMIT) when no filter is active; from the
+          filtered row sample when filters are applied. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 10 }}>
+        <Card icon={XCircle}      title="Out of Stock"  count={oos}     total={totalFiltered} fg="#DC2626" bg="rgba(220,38,38,0.10)"  subtitle="Zero on-hand · revenue at risk" />
+        <Card icon={PackageMinus} title="Reorder Now"   count={reorder} total={totalFiltered} fg="#D97706" bg="rgba(217,119,6,0.10)"  subtitle="Below reorder point · raise PO" />
+        <Card icon={AlertCircle}  title="Low Stock"     count={low}     total={totalFiltered} fg="#2563EB" bg="rgba(37,99,235,0.10)"  subtitle="Below safety stock · monitor" />
+      </div>
+
+      {/* Data-provenance footnote */}
+      <div style={{ marginBottom: 16, fontSize: 11, fontWeight: 600, color: T.muted, letterSpacing: '0.02em' }}>
+        {hasActiveFilter
+          ? <>Counts derived from the filtered detail rows (top {fmtNum(alerts?.length || 0)} most critical SKU-locations cached). Clear filters above to see the full network total.</>
+          : <>Counts reflect the full active-network scan ({mode === 'active' ? 'active locations & SKUs only' : mode === 'inactive' ? 'inactive only' : 'all locations & SKUs'}). Detail list below shows the {fmtNum(alerts?.length || 0)} most critical for fast drill-down.</>
+        }
+      </div>
+
+      {/* Critical drill-list — Top N picker (10 / 20 / 50 / 200) */}
+      <div style={{ background: 'var(--bg-elevated)', border: `1px solid ${T.border}`, borderRadius: 14, padding: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Zap size={14} style={{ color: '#DC2626' }} strokeWidth={2.6} />
+            <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.primary }}>Most Critical SKUs</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: T.muted }}>· showing {fmtNum(criticalSample.length)} of {fmtNum(criticalAvailable)} ranked by severity</span>
+          </div>
+          {/* Top N segmented picker — pure client-side slice, sub-ms. */}
+          <div style={{ display: 'inline-flex', alignItems: 'center', padding: 3, borderRadius: 999, background: 'var(--bg-canvas)', border: `1px solid ${T.border}`, gap: 2 }}>
+            {[10, 20, 50, 200].map(n => (
+              <button key={n} onClick={() => setTopN(n)}
+                style={{
+                  padding: '5px 12px', borderRadius: 999, border: 'none',
+                  fontSize: 11, fontWeight: 800, letterSpacing: '0.04em',
+                  cursor: 'pointer', transition: 'all 140ms ease',
+                  background: topN === n ? T.accent : 'transparent',
+                  color:      topN === n ? '#fff'   : T.muted,
+                }}>
+                Top {n}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {loading ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+            {[0,1,2,3,4,5].map(i => <div key={i} style={{ height: 56, borderRadius: 10, background: T.border, opacity: 0.5 }} />)}
+          </div>
+        ) : criticalSample.length === 0 ? (
+          <div style={{ padding: '24px 8px', textAlign: 'center' }}>
+            <Heart size={28} style={{ color: '#16A34A', marginBottom: 8 }} />
+            <div style={{ fontSize: 13, fontWeight: 800, color: T.primary }}>All clear in current scope</div>
+            <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>No SKUs below safety stock for the selected filters</div>
+          </div>
+        ) : (
+          <div className="ai-scroll" style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 8,
+            // Cap height when N is large so the panel never dominates the page.
+            // 4 rows of cards is a comfortable window; the rest is scrollable.
+            maxHeight: topN >= 50 ? 320 : 'none',
+            overflowY: topN >= 50 ? 'auto' : 'visible',
+            paddingRight: topN >= 50 ? 4 : 0,
+          }}>
+            {criticalSample.map((a, i) => {
+              const isOOS = a.alert_level === 'OUT_OF_STOCK';
+              const sev = isOOS ? sevTint : { fg: '#D97706', bg: 'rgba(217,119,6,0.10)', ring: 'rgba(217,119,6,0.45)' };
+              return (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
+                  borderRadius: 10, background: 'var(--bg-canvas)', border: `1px solid ${T.border}`,
+                  borderLeft: `3px solid ${sev.fg}`,
+                }}>
+                  <div style={{ width: 30, height: 30, borderRadius: 8, background: sev.bg, color: sev.fg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {isOOS ? <XCircle size={15} strokeWidth={2.5} /> : <PackageMinus size={15} strokeWidth={2.5} />}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: T.primary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {a.sku_code} · {(a.color_name || '').toUpperCase()} · {a.size}
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: T.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {a.location_name} · {a.city}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: sev.fg, fontVariantNumeric: 'tabular-nums' }}>
+                      {isOOS ? '0' : fmtNum(a.qty_on_hand)}
+                    </div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                      {isOOS ? 'on hand' : `of ${fmtNum(a.safety_stock)}`}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <style>{`
+        @keyframes nshPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.45); }
+          50%      { box-shadow: 0 0 0 6px rgba(220,38,38,0); }
+        }
+      `}</style>
+    </div>
   );
 }

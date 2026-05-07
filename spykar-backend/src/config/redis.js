@@ -224,11 +224,11 @@ const TTL = {
   // the day.  TTLs below reflect that reality: long enough that a CEO
   // toggling filters or revisiting yesterday's view never pays a cold scan,
   // short enough that the next-day sync wipes them within an hour.
-  SALES_ANALYTICS: 7200,        // 2 hours — was 30 min; mega-CTE is ~6s cold, the re-warm cron refreshes every 4 min anyway
-  STOCK_AGEING: 7200,           // 2 hours
-  STOCK_ALERTS: 7200,           // 2 hours
-  NETWORK_OVERVIEW: 7200,       // 2 hours
-  FILL_RATE: 7200,              // 2 hours
+  SALES_ANALYTICS: 86400,       // 24h — ERP feed is once-daily; once a date range is computed it stays valid until next sync
+  STOCK_AGEING: 86400,          // 24h
+  STOCK_ALERTS: 86400,          // 24h
+  NETWORK_OVERVIEW: 86400,      // 24h
+  FILL_RATE: 86400,             // 24h
   FILTER_OPTIONS: 14400,        // 4 hours — distinct values are practically static between syncs
 };
 

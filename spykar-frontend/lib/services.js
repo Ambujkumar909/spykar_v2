@@ -16,7 +16,7 @@ export const authService = {
 export const inventoryService = {
   getExecutiveSummary: (params = {}) => api.get('/inventory/executive-summary', { params }),
   getSnapshot: (params = {}) => api.get('/inventory/snapshot', { params }),
-  getAlerts: () => api.get('/inventory/alerts'),
+  getAlerts: (params = {}) => api.get('/inventory/alerts', { params }),
   getAlertsSummary: (params = {}) => api.get('/inventory/alerts/summary', { params }),
   getMovements: (params = {}) => api.get('/inventory/movements', { params }),
   getAgeing: (params = {}) => api.get('/inventory/ageing', { params }),

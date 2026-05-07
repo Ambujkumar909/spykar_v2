@@ -103,7 +103,8 @@ const eqInt = (a, b, slack = 0) => Math.abs(Number(a||0) - Number(b||0)) <= slac
   console.log('\n[3] TOP STORES — uniqueness + ordering');
   for (const [name, p] of [['Active', A], ['Inactive', I], ['All', X]]) {
     const ts = p.top_stores || [];
-    expect(`${name}: top_stores ≤ 10`, ts.length <= 10, `got ${ts.length}`);
+    expect(`${name}: top_stores ≤ 25 (LIMIT bumped for Top 10/15/20 dropdown)`,
+      ts.length <= 25, `got ${ts.length}`);
     expect(`${name}: store IDs unique`, new Set(ts.map(t => t.id)).size === ts.length, `${ts.length} returned, ${new Set(ts.map(t=>t.id)).size} unique`);
     if (ts.length > 1) {
       const isDesc = ts.every((t, i) => i === 0 || Number(ts[i-1].value) >= Number(t.value));
@@ -125,7 +126,8 @@ const eqInt = (a, b, slack = 0) => Math.abs(Number(a||0) - Number(b||0)) <= slac
   console.log('\n[4] TOP STATES — uniqueness + structural');
   for (const [name, p] of [['Active', A], ['Inactive', I], ['All', X]]) {
     const tsts = p.top_states || [];
-    expect(`${name}: top_states ≤ 10`, tsts.length <= 10, `got ${tsts.length}`);
+    expect(`${name}: top_states ≤ 25 (LIMIT bumped for Top 10/15/20 dropdown)`,
+      tsts.length <= 25, `got ${tsts.length}`);
     expect(`${name}: state names unique`, new Set(tsts.map(t => t.state)).size === tsts.length);
     expect(`${name}: active_stores ≤ stores`,
       tsts.every(t => Number(t.active_stores) <= Number(t.stores)),

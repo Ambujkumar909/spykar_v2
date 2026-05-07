@@ -45,14 +45,58 @@ const ALIAS = {
   sock:         'socks',
 };
 
+// Canonicalise a SINGLE category token. Internal helper.
+//
+// Source of truth is the `skus.category_norm` column — whatever the ETL
+// writes there is what the user sees in the dropdown AND what the filter
+// matches against. We no longer gate on a hardcoded pattern list, so new
+// categories ('UNDERJEANS', 'KNITS', 'ALBERT EINSTEIN', 'GROOMING', etc.)
+// are filterable the moment they land in the DB. Normalisation: trim,
+// upper-case, collapse internal whitespace. The DB query uses UPPER() on
+// the column side, so case-equivalent values match the same SKUs.
+function _canonOne(raw) {
+  if (raw === null || raw === undefined) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  const lower = s.toLowerCase();
+  if (lower === 'all') return null;
+  return s.replace(/\s+/g, ' ').toUpperCase();
+}
+
+// Canonicalise to an ARRAY of valid category keys (deduped, sorted for stable
+// cache keys). Accepts a single string ('denim'), a CSV ('denim,shirt'), or
+// an array (['denim','shirt']) — all three forms come from the FilterBar's
+// multi-select. Previously a single-string-only canon silently dropped the
+// whole filter the moment the user picked a 2nd value, because 'denim,shirt'
+// is not a valid key and the function returned null. That looked to users
+// like "category filter is broken on multi-select." Now every valid value
+// is preserved and an unrecognised value is silently ignored (so a typo in
+// one value doesn't nuke the whole filter).
+function canonicalizeCategoryList(raw) {
+  if (raw === undefined || raw === null || raw === '') return [];
+  const tokens = Array.isArray(raw)
+    ? raw
+    : String(raw).split(',');
+  const seen = new Set();
+  const out = [];
+  for (const t of tokens) {
+    const k = _canonOne(t);
+    if (k && !seen.has(k)) { seen.add(k); out.push(k); }
+  }
+  return out.sort();
+}
+
+// Backwards-compatible wrapper. For multi-value input it returns a stable
+// `key1|key2|…` token suitable for cache-key composition (NOT a single key
+// you can look up in CATEGORY_PATTERNS — that's the whole point: when more
+// than one category is selected, no single pattern applies). For empty /
+// invalid input returns null. Existing callers that just used this for the
+// cache-key suffix continue to work unchanged.
 function canonicalizeCategory(raw) {
-  if (!raw || typeof raw !== 'string') return null;
-  const trimmed = raw.trim().toLowerCase();
-  if (!trimmed || trimmed === 'all') return null;
-  // collapse whitespace → hyphen and strip trailing 's' for plural handling
-  const k = trimmed.replace(/\s+/g, '-').replace(/s$/, '');
-  const key = ALIAS[k] || k;
-  return CATEGORY_PATTERNS[key] ? key : null;
+  const keys = canonicalizeCategoryList(raw);
+  if (keys.length === 0) return null;
+  if (keys.length === 1) return keys[0];
+  return keys.join('|');
 }
 
 /**
@@ -67,22 +111,20 @@ function canonicalizeCategory(raw) {
  * Returns null if the category is empty/invalid so the caller can simply
  * `if (clause) conditions.push(clause)`.
  */
+// Filter directly on the `category_norm` column — same column the dropdown
+// reads from, so what the user picks is exactly what gets matched. No more
+// pattern-on-product_name guesswork, no more silent drops for categories
+// that aren't in a hardcoded list.
 function buildCategoryClause(raw, params, alias = 's') {
-  const key = canonicalizeCategory(raw);
-  if (!key) return null;
-  const { include, exclude } = CATEGORY_PATTERNS[key];
-  const parts = [];
-  const col = `${alias}.product_name`;
-
-  if (include.length) {
-    const ors = include.map(pat => { params.push(pat); return `${col} ILIKE $${params.length}`; });
-    parts.push(`(${ors.join(' OR ')})`);
+  const keys = canonicalizeCategoryList(raw);
+  if (keys.length === 0) return null;
+  const col = `UPPER(${alias}.category_norm)`;
+  if (keys.length === 1) {
+    params.push(keys[0]);
+    return `${col} = $${params.length}`;
   }
-  if (exclude.length) {
-    const ors = exclude.map(pat => { params.push(pat); return `${col} ILIKE $${params.length}`; });
-    parts.push(`NOT (${ors.join(' OR ')})`);
-  }
-  return parts.length ? '(' + parts.join(' AND ') + ')' : null;
+  params.push(keys);
+  return `${col} = ANY($${params.length}::text[])`;
 }
 
 /**
@@ -101,23 +143,43 @@ function buildCategoryClause(raw, params, alias = 's') {
  * Returns null when the category is empty/invalid, or an array of UUIDs.
  */
 async function resolveCategorySkuIds(raw, query, getOrSet) {
-  const key = canonicalizeCategory(raw);
-  if (!key) return null;
-  return getOrSet(
-    `category:sku-ids:v2:${key}`,
-    async () => {
-      const p = [];
-      // buildCategoryClause defaults to alias `s`, so the FROM clause must
-      // alias skus as `s` — otherwise Postgres throws
-      // "missing FROM-clause entry for table s" and the whole request fails.
-      const clause = buildCategoryClause(raw, p, 's');
-      if (!clause) return [];
-      // Standalone scan over `skus` only — fully driven by idx_skus_search
-      const r = await query(`SELECT s.id FROM skus s WHERE ${clause}`, p);
-      return r.rows.map(x => x.id);
-    },
-    24 * 60 * 60  // 24h — category mapping is static
-  );
+  const keys = canonicalizeCategoryList(raw);
+  if (keys.length === 0) return null;
+
+  // Resolve EACH category key independently (each cached under its own
+  // 24h slot in Redis), then union the resulting SKU id lists. This lets
+  // a multi-select like ['denim','shirt'] reuse the per-key caches that
+  // single-select ['denim'] / ['shirt'] populate, instead of needing a
+  // separate cache slot for every combination of categories.
+  // Cache key bumped to v3 — old v2 entries were keyed by hardcoded
+  // pattern names ('denim', 'shirt', …) that no longer apply. v3 keys are
+  // the actual UPPER category_norm values from the DB, so one normalised
+  // value = one cache slot, reused across single- and multi-select.
+  const idLists = await Promise.all(keys.map(key =>
+    getOrSet(
+      `category:sku-ids:v3:${key}`,
+      async () => {
+        const r = await query(
+          `SELECT id FROM skus WHERE is_active = true AND UPPER(category_norm) = $1`,
+          [key]
+        );
+        return r.rows.map(x => x.id);
+      },
+      24 * 60 * 60
+    )
+  ));
+
+  // Union (dedupe) — a SKU may match multiple categories (rare, but
+  // possible thanks to the trigram patterns), and Postgres `= ANY(uuid[])`
+  // doesn't care about duplicates anyway.
+  const seen = new Set();
+  const out = [];
+  for (const list of idLists) {
+    for (const id of list) {
+      if (!seen.has(id)) { seen.add(id); out.push(id); }
+    }
+  }
+  return out;
 }
 
 /**
@@ -146,6 +208,7 @@ async function applyCategoryFilter(raw, params, column, query, getOrSet) {
 module.exports = {
   CATEGORY_PATTERNS,
   canonicalizeCategory,
+  canonicalizeCategoryList,
   buildCategoryClause,
   resolveCategorySkuIds,
   applyCategoryFilter,

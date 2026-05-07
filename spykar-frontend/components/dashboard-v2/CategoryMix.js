@@ -30,14 +30,17 @@ export default function CategoryMix({ data, loading, isDark }) {
   })), [data]);
 
   const total = slices.reduce((s, x) => s + x.value, 0);
-  const labelColor = isDark ? '#F1F5F9' : '#0A0B0D';
-  const subColor   = isDark ? '#A8B0BC' : '#5B6470';
+  const labelColor = isDark ? '#FAFAFA' : '#0A0B0D';
+  const subColor   = isDark ? '#D1D5DB' : '#374151';
+  const mutedColor = isDark ? '#A8B0BC' : '#5B6470';
+  const legendBg = isDark ? '#1F232B' : '#F4F5F7';
+  const legendBorder = isDark ? '#2A2F3A' : '#D2D6DD';
 
   const options = useMemo(() => ({
-    chart: { type: 'donut', toolbar: { show: false }, fontFamily: 'Inter, system-ui, sans-serif', background: 'transparent' },
+    chart: { type: 'donut', toolbar: { show: false }, fontFamily: 'Inter, system-ui, sans-serif', background: 'transparent', foreColor: labelColor, theme: { mode: isDark ? 'dark' : 'light' } },
     colors: slices.map(s => s.color),
     labels: slices.map(s => s.name),
-    stroke: { width: 2, colors: [isDark ? '#171A20' : '#FFFFFF'] },
+    stroke: { width: 3, colors: [isDark ? '#171A20' : '#FFFFFF'] },
     legend: { show: false },
     dataLabels: { enabled: false },
     plotOptions: {
@@ -48,13 +51,13 @@ export default function CategoryMix({ data, loading, isDark }) {
             show: true,
             name:  { show: true, fontSize: '10px', fontWeight: 700, color: subColor, offsetY: 22 },
             value: {
-              show: true, fontSize: '24px', fontWeight: 700, color: labelColor,
+              show: true, fontSize: '24px', fontWeight: 800, color: labelColor,
               offsetY: -10,
               formatter: (v) => formatINR(Number(v)),
             },
             total: {
               show: true, label: 'Total Sales',
-              fontSize: '10px', fontWeight: 700, color: subColor,
+              fontSize: '10px', fontWeight: 800, color: subColor,
               formatter: () => formatINR(total),
             },
           },
@@ -69,17 +72,17 @@ export default function CategoryMix({ data, loading, isDark }) {
   }), [slices, total, labelColor, subColor, isDark]);
 
   return (
-    <div className="v2-card" style={{ padding: 20, animation: 'v2FadeInUp 380ms var(--v2-ease) both' }}>
+    <div className="v2-card v2-channel-mix-card" style={{ padding: 20, animation: 'v2FadeInUp 380ms var(--v2-ease) both' }}>
       <div style={{ marginBottom: 12 }}>
         <div style={{
           fontFamily: 'var(--v2-font-display)',
           fontSize: 13, fontWeight: 800,
           letterSpacing: '0.08em', textTransform: 'uppercase',
-          color: 'var(--v2-fg-tertiary)',
+          color: mutedColor,
         }}>
           Channel Mix
         </div>
-        <div style={{ fontSize: 13, marginTop: 4, color: 'var(--v2-fg-secondary)' }}>
+        <div style={{ fontSize: 13, marginTop: 4, color: subColor }}>
           Net sales contribution by store channel
         </div>
       </div>
@@ -106,21 +109,21 @@ export default function CategoryMix({ data, loading, isDark }) {
                   style={{
                     display: 'flex', alignItems: 'center', gap: 8,
                     padding: '6px 10px',
-                    background: 'var(--v2-bg-elevated)',
+                    background: legendBg,
                     borderRadius: 8,
-                    border: '1px solid var(--v2-border)',
+                    border: `1px solid ${legendBorder}`,
                   }}
                 >
                   <span style={{ width: 8, height: 8, borderRadius: 999, background: s.color, flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{
                       fontSize: 11.5, fontWeight: 700,
-                      color: 'var(--v2-fg-primary)',
+                      color: labelColor,
                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     }}>
                       {s.name}
                     </div>
-                    <div className="tabular-nums" style={{ fontSize: 11, fontWeight: 600, color: 'var(--v2-fg-tertiary)' }}>
+                    <div className="tabular-nums" style={{ fontSize: 11, fontWeight: 700, color: mutedColor }}>
                       {formatINR(s.value)} · {formatPct(pct, { decimals: 0 })}
                     </div>
                   </div>
@@ -130,6 +133,26 @@ export default function CategoryMix({ data, loading, isDark }) {
           </div>
         </div>
       )}
+      <style jsx global>{`
+        .v2-channel-mix-card .apexcharts-datalabel-label,
+        .v2-channel-mix-card .apexcharts-datalabel-label tspan {
+          fill: ${subColor} !important;
+          color: ${subColor} !important;
+        }
+        .v2-channel-mix-card .apexcharts-datalabel-value,
+        .v2-channel-mix-card .apexcharts-datalabel-value tspan {
+          fill: ${labelColor} !important;
+          color: ${labelColor} !important;
+        }
+        .v2-channel-mix-card .apexcharts-pie-label,
+        .v2-channel-mix-card .apexcharts-text {
+          fill: ${labelColor} !important;
+        }
+        .v2-channel-mix-card .apexcharts-tooltip-text-y-label,
+        .v2-channel-mix-card .apexcharts-tooltip-text-y-value {
+          color: ${labelColor} !important;
+        }
+      `}</style>
     </div>
   );
 }

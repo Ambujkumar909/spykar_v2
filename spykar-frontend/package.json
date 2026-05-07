@@ -25,6 +25,7 @@
     "react-dom": "^18.3.1",
     "react-hot-toast": "^2.4.1",
     "react-simple-maps": "^3.0.0",
+    "recharts": "^3.8.1",
     "swr": "^2.2.5",
     "topojson-client": "^3.1.0"
   },

@@ -64,7 +64,7 @@ function rangeFor(preset, customFrom, customTo) {
 }
 
 export function useTimeRange(initialPreset = 'mtd') {
-  const [preset, setPreset]         = useState(initialPreset);
+  const [preset, _setPreset]        = useState(initialPreset);
   const [customFrom, setCustomFrom] = useState(null);
   const [customTo, setCustomTo]     = useState(null);
 
@@ -73,10 +73,24 @@ export function useTimeRange(initialPreset = 'mtd') {
     [preset, customFrom, customTo]
   );
 
+  // Smart setPreset: when switching TO 'custom', seed customFrom/customTo
+  // with the CURRENT range. Prevents the click from instantly jumping to a
+  // previously-set wide range (e.g. 13 months) and triggering an 8s backend
+  // query. Date pickers open editable on the current dates; the user picks
+  // a new range and only THEN does a fetch fire.
+  const setPreset = useCallback((p) => {
+    if (p === 'custom' && p !== preset) {
+      const cur = rangeFor(preset, customFrom, customTo);
+      setCustomFrom(cur.from);
+      setCustomTo(cur.to);
+    }
+    _setPreset(p);
+  }, [preset, customFrom, customTo]);
+
   const setCustom = useCallback((from, to) => {
     setCustomFrom(from);
     setCustomTo(to);
-    setPreset('custom');
+    _setPreset('custom');
   }, []);
 
   return {

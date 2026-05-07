@@ -35,13 +35,20 @@ export default function TimeRangeControl({ preset, onChange }) {
         aria-hidden
         style={{
           position: 'absolute',
-          top: 3, bottom: 3,
-          left:  `calc(${idx * seg}% + 3px)`,
-          width: `calc(${seg}% - 6px)`,
-          background: 'var(--v2-bg-card)',
-          border: '1px solid var(--v2-border-strong)',
+          // Thicker, more visible transparent bar for the active preset.
+          // Uses a translucent white so it reads on both light AND dark
+          // page backgrounds (sales has a near-black canvas where the old
+          // bg-card token blended in). Inset highlight + outer shadow give
+          // the "raised glass" look the user asked for.
+          top: 2, bottom: 2,
+          left:  `calc(${idx * seg}% + 2px)`,
+          width: `calc(${seg}% - 4px)`,
+          background: 'rgba(255,255,255,0.14)',
+          border: '1px solid rgba(255,255,255,0.22)',
           borderRadius: 999,
-          boxShadow: '0 1px 2px rgba(10,11,13,0.06)',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12), 0 2px 8px rgba(0,0,0,0.30)',
+          backdropFilter: 'blur(4px)',
+          WebkitBackdropFilter: 'blur(4px)',
           transition: 'left 220ms var(--v2-ease), width 220ms var(--v2-ease)',
         }}
       />

@@ -480,16 +480,22 @@ export function SalesPulseTables({ data, loading, lensMode = 'net', valuation = 
   // most-returned-revenue stores (or returned-units when sort=Units). Net
   // mode picks sales − returns. Includes _saleVal / _returnVal so the
   // sub-line under the value can show context.
-  const enrichRows = (rows) => (rows || []).map(r => {
+  const _enrichRows = (rows) => (rows || []).map(r => {
     const saleVal   = rowValuation(r, valuation, 'sale');
     const returnVal = rowValuation(r, valuation, 'return');
     const lensVal   = rowValuation(r, valuation, lens);
-    // Lens-aware units so "Sort: Units" toggle also flips with lens.
     const lensUnits = lens === 'return' ? Number(r.return_qty || 0)
                     : lens === 'net'    ? Number(r.units_sold || 0) - Number(r.return_qty || 0)
                     : Number(r.units_sold || 0);
     return { ...r, _val: lensVal, _saleVal: saleVal, _returnVal: returnVal, _units: lensUnits };
   });
+  // Memoize per-array so toggling lens doesn't re-map on unrelated renders.
+  const enrichedStores   = useMemo(() => _enrichRows(data?.all_stores),  // eslint-disable-line react-hooks/exhaustive-deps
+    [data?.all_stores,  lens, valuation]); // eslint-disable-line react-hooks/exhaustive-deps
+  const enrichedColors   = useMemo(() => _enrichRows(data?.by_color),    // eslint-disable-line react-hooks/exhaustive-deps
+    [data?.by_color,    lens, valuation]); // eslint-disable-line react-hooks/exhaustive-deps
+  const enrichedChannels = useMemo(() => _enrichRows(data?.by_channel),  // eslint-disable-line react-hooks/exhaustive-deps
+    [data?.by_channel,  lens, valuation]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const formatRowValue = (val) => valuationKind === 'pct' ? `${val.toFixed(1)}%` : fmtRs(val);
 
@@ -499,7 +505,7 @@ export function SalesPulseTables({ data, loading, lensMode = 'net', valuation = 
         <TopList
           title={`Top Stores · ${lensLabel} ${valuationLabel}`}
           icon={Building2}
-          rows={enrichRows(data?.all_stores)}
+          rows={enrichedStores}
           loading={loading}
           onRowClick={onStoreClick ? (r) => onStoreClick(r.location_id) : null}
           renderLeft={(r) => (
@@ -531,7 +537,7 @@ export function SalesPulseTables({ data, loading, lensMode = 'net', valuation = 
         <TopList
           title={`Top Shades · ${lensLabel} ${valuationLabel}`}
           icon={Award}
-          rows={enrichRows(data?.by_color)}
+          rows={enrichedColors}
           loading={loading}
           sortKeyValue="_val" sortKeyUnits="_units"
           renderLeft={(r) => (
@@ -559,7 +565,7 @@ export function SalesPulseTables({ data, loading, lensMode = 'net', valuation = 
           }}
           empty="No shades match"
         />
-        <ChannelMixBars rows={enrichRows(data?.by_channel).map(c => ({ ...c, value: c._val }))} totalValue={value} loading={loading} />
+        <ChannelMixBars rows={enrichedChannels.map(c => ({ ...c, value: c._val }))} totalValue={value} loading={loading} />
       </div>
     </div>
   );

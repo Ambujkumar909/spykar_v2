@@ -1,16 +1,22 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
-import { Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
+import {
+  ArrowRight,
+  Eye,
+  EyeOff,
+  Loader2,
+  ShieldCheck,
+} from 'lucide-react';
 import { useAuth } from '../lib/auth-context';
 import toast from 'react-hot-toast';
 
 export default function LoginPage() {
-  const [email, setEmail]       = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPw, setShowPw]     = useState(false);
-  const [loading, setLoading]   = useState(false);
+  const [showPw, setShowPw] = useState(false);
+  const [loading, setLoading] = useState(false);
   const { login } = useAuth();
-  const router    = useRouter();
+  const router = useRouter();
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -27,217 +33,310 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(150deg, #F4F6FB 0%, #FFF5F4 50%, #F4F6FB 100%)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: 24,
-      fontFamily: 'var(--font-body)',
-    }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
+        background:
+          'radial-gradient(circle at top left, rgba(185,28,28,0.10) 0%, transparent 28%), radial-gradient(circle at bottom right, rgba(30,64,175,0.08) 0%, transparent 26%), linear-gradient(145deg, #f7f5f2 0%, #f2f5fa 52%, #edf1f7 100%)',
+        position: 'relative',
+        overflow: 'hidden',
+        fontFamily: 'var(--font-body)',
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          backgroundImage:
+            'linear-gradient(rgba(15,23,42,0.028) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,0.028) 1px, transparent 1px)',
+          backgroundSize: '54px 54px',
+          pointerEvents: 'none',
+        }}
+      />
 
-      {/* Subtle background circles — complement the white, no harsh colors */}
-      <div style={{
-        position: 'fixed', top: '8%', left: '8%',
-        width: 320, height: 320,
-        borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(192,57,43,0.07) 0%, transparent 70%)',
-        pointerEvents: 'none',
-      }} />
-      <div style={{
-        position: 'fixed', bottom: '10%', right: '8%',
-        width: 260, height: 260,
-        borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(13,148,136,0.06) 0%, transparent 70%)',
-        pointerEvents: 'none',
-      }} />
-
-      <div style={{ width: '100%', maxWidth: 400, position: 'relative', zIndex: 1 }}>
-
-        {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: 36 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginBottom: 10 }}>
-            <img
-              src="/spykar-logo.png"
-              alt="Spykar"
-              style={{ width: 64, height: 64, objectFit: 'contain', borderRadius: 14, boxShadow: '0 4px 20px rgba(192,57,43,0.18)', display: 'block', flexShrink: 0 }}
-              onError={e => e.target.style.display = 'none'}
-            />
-            <div style={{ textAlign: 'left' }}>
-              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 30, letterSpacing: '-0.04em', color: '#1E293B', lineHeight: 1 }}>
-                Spykar <span style={{ color: '#C0392B' }}>IQ</span>
-              </div>
-              <div style={{ fontSize: 10, color: '#94A3B8', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 5 }}>
-                Inventory Intelligence
-              </div>
+      <div
+        style={{
+          position: 'relative',
+          zIndex: 1,
+          width: '100%',
+          maxWidth: 430,
+          padding: 14,
+          borderRadius: 18,
+          background: 'rgba(255,255,255,0.42)',
+          border: '1px solid rgba(255,255,255,0.58)',
+          boxShadow: '0 32px 80px rgba(15,23,42,0.14)',
+          backdropFilter: 'blur(22px)',
+          WebkitBackdropFilter: 'blur(22px)',
+        }}
+      >
+        <div
+          style={{
+            borderRadius: 10,
+            background: 'linear-gradient(180deg, rgba(255,255,255,0.97), rgba(248,250,252,0.95))',
+            border: '1px solid rgba(15,23,42,0.08)',
+            padding: '34px 30px 26px',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.95)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <div
+              style={{
+                width: 62,
+                height: 62,
+                borderRadius: 14,
+                background: 'linear-gradient(135deg, rgba(225,29,46,0.16), rgba(225,29,46,0.05))',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.88), 0 14px 28px rgba(225,29,46,0.10)',
+              }}
+            >
+              <img
+                src="/spykar-logo.png"
+                alt="Spykar"
+                style={{ width: 40, height: 40, objectFit: 'contain' }}
+                onError={e => { e.currentTarget.style.display = 'none'; }}
+              />
             </div>
           </div>
-        </div>
 
-        {/* Login card */}
-        <div style={{
-          background: '#FFFFFF',
-          border: '1px solid rgba(15,23,42,0.08)',
-          borderRadius: 20,
-          padding: '36px 32px',
-          boxShadow: '0 8px 32px rgba(15,23,42,0.08), 0 2px 8px rgba(15,23,42,0.04)',
-        }}>
+          <div style={{ marginTop: 22, textAlign: 'center' }}>
+            <div
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: 32,
+                fontWeight: 900,
+                letterSpacing: '-0.04em',
+                color: '#0f172a',
+                lineHeight: 1,
+              }}
+            >
+              Spykar <span style={{ color: '#b91c1c' }}>IQ</span>
+            </div>
 
-          <div style={{ marginBottom: 24 }}>
-            <h2 style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: 18,
-              fontWeight: 700,
-              color: '#1E293B',
-              letterSpacing: '-0.01em',
-              marginBottom: 4,
-            }}>
+            <div
+              style={{
+                marginTop: 10,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                padding: '6px 10px',
+                borderRadius: 999,
+                border: '1px solid rgba(15,23,42,0.08)',
+                background: 'rgba(255,255,255,0.8)',
+                color: '#6b7280',
+                fontSize: 10,
+                fontWeight: 800,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+              }}
+            >
+              <ShieldCheck size={12} />
+              Secure Access
+            </div>
+
+            <h1
+              style={{
+                marginTop: 22,
+                fontFamily: "'Source Serif 4', Georgia, serif",
+                fontSize: 34,
+                fontWeight: 560,
+                lineHeight: 1.06,
+                letterSpacing: 0,
+                color: '#111827',
+              }}
+            >
               Sign in
-            </h2>
-            <p style={{ fontSize: 12, color: '#94A3B8' }}>
-              Enter your credentials to continue
+            </h1>
+
+            <p
+              style={{
+                marginTop: 10,
+                fontSize: 13,
+                lineHeight: 1.7,
+                color: '#667085',
+              }}
+            >
+              Inventory intelligence dashboard
             </p>
           </div>
 
-          <form onSubmit={handleSubmit}>
-
-            {/* Email */}
-            <div style={{ marginBottom: 16 }}>
-              <label style={{
-                display: 'block',
-                fontSize: 12,
-                fontWeight: 600,
-                color: '#475569',
-                marginBottom: 6,
-                fontFamily: 'var(--font-body)',
-              }}>
-                Email Address
-              </label>
-              <input
-                className="input"
-                type="email"
-                placeholder="you@spykar.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                autoComplete="email"
-                disabled={loading}
-                style={{ fontSize: 13 }}
-              />
-            </div>
-
-            {/* Password */}
-            <div style={{ marginBottom: 28 }}>
-              <label style={{
-                display: 'block',
-                fontSize: 12,
-                fontWeight: 600,
-                color: '#475569',
-                marginBottom: 6,
-                fontFamily: 'var(--font-body)',
-              }}>
-                Password
-              </label>
-              <div style={{ position: 'relative' }}>
+          <form onSubmit={handleSubmit} style={{ marginTop: 28 }}>
+            <div style={{ display: 'grid', gap: 16 }}>
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    marginBottom: 8,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    color: '#6b7280',
+                  }}
+                >
+                  Email
+                </label>
                 <input
                   className="input"
-                  type={showPw ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  autoComplete="current-password"
+                  type="email"
+                  placeholder="you@spykar.com"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  autoComplete="email"
                   disabled={loading}
-                  style={{ paddingRight: 44, fontSize: 13 }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPw(v => !v)}
                   style={{
-                    position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: '#94A3B8', display: 'flex', alignItems: 'center',
-                    padding: 4,
-                    transition: 'color 0.15s',
+                    height: 54,
+                    padding: '0 15px',
+                    fontSize: 14,
+                    background: 'rgba(255,255,255,0.92)',
+                    borderColor: 'rgba(15,23,42,0.10)',
+                    color: '#0f172a',
+                    borderRadius: 10,
+                    boxShadow: 'inset 0 1px 2px rgba(15,23,42,0.03)',
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.color = '#C0392B'; }}
-                  onMouseLeave={e => { e.currentTarget.style.color = '#94A3B8'; }}
+                />
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    marginBottom: 8,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    color: '#6b7280',
+                  }}
                 >
-                  {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
+                  Password
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    className="input"
+                    type={showPw ? 'text' : 'password'}
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                    disabled={loading}
+                    style={{
+                      height: 54,
+                      padding: '0 48px 0 15px',
+                      fontSize: 14,
+                      background: 'rgba(255,255,255,0.92)',
+                      borderColor: 'rgba(15,23,42,0.10)',
+                      color: '#0f172a',
+                      borderRadius: 10,
+                      boxShadow: 'inset 0 1px 2px rgba(15,23,42,0.03)',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPw(v => !v)}
+                    disabled={loading}
+                    style={{
+                      position: 'absolute',
+                      top: '50%',
+                      right: 10,
+                      transform: 'translateY(-50%)',
+                      width: 32,
+                      height: 32,
+                      border: 'none',
+                      borderRadius: 8,
+                      background: 'transparent',
+                      color: '#98a2b3',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: loading ? 'default' : 'pointer',
+                      transition: 'all 160ms ease',
+                    }}
+                    onMouseEnter={e => {
+                      if (!loading) {
+                        e.currentTarget.style.color = '#b91c1c';
+                        e.currentTarget.style.background = 'rgba(185,28,28,0.08)';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.color = '#98a2b3';
+                      e.currentTarget.style.background = 'transparent';
+                    }}
+                  >
+                    {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Submit */}
             <button
               type="submit"
               disabled={loading}
               style={{
                 width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                padding: '11px 20px',
-                background: loading ? '#F87171' : 'linear-gradient(135deg, #C0392B, #C0392B)',
-                color: '#fff',
+                height: 54,
+                marginTop: 22,
                 border: 'none',
                 borderRadius: 10,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 10,
+                background: loading
+                  ? 'linear-gradient(135deg, #ef4444, #dc2626)'
+                  : 'linear-gradient(135deg, #e11d2e 0%, #a61b28 52%, #5b1220 100%)',
+                color: '#ffffff',
                 fontSize: 14,
-                fontWeight: 600,
-                fontFamily: 'var(--font-body)',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                boxShadow: loading ? 'none' : '0 2px 12px rgba(192,57,43,0.28)',
-                transition: 'all 0.15s',
+                fontWeight: 700,
                 letterSpacing: '0.01em',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                boxShadow: loading
+                  ? '0 10px 22px rgba(225,29,46,0.14)'
+                  : '0 18px 34px rgba(166,27,40,0.24)',
+                transition: 'transform 180ms ease, box-shadow 180ms ease, filter 180ms ease',
               }}
               onMouseEnter={e => {
                 if (!loading) {
                   e.currentTarget.style.transform = 'translateY(-1px)';
-                  e.currentTarget.style.boxShadow = '0 4px 20px rgba(192,57,43,0.36)';
+                  e.currentTarget.style.boxShadow = '0 22px 40px rgba(166,27,40,0.28)';
                 }
               }}
               onMouseLeave={e => {
                 e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = loading ? 'none' : '0 2px 12px rgba(192,57,43,0.28)';
+                e.currentTarget.style.boxShadow = loading
+                  ? '0 10px 22px rgba(225,29,46,0.14)'
+                  : '0 18px 34px rgba(166,27,40,0.24)';
               }}
             >
-              {loading
-                ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Signing in…</>
-                : 'Sign In'}
+              {loading ? (
+                <>
+                  <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                  Signing in...
+                </>
+              ) : (
+                <>
+                  Continue
+                  <ArrowRight size={16} />
+                </>
+              )}
             </button>
           </form>
-
-          {/* Trust indicator */}
-          <div style={{
-            marginTop: 20,
-            paddingTop: 16,
-            borderTop: '1px solid rgba(15,23,42,0.06)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
-            color: '#94A3B8',
-            fontSize: 11,
-            fontFamily: 'var(--font-body)',
-          }}>
-            <ShieldCheck size={12} />
-            <span>Secure · Role-based access control</span>
-          </div>
         </div>
-
-        <p style={{
-          textAlign: 'center',
-          marginTop: 20,
-          fontSize: 11,
-          color: '#94A3B8',
-          fontFamily: 'var(--font-body)',
-          letterSpacing: '0.01em',
-        }}>
-          Spykar Jeans · Inventory Intelligence v1.0
-        </p>
       </div>
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </div>
   );
 }

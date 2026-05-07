@@ -12,19 +12,13 @@ import {
 import DashboardLayout from '../components/layout/DashboardLayout';
 import KpiCard from '../components/ui/KpiCard';
 import { authService } from '../lib/services';
+import { filterService } from '../lib/services';
 import { useAuth } from '../lib/auth-context';
 import { formatDateTime, formatNumber } from '../lib/utils';
 import toast from 'react-hot-toast';
 
 const ROLE_OPTIONS = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'VIEWER'];
-const ZONE_OPTIONS = [
-  { label: 'All Zones', value: '' },
-  { label: 'North', value: '1' },
-  { label: 'South', value: '2' },
-  { label: 'East', value: '3' },
-  { label: 'West', value: '4' },
-  { label: 'Central', value: '5' },
-];
+const DEFAULT_STATE_OPTIONS = [{ label: 'All States', value: '' }];
 
 const ROLE_BADGES = {
   SUPER_ADMIN: 'badge-violet',
@@ -45,7 +39,7 @@ const EMPTY_CREATE_FORM = {
   email: '',
   password: '',
   role: 'MANAGER',
-  zone_id: '',
+  state: '',
 };
 
 export default function UsersPage() {
@@ -57,7 +51,8 @@ export default function UsersPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState(EMPTY_CREATE_FORM);
   const [editUser, setEditUser] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', role: 'VIEWER', is_active: true, zone_id: '' });
+  const [editForm, setEditForm] = useState({ name: '', role: 'VIEWER', is_active: true, state: '' });
+  const [stateOptions, setStateOptions] = useState(DEFAULT_STATE_OPTIONS);
   const [submitting, setSubmitting] = useState(false);
 
   const fetchUsers = useCallback(async () => {
@@ -80,6 +75,25 @@ export default function UsersPage() {
     fetchUsers();
   }, [fetchUsers]);
 
+  useEffect(() => {
+    let ignore = false;
+    (async () => {
+      try {
+        const res = await filterService.getAllOptions({ mode: 'all' });
+        const states = Array.isArray(res?.data?.options?.state) ? res.data.options.state : [];
+        if (!ignore) {
+          setStateOptions([
+            { label: 'All States', value: '' },
+            ...states.map((state) => ({ label: state, value: state })),
+          ]);
+        }
+      } catch (_) {
+        if (!ignore) setStateOptions(DEFAULT_STATE_OPTIONS);
+      }
+    })();
+    return () => { ignore = true; };
+  }, []);
+
   const metrics = useMemo(() => {
     const activeCount = users.filter((entry) => entry.is_active).length;
     const adminCount = users.filter((entry) => ['SUPER_ADMIN', 'ADMIN'].includes(entry.role)).length;
@@ -94,7 +108,7 @@ export default function UsersPage() {
       name: targetUser.name || '',
       role: targetUser.role || 'VIEWER',
       is_active: Boolean(targetUser.is_active),
-      zone_id: targetUser.zone_id ? String(targetUser.zone_id) : '',
+      state: targetUser.state || '',
     });
   }
 
@@ -102,7 +116,7 @@ export default function UsersPage() {
     setIsCreateOpen(false);
     setCreateForm(EMPTY_CREATE_FORM);
     setEditUser(null);
-    setEditForm({ name: '', role: 'VIEWER', is_active: true, zone_id: '' });
+    setEditForm({ name: '', role: 'VIEWER', is_active: true, state: '' });
   }
 
   async function handleCreateUser(event) {
@@ -111,7 +125,7 @@ export default function UsersPage() {
     try {
       await authService.createUser({
         ...createForm,
-        zone_id: createForm.zone_id ? Number(createForm.zone_id) : null,
+        state: createForm.state || null,
       });
       toast.success('User created successfully');
       closeModals();
@@ -133,7 +147,7 @@ export default function UsersPage() {
         name: editForm.name,
         role: editForm.role,
         is_active: editForm.is_active,
-        zone_id: editForm.zone_id ? Number(editForm.zone_id) : null,
+        state: editForm.state || null,
       });
       toast.success('User updated successfully');
       closeModals();
@@ -216,7 +230,7 @@ export default function UsersPage() {
               <tr>
                 <th>User</th>
                 <th>Role</th>
-                <th>Zone</th>
+                <th>State</th>
                 <th>Status</th>
                 <th>Last Login</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
@@ -242,7 +256,7 @@ export default function UsersPage() {
                       {entry.role.replace(/_/g, ' ')}
                     </span>
                   </td>
-                  <td>{entry.zone_name || 'All Zones'}</td>
+                  <td>{entry.state || 'All States'}</td>
                   <td>
                     <span className={`badge ${entry.is_active ? 'badge-success' : 'badge-danger'}`}>
                       {entry.is_active ? 'Active' : 'Inactive'}
@@ -363,18 +377,18 @@ export default function UsersPage() {
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', marginBottom: 6, fontSize: 12, color: 'var(--text-muted)' }}>Zone Assignment</label>
+                  <label style={{ display: 'block', marginBottom: 6, fontSize: 12, color: 'var(--text-muted)' }}>State Assignment</label>
                   <select
                     className="input"
-                    value={editUser ? editForm.zone_id : createForm.zone_id}
+                    value={editUser ? editForm.state : createForm.state}
                     onChange={(event) => {
                       const value = event.target.value;
-                      if (editUser) setEditForm((current) => ({ ...current, zone_id: value }));
-                      else setCreateForm((current) => ({ ...current, zone_id: value }));
+                      if (editUser) setEditForm((current) => ({ ...current, state: value }));
+                      else setCreateForm((current) => ({ ...current, state: value }));
                     }}
                   >
-                    {ZONE_OPTIONS.map((zone) => (
-                      <option key={zone.value} value={zone.value}>{zone.label}</option>
+                    {stateOptions.map((state) => (
+                      <option key={state.value} value={state.value}>{state.label}</option>
                     ))}
                   </select>
                 </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, startTransition, useDeferredValue } from 'react'; // v2
 import dynamic from 'next/dynamic';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import FilterChips from '../components/filters/FilterChips';
@@ -9,6 +9,8 @@ import SkuPerformance from '../components/sales/SkuPerformance';
 import DistributionDonuts from '../components/sales/DistributionDonuts';
 import DrilldownDrawer from '../components/sales/DrilldownDrawer';
 import { useFilters } from '../lib/useFilters';
+import { useTimeRange } from '../lib/v2/useTimeRange';
+import TimeRangeControl from '../components/dashboard-v2/TimeRangeControl';
 import { analyticsService } from '../lib/services';
 import { getCached, setCached, isFresh } from '../lib/dashboardCache';
 import toast from 'react-hot-toast';
@@ -786,11 +788,19 @@ export default function SalesAnalyticsPage() {
     });
   const { filters: v2Filters, setFilter: setV2, clearAll: clearV2, activeCount: v2Active } = v2FilterApi;
 
-  // Date range stays local (sales-specific UX with presets). Default = full
-  // ERP window; user picks tighter ranges via the preset chips below.
-  const [dateFrom, setDateFrom]     = useState('2025-01-01');
-  const [dateTo, setDateTo]         = useState('2026-01-31');
-  const [activePreset, setActivePreset] = useState('');
+  // Time range — dashboard-grade segmented pill (Today/WTD/MTD/QTD/YTD/Custom).
+  // `useTimeRange` is the SAME hook the Overview page uses, so the two pages
+  // share semantics: "today" anchors to the last sync date, MTD/QTD/YTD compute
+  // off that anchor, and the custom date inputs activate only when the user
+  // picks Custom. Single source of truth for every "what window am I looking
+  // at?" question across the app.
+  const { preset, setPreset, setCustom, fromISO, toISO } = useTimeRange('mtd');
+  const dateFrom = fromISO;
+  const dateTo   = toISO;
+  // Wrappers that flip the preset to 'custom' the moment the user types into
+  // a date input — matches the Overview behaviour exactly.
+  const setDateFrom = useCallback((v) => setCustom(v, toISO), [setCustom, toISO]);
+  const setDateTo   = useCallback((v) => setCustom(fromISO, v), [setCustom, fromISO]);
 
   // Legacy local filters retained for back-compat with the in-page filter
   // toolbar (color/size/store dropdowns). v2 multi-select takes precedence
@@ -821,119 +831,187 @@ export default function SalesAnalyticsPage() {
       `se${csv(v2Filters.season)}`,
       `st${csv(v2Filters.state)}`,      `ct${csv(v2Filters.city)}`,
       `gn${csv(v2Filters.group_name)}`, `sc${csv(v2Filters.store_code)}`,
-      `m${v2Filters.mode||'active'}`,   `lm${v2Filters.sale_mode||'net'}`,
+      // sale_mode + valuation are NOT part of the cache key — the backend
+      // mega-CTE returns sale + return + net for every valuation lens in
+      // ONE payload (lines 522-541 of analytics.controller.js). Toggling
+      // Sale/Return/Net or Gross/Ex-GST/MRP is pure client-side enrichment
+      // (see lines 949-1061 below), so we must not invalidate the cache or
+      // refetch on those flips. Tab toggles become instant.
+      `m${v2Filters.mode||'active'}`,
     ].join('|');
   }, [v2Filters]);
 
   // Cache key is filter-dependent so each unique combination remembers its own
   // response. Navigating away and back with identical filters renders instantly
   // from the module-level cache instead of remounting empty.
-  const cacheKey = `sales:v6:${dateFrom}|${dateTo}|${colorName}|${size}|${locationId}|${v2Slug}`;
-  const [data, setData]       = useState(() => getCached(cacheKey) ?? null);
-  const [loading, setLoading] = useState(() => !getCached(cacheKey));
+  // v7: bumped after the backend Category filter migrated from a hardcoded
+  // 10-entry pattern map (silently dropped UNDERJEANS / KNITS / NON DENIM /
+  // GROOMING / ALBERT EINSTEIN / CHARLIE CHAPLIN — 5 of 9 categories) to a
+  // direct `s.category_norm` match. Old cache slots held "all-data" responses
+  // for those categories — bumping the version forces a refetch under the
+  // new (correctly filtered) backend.
+  const cacheKey = `sales:v8:${dateFrom}|${dateTo}|${colorName}|${size}|${locationId}|${v2Slug}`;
 
-  // Track the currently-active cacheKey so stale in-flight fetches (from a
-  // previous category) can detect they've been superseded and skip writing
-  // their response into `data`. Without this, switching Denim → Jacket → Denim
-  // rapidly can let the pending Jacket response land after we're already
-  // viewing Denim, "warming" the screen with the wrong category's payload.
+  // ── State model — IDENTICAL to network's StockBreakdownSection ──────────
+  //   data        — the rendered payload. Hydrated synchronously from the
+  //                 module cache so re-mounts paint without a flash.
+  //   loading     — COLD-load flag. True only when we have NOTHING to show.
+  //   refreshing  — true on every re-fetch even when prior `data` is on
+  //                 screen. Drives the opacity dim — same UX cue as network.
+  //   activeKeyRef — race-guard so a late response for a stale cacheKey
+  //                  cannot clobber the screen.
+  //   inFlightRef  — AbortController so superseded fetches stop paying for
+  //                  themselves on the server (mega-CTE is expensive).
+  const [data, setData]             = useState(() => getCached(cacheKey) ?? null);
+  const [loading, setLoading]       = useState(() => !getCached(cacheKey));
+  const [refreshing, setRefreshing] = useState(false);
   const activeKeyRef = useRef(cacheKey);
   useEffect(() => { activeKeyRef.current = cacheKey; }, [cacheKey]);
-
-  // AbortController per in-flight fetch.  When the user picks another
-  // filter while a request is mid-flight we abort the stale one so the
-  // server stops chewing through a mega-CTE that's already obsolete and
-  // the connection pool isn't pinned.  The race-guard via activeKeyRef
-  // would have ignored the stale response anyway — aborting just stops
-  // paying for it.
   const inFlightRef = useRef(null);
 
   const fetch = useCallback(async () => {
     const issuedFor = cacheKey;
-    if (!getCached(issuedFor)) setLoading(true);
+    setRefreshing(true);
+    if (!data && !getCached(issuedFor)) setLoading(true);
+
     if (inFlightRef.current) inFlightRef.current.abort();
     const ac = new AbortController();
     inFlightRef.current = ac;
+
+    const csv = (v) => Array.isArray(v) ? v.join(',') : (v || undefined);
+    const heavyParams = {
+      date_from:   dateFrom    || undefined,
+      date_to:     dateTo      || undefined,
+      color_name:  colorName   || undefined,
+      size:        size        || undefined,
+      location_id: locationId  || undefined,
+      gender:      csv(v2Filters.gender_name) || undefined,
+      sub_product: csv(v2Filters.sub_product) || undefined,
+      product:     csv(v2Filters.product)     || undefined,
+      category:    csv(v2Filters.category)    || undefined,
+      style:       csv(v2Filters.style)       || undefined,
+      shade:       csv(v2Filters.shade)       || undefined,
+      color:       csv(v2Filters.color)       || undefined,
+      ...(size ? {} : { size: csv(v2Filters.size) || undefined }),
+      season:      csv(v2Filters.season)      || undefined,
+      state:       csv(v2Filters.state)       || undefined,
+      city:        csv(v2Filters.city)        || undefined,
+      group_name:  csv(v2Filters.group_name)  || undefined,
+      store_code:  csv(v2Filters.store_code)  || undefined,
+      mode:        v2Filters.mode             || 'active',
+    };
+
+    // ── Dual-fetch: slim endpoint runs 3 aggregates instead of 8, so it
+    // returns ~3× faster on cold cache. We surface its data ASAP so the
+    // KPI strip + daily chart + channel mix paint quickly while the heavy
+    // mega-CTE keeps loading. When the heavy result lands it overrides
+    // (richer payload — by_color/by_size/by_store/all_stores/by_sku/etc.).
+    //
+    // ── Slim is ONLY safe when no non-date filter is active. ────────────
+    // The slim endpoint accepts only date_from/date_to/mode — every other
+    // dimension (state, city, category, gender, color, etc.) is ignored
+    // server-side. So with any filter applied, slim returns the
+    // UNFILTERED date-range totals — which then briefly paint into the
+    // KPI cards (the "main value" flash) before heavy lands and corrects
+    // them. Suppress the slim call whenever any non-date filter is set so
+    // the user never sees a number that doesn't reflect their selection.
+    const hasNonDateFilter = !!(
+      heavyParams.color_name  || heavyParams.size       || heavyParams.location_id ||
+      heavyParams.gender      || heavyParams.sub_product|| heavyParams.product     ||
+      heavyParams.category    || heavyParams.style      || heavyParams.shade       ||
+      heavyParams.color       || heavyParams.season     || heavyParams.state       ||
+      heavyParams.city        || heavyParams.group_name || heavyParams.store_code
+    );
+
+    let heavyDone = false;
+    if (!hasNonDateFilter) {
+      analyticsService.getSalesSummary({
+        date_from: heavyParams.date_from,
+        date_to:   heavyParams.date_to,
+        mode:      heavyParams.mode,
+      }, { signal: ac.signal })
+        .then(slimRes => {
+          if (heavyDone) return;                              // heavy already arrived — skip
+          if (activeKeyRef.current !== issuedFor) return;      // superseded
+          const slim = slimRes?.data?.data;
+          if (!slim) return;
+          // Field-name reconciliation. The slim SQL exposes the gross-lens net
+          // total as `net_value`; SalesPulse reads `net_gross_value` (heavy's
+          // field name). Map the aliases so KPI cards render correctly from
+          // slim alone.
+          const ss = slim.summary || {};
+          const summary = {
+            ...ss,
+            net_gross_value:    ss.net_gross_value    ?? ss.net_value,
+            sales_gross_value:  ss.sales_gross_value  ?? ss.sales_value,
+            return_gross_value: ss.return_gross_value ?? ss.return_value,
+          };
+          // ONLY merge summary. The slim endpoint's `daily` rows have a
+          // different shape than heavy's (missing mrp_value / gst_collected /
+          // ex_gst_value / transactions columns). If we merged it, the
+          // daily-trend chart would remount with rows lacking those fields →
+          // ApexCharts throws "parser Error" on the inconsistent datetime
+          // series. Charts and channel mix wait for heavy; KPIs render
+          // immediately from slim. Best of both worlds.
+          setData(prev => ({
+            ...(prev || {}),
+            summary,
+          }));
+          setLoading(false);
+        })
+        .catch(() => { /* slim is best-effort — heavy is the source of truth */ });
+    }
+
     try {
-      const csv = (v) => Array.isArray(v) ? v.join(',') : (v || undefined);
-      const res = await analyticsService.getSalesAnalytics({
-        date_from:   dateFrom    || undefined,
-        date_to:     dateTo      || undefined,
-        color_name:  colorName   || undefined,  // legacy single-value
-        size:        size        || undefined,  // legacy single-value (overrides v2 multi)
-        location_id: locationId  || undefined,
-        // v2 multi-select set — every filter narrows together
-        gender:      csv(v2Filters.gender_name) || undefined,
-        sub_product: csv(v2Filters.sub_product) || undefined,
-        product:     csv(v2Filters.product)     || undefined,
-        category:    csv(v2Filters.category)    || undefined,
-        style:       csv(v2Filters.style)       || undefined,
-        shade:       csv(v2Filters.shade)       || undefined,
-        color:       csv(v2Filters.color)       || undefined,
-        // v2 size only when no legacy size is set
-        ...(size ? {} : { size: csv(v2Filters.size) || undefined }),
-        season:      csv(v2Filters.season)      || undefined,
-        state:       csv(v2Filters.state)       || undefined,
-        city:        csv(v2Filters.city)        || undefined,
-        group_name:  csv(v2Filters.group_name)  || undefined,
-        store_code:  csv(v2Filters.store_code)  || undefined,
-        mode:        v2Filters.mode             || 'active',
-        // Lens-aware aggregation — backend computes net/sale/return splits
-        // and the gross/ex-GST/MRP family from these.  Without them, every
-        // chart would render gross-with-GST regardless of what the user
-        // picked in the filter drawer.
-        sale_mode:   v2Filters.sale_mode        || 'net',
-        valuation:   v2Filters.valuation       || 'gross',
-      }, { signal: ac.signal });
+      const res = await analyticsService.getSalesAnalytics(heavyParams, { signal: ac.signal });
+      heavyDone = true;
+      if (activeKeyRef.current !== issuedFor) return;
       const v = res.data.data;
-      // Always cache under the key this fetch was issued for, so future
-      // returns to that category are instant. But only repaint `data` if the
-      // user is still viewing that same category — otherwise we'd clobber
-      // whatever is now on screen with stale foreign data.
       setCached(issuedFor, v);
-      if (activeKeyRef.current === issuedFor) {
-        setData(v);
-        setLoading(false);
-      }
+      setData(v);
+      setLoading(false);
     } catch (err) {
-      // Aborts are first-class — caller superseded us, not a real failure.
-      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED' || err?.message === 'canceled') {
-        return;
-      }
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED' || err?.message === 'canceled') return;
       if (activeKeyRef.current === issuedFor) setLoading(false);
       notifyApiError(err, 'Failed to load sales analytics');
+    } finally {
+      if (activeKeyRef.current === issuedFor) setRefreshing(false);
     }
-  }, [dateFrom, dateTo, colorName, size, locationId, v2Slug, cacheKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo, colorName, size, locationId, v2Slug, cacheKey, data]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Filter-change effect — mirrors network's pattern exactly:
+  //   1. Cache HIT + fresh → paint synchronously, NO fetch, no dim.
+  //   2. Cache HIT + stale → paint synchronously, background re-validate.
+  //   3. Cache MISS         → keep prior data visible, debounce 80 ms, fetch.
+  // The 80 ms debounce still coalesces rapid multi-select clicks (humans
+  // can't fire two selects faster than ~100 ms) but is short enough that
+  // a single deliberate filter change feels instantaneous. Previously
+  // 250 ms — felt sluggish on every solo click.
   useEffect(() => {
-    // Stale-while-revalidate. Three cases on filter/mode change:
-    //   ① cache hit + fresh   → swap in instantly, no fetch
-    //   ② cache hit + stale   → swap in instantly, refetch in background
-    //   ③ cache miss          → KEEP previous data on screen (don't blank to
-    //     zeros) and show a loading overlay; new data swaps in when ready.
-    //
-    // PLUS — 250 ms debounce on the fetch trigger.  A CEO clicking through
-    // four filters in a second used to fire four mega-CTE scans; only the
-    // LAST one's result was used (race-guard), but the server still paid
-    // 4× the work and the response landed late because it was queued
-    // behind its predecessors.  Now: only the user's settled filter state
-    // hits the wire.
     const cached = getCached(cacheKey);
     if (cached) {
       setData(cached);
-      if (isFresh(cacheKey)) { setLoading(false); return; }
-      setLoading(false);   // stale-but-displayable; fetch in background
-    } else {
-      setLoading(true);    // keep prior `data` visible under a loading flag
+      setLoading(false);
+      if (isFresh(cacheKey)) return; // fresh hit → no refetch, no dim
     }
-    // Cache hits paint synchronously; only the network call itself is
-    // debounced.  If the user lands on a cached combo there is no wait.
-    const t = setTimeout(() => { fetch(); }, 250);
+    const t = setTimeout(() => { fetch(); }, 80);
     return () => clearTimeout(t);
   }, [fetch, cacheKey]);
 
   // Abort any in-flight request when the page unmounts.
   useEffect(() => () => { inFlightRef.current?.abort(); }, []);
+
+  // Defensive dim-clear — guarantees `refreshing` flips OFF the moment
+  // a fresh `data` lands for the active cacheKey, regardless of any race
+  // path the fetch's `finally` could miss (e.g. AbortError thrown after
+  // a setState batch already committed setData). The user-visible symptom
+  // we are pinning down is "data updated but the page stays faded" — this
+  // makes that impossible by construction. Pairs `data` with the active
+  // cacheKey via a ref so we don't accidentally clear during a still-stale
+  // payload window.
+  useEffect(() => {
+    if (data) setRefreshing(false);
+  }, [data]);
 
   // Mode-toggle prefetch removed (cold-load fix #A).  Eagerly fetching the
   // other two modes via requestIdleCallback after the visible call landed
@@ -953,6 +1031,9 @@ export default function SalesAnalyticsPage() {
   // Show: Sale/Return/Net flips every ₹ + units on the page together.
   const valuation = v2Filters.valuation || 'gross';
   const lensMode  = v2Filters.sale_mode || 'net';
+  // Defer the expensive enrichRows re-computation so the pill button
+  // animates immediately while the data updates in a background pass.
+  const deferredLensMode = useDeferredValue(lensMode);
 
   // Sale-side ₹ for the chosen valuation
   const saleVal = (r) => {
@@ -979,13 +1060,13 @@ export default function SalesAnalyticsPage() {
     }
   };
   // Pick the lens-active value for the row based on Sale/Return/Net.
-  const lensVal = (r, lm = lensMode) => {
+  const lensVal = (r, lm = deferredLensMode) => {
     const sv = saleVal(r), rv = returnVal(r);
     if (lm === 'sale')   return sv;
     if (lm === 'return') return rv;
     return sv - rv; // 'net'
   };
-  const lensUnits = (r, lm = lensMode) => {
+  const lensUnits = (r, lm = deferredLensMode) => {
     const u = Number(r?.units_sold || 0);
     const ru = Number(r?.return_qty || 0);
     if (lm === 'sale')   return u;
@@ -999,12 +1080,12 @@ export default function SalesAnalyticsPage() {
   // Also OVERWRITE sales_value with the lens-active ₹ so legacy renders that
   // still read sales_value automatically pick the right number. This is what
   // makes Top Stores / Charts switch lens without touching their JSX.
-  const enrichRows = (rows) => (rows || []).map(r => {
+  const enrichRows = (rows, lm = deferredLensMode) => (rows || []).map(r => {
     const sv = saleVal(r), rv = returnVal(r);
     const su = Number(r?.units_sold || 0);
     const ru = Number(r?.return_qty || 0);
-    const lv = lensMode === 'sale' ? sv : lensMode === 'return' ? rv : sv - rv;
-    const lu = lensMode === 'sale' ? su : lensMode === 'return' ? ru : su - ru;
+    const lv = lm === 'sale' ? sv : lm === 'return' ? rv : sv - rv;
+    const lu = lm === 'sale' ? su : lm === 'return' ? ru : su - ru;
     return {
       ...r,
       _saleVal: sv, _returnVal: rv, _val: lv, _displayValue: lv,
@@ -1045,6 +1126,19 @@ export default function SalesAnalyticsPage() {
     };
   }, [dateFrom, dateTo, size, v2Slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Valuation-only enrichment — daily/by_month flip only when valuation changes,
+  // NOT when lensMode changes. Kept separate so chart memos don't recompute on
+  // every Sale/Return/Net toggle.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const dataVal = useMemo(() => {
+    if (!data) return data;
+    return {
+      daily:    (data.daily    || []).map(r => ({ ...r, sales_value: saleVal(r) })),
+      by_month: (data.by_month || []).map(r => ({ ...r, sales_value: saleVal(r) })),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, valuation]);
+
   const dataLens = useMemo(() => {
     if (!data) return data;
     return {
@@ -1053,23 +1147,36 @@ export default function SalesAnalyticsPage() {
       by_size:    enrichRows(data.by_size),
       by_store:   enrichRows(data.by_store),
       all_stores: enrichRows(data.all_stores),
-      // Daily / monthly charts: flip the revenue line with valuation.
-      daily:      (data.daily   || []).map(r => ({ ...r, sales_value: saleVal(r) })),
-      by_month:   (data.by_month || []).map(r => ({ ...r, sales_value: saleVal(r) })),
+      daily:      dataVal?.daily    || [],
+      by_month:   dataVal?.by_month || [],
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, valuation, lensMode]);
+  }, [data, dataVal, deferredLensMode]);
 
   // ── Daily chart — premium 3-series with dedicated Y-axes ─────────────────
+  // ApexCharts' xaxis parser throws "parser Error" if ANY datetime value is
+  // NaN. That happened on every preset switch (Today/MTD/YTD/…) because the
+  // payload occasionally carried a row whose `date` was null/undefined while
+  // the response was mid-swap, and `new Date(undefined).getTime() → NaN`
+  // poisoned the categories array. We now pre-sanitise the rows: drop any
+  // entry whose timestamp doesn't parse, sort ascending, and feed the
+  // already-numeric ts into both x-categories AND series points.
   const dailyChartData = useMemo(() => {
-    const rows = dataLens?.daily || [];
+    const raw = dataLens?.daily || [];
+    const rows = raw
+      .map(r => {
+        const ts = r?.date ? new Date(r.date).getTime() : NaN;
+        return Number.isFinite(ts) ? { ...r, _ts: ts } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => a._ts - b._ts);
     return {
       options: {
         ...chartBase,
         chart: { ...chartBase, type: 'area', id: 'daily' },
         xaxis: {
           type: 'datetime',
-          categories: rows.map(r => new Date(r.date).getTime()),
+          categories: rows.map(r => r._ts),
           labels: { style: { colors: T.muted, fontWeight: 700, fontSize: '11px' }, datetimeUTC: false },
           axisBorder: { show: false }, axisTicks: { show: false },
         },
@@ -1111,11 +1218,23 @@ export default function SalesAnalyticsPage() {
         },
       },
       series: [
-        { name: 'Units Sold',  data: rows.map(r => ({ x: new Date(r.date).getTime(), y: Number(r.sales_qty)   })) },
-        { name: 'Revenue (₹)', data: rows.map(r => ({ x: new Date(r.date).getTime(), y: Number(r.sales_value) })), yAxisIndex: 1 },
-        { name: 'Returns',     data: rows.map(r => ({ x: new Date(r.date).getTime(), y: Number(r.return_qty)  })), yAxisIndex: 2 },
+        { name: 'Units Sold',  data: rows.map(r => ({ x: r._ts, y: Number(r.sales_qty)   || 0 })) },
+        { name: 'Revenue (₹)', data: rows.map(r => ({ x: r._ts, y: Number(r.sales_value) || 0 })), yAxisIndex: 1 },
+        { name: 'Returns',     data: rows.map(r => ({ x: r._ts, y: Number(r.return_qty)  || 0 })), yAxisIndex: 2 },
       ],
     };
+  }, [dataLens?.daily]);
+
+  // Stable per-shape key — ApexCharts cannot safely re-parse a datetime axis
+  // when the categories array's length changes (Today=1 row → YTD=300+ rows).
+  // Using a key derived from row count + first/last timestamp forces React
+  // to unmount and remount the chart on a true shape change, side-stepping
+  // ApexCharts' internal mutable state and the "parser Error" crash that
+  // surfaced when switching MTD → YTD → Today rapidly.
+  const dailyChartKey = useMemo(() => {
+    const rows = dataLens?.daily || [];
+    if (!rows.length) return 'daily:empty';
+    return `daily:${rows.length}:${rows[0]?.date || ''}:${rows[rows.length - 1]?.date || ''}`;
   }, [dataLens?.daily]);
 
   // ── Monthly bar+line combo chart (bar=sales, line=returns on dual axis) ──
@@ -1153,10 +1272,18 @@ export default function SalesAnalyticsPage() {
         tooltip: { shared: true, intersect: false, style: { fontSize: '12px', fontWeight: 700 } },
       },
       series: [
-        { name: 'Units Sold',     type: 'bar',  data: rows.map(r => Number(r.sales_qty)) },
-        { name: 'Units Returned', type: 'line', data: rows.map(r => Number(r.return_qty)) },
+        { name: 'Units Sold',     type: 'bar',  data: rows.map(r => Number(r.sales_qty)  || 0) },
+        { name: 'Units Returned', type: 'line', data: rows.map(r => Number(r.return_qty) || 0) },
       ],
     };
+  }, [dataLens?.by_month]);
+
+  // Same remount-on-shape-change guard for the two monthly charts. They
+  // share the same source array (`by_month`) so a single key serves both.
+  const monthlyChartKey = useMemo(() => {
+    const rows = dataLens?.by_month || [];
+    if (!rows.length) return 'monthly:empty';
+    return `monthly:${rows.length}:${rows[0]?.month_label || ''}:${rows[rows.length - 1]?.month_label || ''}`;
   }, [dataLens?.by_month]);
 
   // ── Colour chart ─────────────────────────────────────────────────────────
@@ -1187,119 +1314,44 @@ export default function SalesAnalyticsPage() {
     };
   }, [data?.by_month]);
 
-  const hasFilters = colorName || size || locationId || category || dateFrom !== '2025-01-01' || dateTo !== '2026-01-31' || v2Active > 0;
+  const hasFilters = colorName || size || locationId || category || preset !== 'mtd' || v2Active > 0;
 
   return (
     <FiltersProvider value={v2FilterApi}>
-    <DashboardLayout title="Sales & Returns Analytics" subtitle="Day-basis sales intelligence — units, revenue, colour, size, store">
+    <DashboardLayout
+      title="Sales & Returns Analytics"
+      subtitle="Day-basis sales intelligence — units, revenue, colour, size, store"
+      headerSlot={<TimeRangeControl preset={preset} onChange={(p) => startTransition(() => setPreset(p))} />}
+    >
       {/* Premium skin layer — activates the .sx-* design tokens defined in
           styles/globals.css. Wraps every child in the page so cards, tables,
           chips, and numbers all share the refined visual language. */}
       <div className="sx-page sx-fade">
 
-      {/* Mode + chips strip — the dimensional filters live in the sidebar
-          panel (luxury LENS cluster).  Mode (Active/Inactive/All) belongs
-          on-page so it's always one click away regardless of sidebar state. */}
+      {/* ── Top control row ───────────────────────────────────────────────
+          A single right-aligned row anchored to the underside of the
+          DashboardLayout header. Holds the Sale/Return/Net lens AND the
+          Active/Inactive/All ModePill on the SAME visual line, exactly
+          where the user requested. The lens sits on the LEFT of the row
+          (with its "Show" + "Valuation" labels), ModePill hugs the
+          far-right edge under the Sync chip above. */}
       <div style={{
-        display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12,
-        padding: '14px 24px 0',
+        display: 'flex', alignItems: 'center',
+        // Generous gap between cluster groups + a row gap so the controls
+        // don't crowd each other when the page wraps. The user flagged the
+        // chips were sitting too tight — bumping `gap` from 12 → 18 and
+        // adding column-level breathing space inside each cluster gives the
+        // row the same comfortable rhythm as the dashboard's filter band.
+        columnGap: 18, rowGap: 10,
+        padding: '8px 24px 6px',
+        flexWrap: 'wrap',
       }}>
-        <ModePill
-          mode={v2Filters.mode || 'active'}
-          onChange={(m) => setV2('mode', m)}
-        />
-      </div>
-      <FilterChips
-        filters={v2Filters}
-        setFilter={setV2}
-        clearAll={clearV2}
-      />
-
-      {/* ── Date-window dropdown — single control, lives right under the
-          FilterBar so there's only ONE filter section on the page. The
-          legacy filter row (date inputs / category select / refresh / ERP
-          notice) is gone — every dimension is in the FilterBar above. ── */}
-      <div style={{
-        display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10,
-        padding: '12px 24px 14px',
-        background: 'rgba(255,255,255,0.66)',
-        backdropFilter: 'blur(18px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(18px) saturate(180%)',
-        borderBottom: `1px solid ${T.border}`,
-        marginBottom: 22,
-      }}>
-        <Calendar size={13} color={T.muted} strokeWidth={2.2} />
-        <span className="sx-eyebrow">Window</span>
-        <div style={{ position: 'relative' }}>
-          <select
-            value={activePreset || 'custom'}
-            onChange={e => {
-              const v = e.target.value;
-              if (v === 'custom') { setActivePreset(''); return; }
-              const r = rangeForPreset(v);
-              if (r) { setDateFrom(r.from); setDateTo(r.to); setActivePreset(v); }
-            }}
-            style={{ ...filterSelect, minWidth: 184 }}
-          >
-            <option value="custom">Custom range</option>
-            <option value="today">Today</option>
-            <option value="last_7">Last 7 days</option>
-            <option value="last_30">Last 30 days</option>
-            <option value="last_90">Last 90 days</option>
-            <option value="mtd">Month to Date</option>
-            <option value="qtd">Quarter to Date</option>
-            <option value="ytd">Year to Date</option>
-            <option value="fy">FY 2025-26</option>
-            <option value="cy">Calendar 2025</option>
-          </select>
-          <ChevronIcon />
-        </div>
-        {/* Inline date inputs — visible always so user can fine-tune the
-            window manually even after picking a preset. */}
-        <input type="date" value={dateFrom}
-          onChange={e => { setDateFrom(e.target.value); setActivePreset(''); }}
-          style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '7px 11px', fontSize: 12, fontWeight: 600, color: T.primary, outline: 'none', background: 'var(--bg-elevated)', height: 32, fontFamily: 'var(--font-body)' }} />
-        <span style={{ fontWeight: 700, color: T.muted, fontSize: 13, padding: '0 2px' }}>→</span>
-        <input type="date" value={dateTo}
-          onChange={e => { setDateTo(e.target.value); setActivePreset(''); }}
-          style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '7px 11px', fontSize: 12, fontWeight: 600, color: T.primary, outline: 'none', background: 'var(--bg-elevated)', height: 32, fontFamily: 'var(--font-body)' }} />
-        {hasFilters && (
-          <button
-            onClick={() => { setColorName(''); setSize(''); setLocationId(''); clearV2(); setDateFrom('2025-01-01'); setDateTo('2026-01-31'); setActivePreset(''); }}
-            className="sx-chip" style={{ height: 32 }}>
-            Reset all
-          </button>
-        )}
-        <button onClick={fetch} className="sx-chip"
-          title="Refresh data"
-          style={{ marginLeft: 'auto', height: 32, padding: '0 12px' }}>
-          <RefreshCw size={12} color={T.primary} strokeWidth={2.2} />
-          <span style={{ fontSize: 11, fontWeight: 700 }}>Refresh</span>
-        </button>
-        <span style={{
-          fontSize: 10.5, fontWeight: 700, color: T.muted,
-          borderLeft: `1px solid ${T.border}`, paddingLeft: 12,
-          letterSpacing: '0.02em',
-        }}>
-          ERP: Apr 2024 – Jan 2026 · Stock: 1 Feb 2026
-        </span>
-      </div>
-
-      {/* ── Lens pill (Sale/Return/Net) + Valuation dropdown
-          (Gross / Ex-GST / GST / MRP / Discount / COGS / Margin / Margin%).
-          Sits BELOW the Window strip and ABOVE the KPI cards. The two
-          lenses are orthogonal: Sale-mode picks WHICH movement-type figure
-          to show; Valuation picks the ₹ BASIS of that figure (gross with
-          GST vs. ex-GST vs. MRP-equivalent vs. cost vs. margin). ───────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
         <span className="sx-eyebrow">Show</span>
         <SaleModePill
           mode={v2Filters.sale_mode || 'net'}
           onChange={(m) => setV2('sale_mode', m)}
         />
-        <span className="sx-eyebrow" style={{ marginLeft: 14 }}>
-          Valuation
-        </span>
+        <span className="sx-eyebrow" style={{ marginLeft: 8 }}>Valuation</span>
         <div style={{ position: 'relative' }}>
           <select
             value={v2Filters.valuation || 'gross'}
@@ -1315,18 +1367,127 @@ export default function SalesAnalyticsPage() {
           </select>
           <ChevronIcon />
         </div>
-        {Number(s.return_rate_pct) > 0 && (
-          <span className="sx-pill" style={{
-            marginLeft: 'auto',
-            background: Number(s.return_rate_pct) >= 5 ? 'rgba(220,38,38,0.06)' : 'rgba(217,119,6,0.06)',
-            border: `1px solid ${Number(s.return_rate_pct) >= 5 ? 'rgba(220,38,38,0.18)' : 'rgba(217,119,6,0.18)'}`,
-            color: Number(s.return_rate_pct) >= 5 ? '#B91C1C' : '#B45309',
-          }}>
-            <RotateCcw size={11} strokeWidth={2.2} />
-            Return rate · {s.return_rate_pct}%
-          </span>
-        )}
+
+        {/* Custom-window strip — ALWAYS rendered, toggled via CSS so:
+              • Native <input type="date"> widgets are instantiated once at
+                page mount (off the critical path), not on every Custom click
+              • backdrop-filter blur removed (was the biggest GPU cost on
+                mount); a flat semi-transparent bg looks the same and costs 0
+              • opacity + max-width transitions on the compositor → smooth
+                slide-in/out, runs on the GPU, never blocks the main thread.
+        */}
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 10,
+          padding: preset === 'custom' ? '6px 12px' : '0',
+          background: preset === 'custom' ? 'rgba(255,255,255,0.06)' : 'transparent',
+          border: `1px solid ${preset === 'custom' ? 'rgba(255,255,255,0.10)' : 'transparent'}`,
+          borderRadius: 999,
+          marginLeft: preset === 'custom' ? 8 : 0,
+          opacity: preset === 'custom' ? 1 : 0,
+          pointerEvents: preset === 'custom' ? 'auto' : 'none',
+          maxWidth: preset === 'custom' ? 640 : 0,
+          overflow: 'hidden',
+          whiteSpace: 'nowrap',
+          transition: 'opacity 180ms ease, max-width 240ms cubic-bezier(0.16, 1, 0.3, 1), padding 180ms ease, margin-left 180ms ease, background 180ms ease, border-color 180ms ease',
+        }}>
+          <Calendar size={14} color={T.muted} strokeWidth={2.2} />
+          <input type="date" value={dateFrom}
+            onChange={e => setDateFrom(e.target.value)}
+            className="sales-date-input"
+            style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '6px 10px', fontSize: 12, fontWeight: 600, color: T.primary, outline: 'none', background: 'var(--bg-elevated)', height: 30, fontFamily: 'var(--font-body)', colorScheme: 'light dark' }} />
+          <span style={{ fontWeight: 700, color: T.muted, fontSize: 14 }}>→</span>
+          <input type="date" value={dateTo}
+            onChange={e => setDateTo(e.target.value)}
+            className="sales-date-input"
+            style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '6px 10px', fontSize: 12, fontWeight: 600, color: T.primary, outline: 'none', background: 'var(--bg-elevated)', height: 30, fontFamily: 'var(--font-body)', colorScheme: 'light dark' }} />
+          {hasFilters && (
+            <button
+              onClick={() => { setColorName(''); setSize(''); setLocationId(''); clearV2(); setPreset('mtd'); }}
+              className="sx-chip" style={{ height: 28, padding: '0 10px', fontSize: 11 }}>
+              Reset
+            </button>
+          )}
+          <button onClick={fetch} className="sx-chip"
+            title="Refresh data"
+            style={{ height: 28, padding: '0 10px' }}>
+            <RefreshCw size={12} color={T.primary} strokeWidth={2.2} />
+            <span style={{ fontSize: 11, fontWeight: 700 }}>Refresh</span>
+          </button>
+        </div>
+
+        <div style={{ flex: 1 }} />
+        <ModePill
+          mode={v2Filters.mode || 'active'}
+          onChange={(m) => setV2('mode', m)}
+        />
+
+        {/* Calendar-icon visibility — explicit SVG background, NOT a filter.
+            The browser's default picker indicator is invisible on dark
+            backgrounds even with `filter: invert(1)` because Chrome/Edge
+            render the default icon at near-zero opacity when color-scheme
+            is dark. We replace it entirely with a custom SVG via
+            `background-image`, then swap the SVG's stroke colour per theme.
+            Guaranteed visible on every browser/theme combo. */}
+        <style jsx>{`
+          /* Reset the browser default + paint a guaranteed-visible icon */
+          :global(.sales-date-input::-webkit-calendar-picker-indicator) {
+            opacity: 1;
+            cursor: pointer;
+            width: 16px;
+            height: 16px;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-size: 14px 14px;
+            /* Default = DARK theme → bright stroke */
+            background-image: url("data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27%23E2E8F0%27%20stroke-width%3D%272.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Crect%20x%3D%273%27%20y%3D%274%27%20width%3D%2718%27%20height%3D%2718%27%20rx%3D%272%27%2F%3E%3Cline%20x1%3D%2716%27%20y1%3D%272%27%20x2%3D%2716%27%20y2%3D%276%27%2F%3E%3Cline%20x1%3D%278%27%20y1%3D%272%27%20x2%3D%278%27%20y2%3D%276%27%2F%3E%3Cline%20x1%3D%273%27%20y1%3D%2710%27%20x2%3D%2721%27%20y2%3D%2710%27%2F%3E%3C%2Fsvg%3E");
+          }
+          /* Light theme override → dark stroke */
+          :global(html.theme-light .sales-date-input::-webkit-calendar-picker-indicator) {
+            background-image: url("data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27%23334155%27%20stroke-width%3D%272.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Crect%20x%3D%273%27%20y%3D%274%27%20width%3D%2718%27%20height%3D%2718%27%20rx%3D%272%27%2F%3E%3Cline%20x1%3D%2716%27%20y1%3D%272%27%20x2%3D%2716%27%20y2%3D%276%27%2F%3E%3Cline%20x1%3D%278%27%20y1%3D%272%27%20x2%3D%278%27%20y2%3D%276%27%2F%3E%3Cline%20x1%3D%273%27%20y1%3D%2710%27%20x2%3D%2721%27%20y2%3D%2710%27%2F%3E%3C%2Fsvg%3E");
+          }
+          :global(.sales-date-input::-webkit-calendar-picker-indicator:hover) {
+            background-color: rgba(255,255,255,0.08);
+            border-radius: 4px;
+          }
+        `}</style>
       </div>
+
+      {/* Custom-range strip moved INTO the lens row above — no separate
+          strip is rendered here anymore. */}
+
+      {/* Generous vertical breathing room between the filter row above
+          and the "SHOWING …" chips strip — bumped from 14 → 28 so the
+          chips visually live in their own band instead of butting up
+          against the SaleModePill / Valuation / ModePill controls. */}
+      <div style={{ marginTop: 28 }}>
+        <FilterChips
+          filters={v2Filters}
+          setFilter={setV2}
+          clearAll={clearV2}
+        />
+      </div>
+
+      {/* ── Refreshing scope ──────────────────────────────────────────────
+          Everything from the lens pill down through the charts/tables reads
+          from `data`. On mode toggle (Active/Inactive/All) the cacheKey
+          changes and a fresh fetch fires; prior data stays visible (SWR)
+          but without a visual cue the numbers feel like they "snap" when
+          the response lands. A single opacity dim across the whole data
+          zone — applied only on a refetch with prior data on screen —
+          makes the transition feel intentional and matches the polished
+          UX shipped on the network page. Cold loads (no data yet) are
+          handled by per-section skeletons inside each component.
+
+          `paddingTop: 18` puts a clear gap between the chips strip above
+          and the first KPI card below. */}
+      <div style={{
+        opacity: refreshing && data ? 0.55 : 1,
+        transition: 'opacity 200ms ease',
+        pointerEvents: refreshing && data ? 'none' : 'auto',
+        paddingTop: 18,
+      }}>
+      {/* Lens row (Sale/Return/Net + Valuation + Return-rate pill) was moved
+          to the top control row above, on the same line as the ModePill. */}
 
       {/* ── Sales Pulse — KPI strip (lens-aware, count-up animated) ─── */}
       <SalesPulse
@@ -1360,7 +1521,7 @@ export default function SalesAnalyticsPage() {
         {loading && !data?.daily?.length
           ? <div className="sx-shimmer" style={{ height: 320, borderRadius: 12 }} />
           : data?.daily?.length
-            ? <Chart options={dailyChartData.options} series={dailyChartData.series} type="area" height={320} />
+            ? <Chart key={dailyChartKey} options={dailyChartData.options} series={dailyChartData.series} type="area" height={320} />
             : <div style={{ height: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.muted, fontWeight: 700, fontSize: 13, letterSpacing: '0.01em' }}>No data for selected filters</div>
         }
       </div>
@@ -1371,14 +1532,14 @@ export default function SalesAnalyticsPage() {
           <SectionTitle icon={BarChart2} label="Monthly — Sales vs Returns (Units)" />
           {loading && !data?.by_month?.length
             ? <div className="sx-shimmer" style={{ height: 260, borderRadius: 12 }} />
-            : <Chart options={monthlyChartData.options} series={monthlyChartData.series} type="bar" height={260} />
+            : <Chart key={monthlyChartKey} options={monthlyChartData.options} series={monthlyChartData.series} type="bar" height={260} />
           }
         </div>
         <div className="sx-card" style={{ padding: '24px 26px' }}>
           <SectionTitle icon={TrendingUp} label="Monthly Revenue (₹)" />
           {loading && !data?.by_month?.length
             ? <div className="sx-shimmer" style={{ height: 260, borderRadius: 12 }} />
-            : <Chart options={revenueChartData.options} series={revenueChartData.series} type="area" height={260} />
+            : <Chart key={`rev-${monthlyChartKey}`} options={revenueChartData.options} series={revenueChartData.series} type="area" height={260} />
           }
         </div>
       </div>
@@ -1427,6 +1588,7 @@ export default function SalesAnalyticsPage() {
         onClose={closeDrill}
       />
 
+      </div>{/* /.refreshing-scope */}
       </div>{/* /.sx-page */}
     </DashboardLayout>
     </FiltersProvider>

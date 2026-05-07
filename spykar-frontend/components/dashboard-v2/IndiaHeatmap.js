@@ -34,12 +34,24 @@ function pickColor(value, breakpoints) {
 const ALIASES = {
   'ORISSA':           'orissa',          // both spellings exist; map names this
   'ODISHA':           'orissa',
-  'UTTARAKHAND':      'uttaranchal',     // map uses old name
+  'UTTARAKHAND':      'uttaranchal',     // TopoJSON uses old name "Uttaranchal"
   'JAMMU & KASHMIR':  'jammu and kashmir',
   'NEW DELHI':        'delhi',
   'TAMILNADU':        'tamil nadu',
-  'PONDICHERRY':      'puducherry',
+  'PONDICHERRY': 'puducherry',
+  'LADAKH': 'ladakh', 
 };
+
+// Override TopoJSON names with modern/correct display names for the tooltip.
+const GEO_DISPLAY = {
+  'uttaranchal': 'Uttarakhand',
+  'orissa': 'Odisha',
+  'jammu & kashmir':   'Jammu & Kashmir',      // ← add
+  'jammu and kashmir': 'Jammu & Kashmir',      // ← add
+  'ladakh':            'Ladakh',
+};
+const displayName = n => GEO_DISPLAY[(n || '').toLowerCase().trim()] || n;
+
 const norm = s => (s || '').toUpperCase().trim();
 const lookupKey = s => ALIASES[norm(s)] || norm(s).toLowerCase();
 
@@ -87,20 +99,32 @@ export default function IndiaHeatmap({ data, loading }) {
       </div>
 
       {loading ? (
-        <div style={{ height: 320, background: 'var(--v2-bg-elevated)', borderRadius: 8 }} />
+        <div style={{ height: 380, background: 'var(--v2-bg-elevated)', borderRadius: 8 }} />
       ) : (
         <div style={{ position: 'relative' }}>
+          {/* viewBox aspect tuned to match India's natural shape (~1:1.05).
+              Previous 520×320 (1.625:1) letterboxed the geometry inside the
+              card with empty top/bottom bands. New 480×460 lets the country
+              fill the frame edge-to-edge. Scale bumped 750 → 880 + center
+              nudged slightly south (82, 23) so Kashmir doesn't clip and
+              Tamil Nadu reaches the bottom comfortably. SVG `height: auto`
+              lets the card breathe responsively without a fixed-height
+              letterbox; preserveAspectRatio keeps the map centered on
+              wider/narrower viewports. */}
           <ComposableMap
             projection="geoMercator"
-            projectionConfig={{ center: [82, 22], scale: 750 }}
-            width={520} height={320}
-            style={{ width: '100%', height: 320, display: 'block' }}
+            projectionConfig={{ center: [80.5, 21.5], scale: 790 }}
+            width={480} height={500}
+            preserveAspectRatio="xMidYMid meet"
+            style={{ width: '100%', height: 'auto', maxHeight: 500, display: 'block' }}
           >
             <Geographies geography={TOPO_URL}>
               {({ geographies }) =>
                 geographies.map(geo => {
+                  // AFTER
                   const geoName = geo.properties.name || geo.properties.NAME || '';
-                  const row = indexed.get(geoName.toLowerCase().trim());
+                  const geoKey = ALIASES[geoName.toUpperCase().trim()] || geoName.toLowerCase().trim();
+                  const row = indexed.get(geoKey);
                   const fill = row ? pickColor(Number(row.net_value), breakpoints) : SCALE[0];
                   return (
                     <Geography
@@ -136,7 +160,7 @@ export default function IndiaHeatmap({ data, loading }) {
               }}
             >
               <div style={{ fontWeight: 700, color: 'var(--v2-fg-primary)' }}>
-                {hovered.geoName}
+                {displayName(hovered.geoName)}
               </div>
               {hovered.row ? (
                 <>

@@ -4,9 +4,20 @@ const { AppError } = require('../middleware/errorHandler');
 const logger = require('../config/logger');
 
 // ─── Executive Summary ─────────────────────────────────────────────────────────
+//
+// Mode lens — narrows EVERY figure on the Overview hero by shop_closed flag:
+//   active   → l.shop_closed = false (open shops actively trading)
+//   inactive → l.shop_closed = true  (shut shops with residual stock)
+//   all      → no shop_closed filter (entire active-flag network)
+//
+// Cache key bumped per mode so the three lens variants don't clobber each other.
 async function getExecutiveSummary(req, res, next) {
   try {
-    const data = await getOrSet('inventory:executive-summary', async () => {
+    const mode = ['active','inactive','all'].includes(req.query.mode) ? req.query.mode : 'active';
+    const modeClause = mode === 'active'   ? 'AND l.shop_closed = false'
+                     : mode === 'inactive' ? 'AND l.shop_closed = true'
+                     : '';
+    const data = await getOrSet(`inventory:executive-summary:v2:${mode}`, async () => {
       // Per-location-type breakdown
       const typeBreakdown = await query(`
         WITH vel AS (
@@ -44,6 +55,7 @@ async function getExecutiveSummary(req, res, next) {
         LEFT JOIN skus s ON s.id = i.sku_id AND s.is_active = true
         LEFT JOIN vel v ON v.location_id = i.location_id AND v.sku_id = i.sku_id
         WHERE l.is_active = true
+          ${modeClause}
           AND l.type != 'WAREHOUSE'
           AND NULLIF(TRIM(COALESCE(l.group_name, '')), '') IS NOT NULL
         GROUP BY
@@ -88,6 +100,7 @@ async function getExecutiveSummary(req, res, next) {
         JOIN skus s ON s.id = i.sku_id
         LEFT JOIN vel v ON v.location_id = i.location_id AND v.sku_id = i.sku_id
         WHERE l.is_active = true AND s.is_active = true
+          ${modeClause}
       `);
 
       // Critical low-stock alerts (top 10)
@@ -122,6 +135,7 @@ async function getExecutiveSummary(req, res, next) {
                i.qty_on_hand <= CASE WHEN i.safety_stock > 0 THEN i.safety_stock
                                      ELSE GREATEST(5, ROUND(COALESCE(v.adv,1)*14)) END)
           AND l.is_active = true AND s.is_active = true
+          ${modeClause}
         ORDER BY shortfall_pct DESC
         LIMIT 10
       `);
@@ -360,15 +374,49 @@ async function getSkuInventory(req, res, next) {
 // on avg daily sales so alerts fire even before thresholds are manually configured.
 async function getAlerts(req, res, next) {
   try {
-    // Cache the already-serialized response body. On cache hit we stream the
-    // raw JSON string directly with res.send(), skipping both JSON.parse on
-    // read and res.json()'s re-stringify on write. That's ~1-2s off per call
-    // for the 570K-row payload. Same rows, same columns, same shape — only
-    // the in-process serialization overhead is removed.
-    const body = await getOrSetRawJson('inventory:alerts:v8', async () => {
-      const result = await query(`
+    // Active / Inactive / All filter — drives the WHERE on locations + skus.
+    // 'active'  → only is_active=true (default; matches operational intent)
+    // 'inactive'→ only is_active=false (audit / archive view)
+    // 'all'     → no is_active filter (true full-network view)
+    const modeRaw = (req.query.mode || 'active').toLowerCase();
+    const mode = ['active', 'inactive', 'all'].includes(modeRaw) ? modeRaw : 'active';
+
+    // Mode semantics — aligned with the rest of the platform (dashboard's
+    // Needs Attention, NetworkPulse, AllLocationsTable all interpret mode the
+    // same way, so toggling Active / Inactive / All on the page-level ModePill
+    // gives consistent counts everywhere).
+    //
+    //   active   → master-active records at OPEN stores (shop_closed=false)
+    //   inactive → master-active records at CLOSED stores (shop_closed=true)
+    //   all      → every master-active record regardless of shop_closed
+    //
+    // is_active=true is always required because rows with is_active=false are
+    // either deleted or archived master records that shouldn't ever surface
+    // as live alerts. (Verified DB-side: 0 rows currently have is_active=false.)
+    const activeFilter = mode === 'inactive'
+      ? 'AND l.is_active = true AND s.is_active = true AND l.shop_closed = true'
+      : mode === 'all'
+        ? 'AND l.is_active = true AND s.is_active = true'
+        : 'AND l.is_active = true AND s.is_active = true AND l.shop_closed = false';
+
+    // Cache the already-serialized response body, scoped per mode. v10 = new
+    // shape with mode + true summary even at zero rows (cache key bump
+    // automatically invalidates v9 entries). On cache hit we stream the raw
+    // JSON string directly with res.send(), skipping both JSON.parse on read
+    // and res.json()'s re-stringify on write.
+    const cacheKey = `inventory:alerts:v12:${mode}`;
+    const body = await getOrSetRawJson(cacheKey, async () => {
+      // Two queries instead of one CROSS-JOINed monster:
+      //   (1) summary — counts the FULL alerts_base (no row cap, this is the
+      //       authoritative network total shown on the cards).
+      //   (2) detail — same alerts_base, ORDER BY severity, LIMIT 5000 for
+      //       the drill list. The cap exists ONLY on detail rows because
+      //       sending 570K objects to the browser would freeze the page;
+      //       counts are never affected.
+      // Splitting them is faster than CROSS JOIN (no 570K × duplication of
+      // 4 summary columns) AND keeps the cards honest at any scale.
+      const baseSQL = `
         WITH velocity AS (
-          -- average daily units sold per location+SKU (last 180 days of data)
           SELECT
             m.location_id, m.sku_id,
             GREATEST(1,
@@ -397,6 +445,7 @@ async function getAlerts(req, res, next) {
         ),
         alerts_base AS (
           SELECT
+            l.is_active AS loc_active, s.is_active AS sku_active,
             l.name AS location_name, COALESCE(l.group_name, l.type::text) AS location_type, l.city, l.state,
             s.sku_code, s.product_name, s.color_name, s.size,
             i.qty_on_hand,
@@ -416,41 +465,69 @@ async function getAlerts(req, res, next) {
             i.qty_on_hand = 0
             OR i.qty_on_hand <= t.effective_safety
           )
-            AND l.is_active = true AND s.is_active = true
-        ),
-        summary AS (
-          SELECT
-            COUNT(*) FILTER (WHERE alert_level = 'OUT_OF_STOCK')::int AS out_of_stock,
-            COUNT(*) FILTER (WHERE alert_level = 'REORDER_NOW')::int  AS reorder_now,
-            COUNT(*) FILTER (WHERE alert_level = 'LOW_STOCK')::int    AS low_stock,
-            COUNT(*)::int                                              AS total
-          FROM alerts_base
-        )
+          ${activeFilter}
+        )`;
+
+      // (1) TRUE network counts — no LIMIT, scanned once, cached.
+      const summaryResult = await query(`
+        ${baseSQL}
         SELECT
-          a.*,
-          s.out_of_stock, s.reorder_now, s.low_stock, s.total
-        FROM alerts_base a
-        CROSS JOIN summary s
-        ORDER BY
-          CASE a.alert_level
-            WHEN 'OUT_OF_STOCK' THEN 0
-            WHEN 'REORDER_NOW'  THEN 1
-            ELSE                     2
-          END,
-          a.shortfall_pct DESC NULLS LAST
+          COUNT(*) FILTER (WHERE alert_level = 'OUT_OF_STOCK')::bigint AS out_of_stock,
+          COUNT(*) FILTER (WHERE alert_level = 'REORDER_NOW')::bigint  AS reorder_now,
+          COUNT(*) FILTER (WHERE alert_level = 'LOW_STOCK')::bigint    AS low_stock,
+          COUNT(*)::bigint                                              AS total,
+          COUNT(*) FILTER (WHERE loc_active=true  AND sku_active=true )::bigint AS active_count,
+          COUNT(*) FILTER (WHERE loc_active=false OR  sku_active=false)::bigint AS inactive_count
+        FROM alerts_base
       `);
+      const s = summaryResult.rows[0] || {};
+      const toNum = v => (v == null ? 0 : Number(v));
+      const summary = {
+        out_of_stock:    toNum(s.out_of_stock),
+        reorder_now:     toNum(s.reorder_now),
+        low_stock:       toNum(s.low_stock),
+        total:           toNum(s.total),
+        active_count:    toNum(s.active_count),
+        inactive_count:  toNum(s.inactive_count),
+        mode,
+      };
 
-      // Extract true summary from first row (same on every row via CROSS JOIN)
-      const first = result.rows[0];
-      const summary = first
-        ? { out_of_stock: first.out_of_stock, reorder_now: first.reorder_now,
-            low_stock: first.low_stock, total: first.total }
-        : { out_of_stock: 0, reorder_now: 0, low_stock: 0, total: 0 };
+      // (2) Detail rows — capped for browser memory + JSON safety.
+      // Configurable via ?detail_limit (max 50K). Default 5K matches the
+      // existing UI's drill-list, which only renders the top few critical
+      // SKUs anyway.
+      const requestedLimit = parseInt(req.query.detail_limit, 10);
+      const detailLimit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 5000, 0), 50000);
 
-      // Strip summary columns from data rows to keep payload lean
-      const data = result.rows.map(({ out_of_stock, reorder_now, low_stock, total, ...row }) => row);
-      // Return the full response body — it will be serialized once and cached.
-      return { success: true, data, summary, count: summary.total };
+      const detailResult = detailLimit === 0
+        ? { rows: [] }
+        : await query(`
+            ${baseSQL}
+            SELECT
+              location_name, location_type, city, state,
+              sku_code, product_name, color_name, size,
+              qty_on_hand, safety_stock, reorder_point, shortfall_pct,
+              alert_level,
+              loc_active AS location_active, sku_active AS sku_active
+            FROM alerts_base
+            ORDER BY
+              CASE alert_level
+                WHEN 'OUT_OF_STOCK' THEN 0
+                WHEN 'REORDER_NOW'  THEN 1
+                ELSE                     2
+              END,
+              shortfall_pct DESC NULLS LAST
+            LIMIT ${detailLimit}
+          `);
+
+      return {
+        success: true,
+        data: detailResult.rows,
+        summary,
+        count: summary.total,           // TRUE network total — used by UI cards
+        rowsReturned: detailResult.rows.length,
+        rowCap: detailLimit,
+      };
     }, TTL.STOCK_ALERTS);
 
     res.set('Content-Type', 'application/json; charset=utf-8');
@@ -465,7 +542,13 @@ async function getAlerts(req, res, next) {
 // the 570K-row full alerts response. The full /alerts endpoint is unchanged.
 async function getAlertsSummary(req, res, next) {
   try {
-    const summary = await getOrSet('inventory:alerts:summary:v1', async () => {
+    // Same mode lens as executive-summary so the Stock Alerts tile narrows
+    // when the user flips the Active/Inactive/All pill on the Overview page.
+    const mode = ['active','inactive','all'].includes(req.query.mode) ? req.query.mode : 'active';
+    const modeClause = mode === 'active'   ? 'AND l.shop_closed = false'
+                     : mode === 'inactive' ? 'AND l.shop_closed = true'
+                     : '';
+    const summary = await getOrSet(`inventory:alerts:summary:v2:${mode}`, async () => {
       const result = await query(`
         WITH velocity AS (
           SELECT
@@ -495,6 +578,7 @@ async function getAlertsSummary(req, res, next) {
           LEFT JOIN velocity v ON v.location_id = i.location_id AND v.sku_id = i.sku_id
           JOIN locations l ON l.id = i.location_id AND l.is_active = true
           JOIN skus s ON s.id = i.sku_id AND s.is_active = true
+          WHERE 1=1 ${modeClause}
         )
         SELECT
           COUNT(*) FILTER (WHERE qty_on_hand = 0)::int                                           AS out_of_stock,
@@ -698,11 +782,15 @@ async function getMovements(req, res, next) {
 async function getAgeing(req, res, next) {
   try {
     const { location_type, zone_id } = req.query;
-    const cacheKey = `inventory:ageing:${location_type||'all'}:${zone_id||'all'}`;
+    // Same mode lens — ageing buckets narrow with Active/Inactive/All pill.
+    const mode = ['active','inactive','all'].includes(req.query.mode) ? req.query.mode : 'active';
+    const cacheKey = `inventory:ageing:v2:${mode}:${location_type||'all'}:${zone_id||'all'}`;
     const data = await getOrSet(cacheKey, async () => {
     const conditions = ['l.is_active = true'];
     const params = [];
 
+    if (mode === 'active')   conditions.push('l.shop_closed = false');
+    if (mode === 'inactive') conditions.push('l.shop_closed = true');
     if (location_type) { params.push(location_type); conditions.push(`l.type = $${params.length}`); }
     if (zone_id)       { params.push(zone_id);        conditions.push(`l.zone_id = $${params.length}`); }
 

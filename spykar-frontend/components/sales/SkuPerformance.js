@@ -265,7 +265,7 @@ export default function SkuPerformance({ data, loading, valuation = 'gross', onS
                         transition: 'background 120ms',
                         cursor: onSkuClick ? 'pointer' : 'default',
                       }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#f0f4ff'}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.09)'}
                       onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? T.card : T.bg}
                     >
                       <td style={{ padding: '10px 14px', fontSize: 11, fontWeight: 800, color: isPodium ? T.accent : T.muted, width: 40 }}>

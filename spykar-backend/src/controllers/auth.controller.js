@@ -157,6 +157,7 @@ async function me(req, res) {
       name: req.user.name,
       email: req.user.email,
       role: req.user.role,
+      state: req.user.state || null,
       zone_id: req.user.zone_id || null,
     },
   });
@@ -216,6 +217,7 @@ async function listUsers(req, res, next) {
           u.role,
           u.is_active,
           u.last_login_at,
+          u.state,
           u.zone_id,
           z.name AS zone_name,
           u.created_at,
@@ -250,7 +252,7 @@ async function listUsers(req, res, next) {
 
 async function createUser(req, res, next) {
   try {
-    const { name, email, password, role, zone_id } = req.body;
+    const { name, email, password, role, state } = req.body;
 
     const existing = await query('SELECT id FROM users WHERE email = $1', [email]);
     if (existing.rows.length) {
@@ -259,10 +261,10 @@ async function createUser(req, res, next) {
 
     const password_hash = await bcrypt.hash(password, 12);
     const result = await query(`
-      INSERT INTO users (name, email, password_hash, role, zone_id)
+      INSERT INTO users (name, email, password_hash, role, state)
       VALUES ($1, $2, $3, $4, $5)
-      RETURNING id, name, email, role, is_active, last_login_at, zone_id, created_at, updated_at
-    `, [name, email, password_hash, role, zone_id || null]);
+      RETURNING id, name, email, role, is_active, last_login_at, state, zone_id, created_at, updated_at
+    `, [name, email, password_hash, role, state || null]);
 
     logger.info(`User created: ${email} by ${req.user.email}`);
     res.status(201).json({ success: true, data: result.rows[0] });
@@ -274,7 +276,7 @@ async function createUser(req, res, next) {
 async function updateUser(req, res, next) {
   try {
     const { id } = req.params;
-    const { name, role, is_active, zone_id } = req.body;
+    const { name, role, is_active, state } = req.body;
     const updates = [];
     const params = [];
 
@@ -290,9 +292,9 @@ async function updateUser(req, res, next) {
       params.push(is_active);
       updates.push(`is_active = $${params.length}`);
     }
-    if (zone_id !== undefined) {
-      params.push(zone_id || null);
-      updates.push(`zone_id = $${params.length}`);
+    if (state !== undefined) {
+      params.push(state || null);
+      updates.push(`state = $${params.length}`);
     }
 
     if (!updates.length) {
@@ -304,7 +306,7 @@ async function updateUser(req, res, next) {
       UPDATE users
       SET ${updates.join(', ')}, updated_at = NOW()
       WHERE id = $${params.length}
-      RETURNING id, name, email, role, is_active, last_login_at, zone_id, created_at, updated_at
+      RETURNING id, name, email, role, is_active, last_login_at, state, zone_id, created_at, updated_at
     `, params);
 
     if (!result.rows.length) {

@@ -220,15 +220,15 @@ function DrawerHeader({ data, pivot, loading, onClose }) {
         style={{
           width: 34, height: 34, borderRadius: 10,
           border: '1px solid var(--border-default)',
-          background: 'var(--bg-card)', cursor: 'pointer',
+          background: 'var(--bg-card)', color: 'var(--text-primary)', cursor: 'pointer',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0,
           transition: 'background 160ms ease, transform 160ms ease',
         }}
         onMouseEnter={e => { e.currentTarget.style.background = 'rgba(15,23,42,0.04)'; e.currentTarget.style.transform = 'scale(1.04)'; }}
-        onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.transform = 'scale(1)'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-card)'; e.currentTarget.style.transform = 'scale(1)'; }}
       >
-        <X size={16} strokeWidth={2.2} color="#0B1220" />
+        <X size={16} strokeWidth={2.2} color="currentColor" />
       </button>
     </header>
   );
@@ -508,7 +508,7 @@ function RankList({ title, rows, renderLeft, renderRight, emptyText, limit = 15,
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div className="sx-num" style={{
-                    fontSize: 13, color: tone === 'loss' ? '#B91C1C' : '#0B1220',
+                    fontSize: 13, color: tone === 'loss' ? '#B91C1C' : 'var(--text-primary)',
                   }}>{right.value}</div>
                   <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-muted)', marginTop: 2 }}>
                     {right.units}

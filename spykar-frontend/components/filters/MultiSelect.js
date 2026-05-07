@@ -25,7 +25,7 @@
 //     placeholder="All" width={200} compact={true}
 //   />
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, memo } from 'react';
 import { createPortal } from 'react-dom';
 
 const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -54,7 +54,7 @@ function rankMatch(label, q) {
 }
 function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-export default function MultiSelect({
+function MultiSelectImpl({
   label,
   icon = null,
   options = [],
@@ -152,6 +152,11 @@ export default function MultiSelect({
       const spaceBelow = vh - r.bottom;
       const spaceAbove = r.top;
       const ESTIMATED = 360;
+      // Smart placement applies universally — bottom-positioned filters
+      // (like Season inside the side panel) flip up when there isn't
+      // enough room below, top-positioned filters open down as usual.
+      // Previously `lux-pop` callers force-bottomed and overlapped the
+      // next filter button.
       const placement = (spaceBelow < ESTIMATED && spaceAbove > spaceBelow) ? 'top' : 'bottom';
       const top = placement === 'bottom'
         ? r.bottom + 6
@@ -537,6 +542,26 @@ export default function MultiSelect({
     </>
   );
 }
+
+// React.memo wrapper — only re-render when the props that actually affect
+// output change. Reference equality on `options` and `value` is enforced by
+// the parent (FilterBar): each dimension owns its own array reference, so
+// changing one filter dimension no longer re-renders the other 12 dropdowns.
+// This is the single biggest perceived-latency win on filter apply.
+const MultiSelect = memo(MultiSelectImpl, (prev, next) => (
+  prev.label === next.label &&
+  prev.icon === next.icon &&
+  prev.options === next.options &&
+  prev.value === next.value &&
+  prev.onChange === next.onChange &&
+  prev.loading === next.loading &&
+  prev.placeholder === next.placeholder &&
+  prev.width === next.width &&
+  prev.compact === next.compact &&
+  prev.popoverClassName === next.popoverClassName
+));
+
+export default MultiSelect;
 
 // Render a label with a highlighted hit slice. Falls through to the plain
 // string if there's no hit (no search term or query missed).

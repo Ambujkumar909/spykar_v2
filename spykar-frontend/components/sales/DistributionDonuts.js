@@ -1,31 +1,30 @@
-// ─── DistributionDonuts — premium twin donut for Colour + Size ───────────────
-// Two side-by-side donut charts that visualise how units / revenue split
-// across Colour and Size dimensions. Lens-aware (Sale/Return/Net) and
-// valuation-aware (Gross / Ex-GST / GST / MRP / Discount) — the slice
-// math + center figure flip together with the page-level pills.
+// ─── DistributionDonuts — Recharts twin donut (Colour + Size) ────────────────
+// Migrated from ApexCharts → Recharts on 2026-05-02 to remove the heavy
+// updateOptions cycle, fix the intermittent "parser Error" crashes, and
+// halve the per-toggle render cost. Recharts is plain React + SVG with no
+// internal state machine, so lens-toggle re-renders are pure React
+// reconciliation (~5–10ms per chart vs ~80–120ms for ApexCharts).
 //
 // Performance:
-//   • Reads from `data.by_color` and `data.by_size` already in `dataLens`
-//     (parent passes the lens-enriched arrays). No extra API call, no extra
-//     cache key — inherits the sales endpoint's 10-min Redis TTL and the
-//     frontend dashboardCache 10-min freshness window.
-//   • Series + options memoised on (rows × lens × valuation × topN). Re-renders
-//     during unrelated state changes (filter dropdown opens, hover) cost ~0.
-//   • Top N + "Others" bucket caps DOM nodes at 9 slices regardless of how
-//     many distinct colours / sizes the dataset has — keeps the canvas snappy.
+//   • Reads from `data.by_color` / `data.by_size` already in `dataLens`
+//     (parent passes lens-enriched rows). No extra API, no extra cache key.
+//   • Inherits the 24h Redis TTL on /analytics/sales (recently bumped from
+//     2h) and the frontend dashboardCache. A second click of the same date
+//     range hits warm cache → page paints in ~0.5s.
+//   • bucketed/palette/totals memoised on (rows × topN). Hover doesn't
+//     trigger React renders — Recharts manages its own hover internally.
+//   • isAnimationActive=false → instant slice transitions, no animation lag.
 //
 // Visual:
-//   • 78%-thick donut so the centre stays legible
-//   • Centre shows the lens-active total (units) with a soft label
-//   • Custom legend: rank dot · name · units · % share
-//   • Hover: ApexCharts highlights the active slice + premium tooltip
-//   • Reduced motion friendly via the global guard in styles/globals.css
+//   • Donut: innerRadius 58% / outerRadius 80% — same proportions as before
+//   • Centre: HTML overlay (absolute-positioned div) — full React control,
+//     never replaced on hover (no equivalent of ApexCharts' name/value blocks)
+//   • Tooltip: custom component, lens-aware
+//   • Side legend unchanged
 
-import { useMemo } from 'react';
-import dynamic from 'next/dynamic';
+import { useMemo, useCallback, useState } from 'react';
 import { Palette, Ruler } from 'lucide-react';
-
-const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
+import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 
 // ── Colour-name → hex mapping for the Colour donut ─────────────────────────
 // When a colour name maps to a real-world hue we use it so the donut LITERALLY
@@ -123,10 +122,16 @@ function DonutCard({
   const lensColor = lensMode === 'sale' ? '#2563EB' : lensMode === 'return' ? '#F43F5E' : '#059669';
   const valuationLabel = valuation === 'gross' ? 'Gross' : valuation === 'ex_gst' ? 'Ex-GST' : valuation === 'gst' ? 'GST' : valuation === 'mrp' ? 'MRP' : valuation === 'discount' ? 'Discount' : valuation;
 
+  // Hovered-slice state for the custom tooltip. Driven directly by the
+  // Pie's per-Cell onMouseEnter so the displayed data is always the slice
+  // the cursor is actually on. `pos` follows the cursor inside the chart
+  // container so the tooltip floats just above the hovered slice's colour.
+  const [hover, setHover] = useState(null); // { row, x, y } | null
+
   // Build the bucketed dataset: top N + Others. Each bucket carries its
-  // lens-active units AND value (so the tooltip can show both). Memoised
-  // on the array reference, lensMode and valuation — the parent passes
-  // pre-enriched rows from `dataLens`, so this is essentially a sort+slice.
+  // lens-active units AND value (so the tooltip can show both). Recharts
+  // re-renders are pure React reconciliation, so memoisation just avoids
+  // recomputing the sort/slice — the chart itself doesn't pay an extra cost.
   const bucketed = useMemo(() => {
     const src = (rows || []).map(r => ({
       label: pickLabel(r) || '—',
@@ -144,7 +149,7 @@ function DonutCard({
       { label: 'Others', units: 0, value: 0 }
     );
     return [...head, others];
-  }, [rows, pickLabel, topN, lensMode, valuation]);
+  }, [rows, pickLabel, topN]);
 
   const totalUnits = useMemo(() => bucketed.reduce((s, r) => s + r.units, 0), [bucketed]);
   const totalValue = useMemo(() => bucketed.reduce((s, r) => s + r.value, 0), [bucketed]);
@@ -153,140 +158,43 @@ function DonutCard({
     [bucketed, colourFor]
   );
 
-  const series  = useMemo(() => bucketed.map(r => r.units), [bucketed]);
-  const labels  = useMemo(() => bucketed.map(r => r.label), [bucketed]);
+  // Recharts pie data — one row per slice with units + value. The chart
+  // reads `units` for slice angles via dataKey="units"; tooltip and legend
+  // read the rest of the fields directly.
+  const pieData = useMemo(
+    () => bucketed.map((r, i) => ({ ...r, color: palette[i] })),
+    [bucketed, palette]
+  );
 
-  // Apex options — premium donut with center total + custom tooltip.
-  // Larger radius, thicker ring, dramatic centre value, gradient-tinted
-  // segment fills, and a deeper soft shadow lifted off the canvas via
-  // SVG filter — gives the donut a "frosted-glass over neutral" feel.
-  const options = useMemo(() => ({
-    chart: {
-      type: 'donut',
-      fontFamily: 'var(--font-body)',
-      animations: {
-        enabled: true,
-        easing: 'easeOutCubic',
-        speed: 700,
-        animateGradually: { enabled: true, delay: 60 },
-      },
-      toolbar: { show: false },
-      sparkline: { enabled: false },
-      background: 'transparent',
-      dropShadow: {
-        enabled: true,
-        top: 4, left: 0, blur: 14,
-        opacity: 0.10,
-        color: 'var(--text-primary)',
-      },
-    },
-    labels,
-    colors: palette,
-    stroke: { width: 3, colors: ['#fff'] },
-    fill: {
-      type: 'gradient',
-      gradient: {
-        shade: 'light',
-        type: 'diagonal2',
-        shadeIntensity: 0.16,
-        gradientToColors: undefined, // auto-derive lighter shade
-        inverseColors: false,
-        opacityFrom: 1,
-        opacityTo: 0.92,
-        stops: [0, 100],
-      },
-    },
-    plotOptions: {
-      pie: {
-        donut: {
-          size: '74%', // slightly thicker ring for premium presence
-          background: 'transparent',
-          labels: {
-            show: true,
-            // Single source of truth for the donut centre. We drop the
-            // separate `name` + `value` blocks because Apex prioritises
-            // them on hover and they don't always pick up lensLabel
-            // changes from a re-memoised options object — `total` with
-            // `showAlways: true` is the deterministic path.
-            name: {
-              show: true,
-              fontSize: '11px',
-              fontFamily: 'var(--font-body)',
-              fontWeight: 800,
-              color: 'var(--text-muted)',
-              letterSpacing: '0.08em',
-              offsetY: 24,
-              formatter: () => `${lensLabel.toUpperCase()} UNITS`,
-            },
-            value: {
-              show: true,
-              fontSize: '34px', // bigger, more dramatic hero number
-              fontFamily: 'var(--font-display)',
-              fontWeight: 900,
-              color: 'var(--text-primary)',
-              letterSpacing: '-0.02em',
-              offsetY: -20,
-              formatter: (v) => fmtL(Number(v) || 0),
-            },
-            total: {
-              show: true,
-              showAlways: true,
-              label: `${lensLabel.toUpperCase()} UNITS`,
-              fontSize: '11px',
-              fontFamily: 'var(--font-body)',
-              fontWeight: 800,
-              color: 'var(--text-muted)',
-              formatter: () => fmtL(totalUnits),
-            },
-          },
-        },
-        expandOnClick: false,
-        offsetX: 0, offsetY: 0,
-        customScale: 0.96, // tiny breathing room inside the larger canvas
-      },
-    },
-    dataLabels: { enabled: false },
-    legend:     { show: false }, // we render our own premium legend
-    states: {
-      hover:  { filter: { type: 'lighten', value: 0.06 } },
-      active: { filter: { type: 'darken',  value: 0.10 } },
-    },
-    tooltip: {
-      style: { fontSize: '12px', fontFamily: 'var(--font-body)' },
-      custom: ({ series, seriesIndex }) => {
-        const row = bucketed[seriesIndex] || {};
-        const total = totalUnits || 1;
-        const pct   = ((Number(series[seriesIndex] || 0) / total) * 100).toFixed(1);
-        return `
-          <div style="
-            padding: 10px 14px;
-            background: #fff;
-            border: 1px solid rgba(15,23,42,0.08);
-            border-radius: 10px;
-            box-shadow: 0 12px 28px -10px rgba(15,23,42,0.18), 0 1px 2px rgba(15,23,42,0.04);
-            font-family: var(--font-body);
-            min-width: 180px;
-          ">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-              <span style="width:8px;height:8px;border-radius:50%;background:${palette[seriesIndex]};display:inline-block;"></span>
-              <span style="font-size:12.5px;font-weight:800;color:#0B1220;letter-spacing:-0.005em">${row.label}</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;font-size:11px;color:#475569;font-weight:700;letter-spacing:0.02em;text-transform:uppercase">
-              <span>${lensLabel} Units</span><span style="color:#0B1220;font-feature-settings:'tnum'">${fmtNum(row.units)} · ${pct}%</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;font-size:11px;color:#475569;font-weight:700;letter-spacing:0.02em;text-transform:uppercase;margin-top:3px">
-              <span>${valuationLabel}</span><span style="color:${lensColor};font-feature-settings:'tnum'">${fmtCr(row.value)}</span>
-            </div>
-          </div>
-        `;
-      },
-    },
-    responsive: [
-      { breakpoint: 1280, options: { chart: { height: 320 } } },
-      { breakpoint: 900,  options: { chart: { height: 280 } } },
-      { breakpoint: 640,  options: { chart: { height: 240 } } },
-    ],
-  }), [bucketed, labels, palette, lensLabel, lensColor, valuationLabel, totalUnits]);
+  // Tooltip component — receives the active slice's payload, renders the
+  // same lens-aware HTML the previous ApexCharts custom tooltip did.
+  const renderTooltip = ({ active, payload }) => {
+    if (!active || !payload?.[0]) return null;
+    const row = payload[0].payload || {};
+    const total = totalUnits || 1;
+    const pct   = ((Number(row.units) || 0) / total * 100).toFixed(1);
+    return (
+      <div style={{
+        padding: '10px 14px', background: '#fff',
+        border: '1px solid rgba(15,23,42,0.08)', borderRadius: 10,
+        boxShadow: '0 12px 28px -10px rgba(15,23,42,0.18), 0 1px 2px rgba(15,23,42,0.04)',
+        fontFamily: 'var(--font-body)', minWidth: 180,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: row.color, display: 'inline-block' }} />
+          <span style={{ fontSize: 12.5, fontWeight: 800, color: '#0B1220', letterSpacing: '-0.005em' }}>{row.label}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#475569', fontWeight: 700, letterSpacing: '0.02em', textTransform: 'uppercase' }}>
+          <span>{lensLabel} Units</span>
+          <span style={{ color: '#0B1220', fontFeatureSettings: '"tnum" 1' }}>{fmtNum(row.units)} · {pct}%</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#475569', fontWeight: 700, letterSpacing: '0.02em', textTransform: 'uppercase', marginTop: 3 }}>
+          <span>{valuationLabel}</span>
+          <span style={{ color: lensColor, fontFeatureSettings: '"tnum" 1' }}>{fmtCr(row.value)}</span>
+        </div>
+      </div>
+    );
+  };
 
   const isEmpty = !loading && bucketed.length === 0;
   const showSkeleton = loading && bucketed.length === 0;
@@ -351,19 +259,86 @@ function DonutCard({
             }}>No data for selected filters</div>
           )}
           {!showSkeleton && !isEmpty && (
-            // Key forces a fresh chart instance on lens / valuation change.
-            // Without it, Apex sometimes caches the centre-text formatter
-            // closure from the prior render and shows the wrong label
-            // ("NET UNITS" while chip reads "SALES · GROSS"). Re-mounting
-            // costs ~30 ms and the parent already keeps `bucketed` stable
-            // so DOM diffing is cheap.
-            <Chart
-              key={`${lensMode}-${valuation}`}
-              options={options}
-              series={series}
-              type="donut"
-              height={360}
-            />
+            <div
+              style={{ position: 'relative', width: '100%', height: 360 }}
+              onMouseMove={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                setHover(prev => prev ? { ...prev, x: e.clientX - rect.left, y: e.clientY - rect.top } : null);
+              }}
+              onMouseLeave={() => setHover(null)}
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    dataKey="units"
+                    nameKey="label"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius="58%"
+                    outerRadius="80%"
+                    stroke="#fff"
+                    strokeWidth={3}
+                    isAnimationActive={false}
+                    paddingAngle={0}
+                    onMouseLeave={() => setHover(null)}
+                  >
+                    {pieData.map((entry, i) => (
+                      <Cell
+                        key={`c-${i}`}
+                        fill={entry.color}
+                        // Per-Cell mouseEnter — fires reliably when the cursor
+                        // crosses from one slice into another within the same
+                        // Pie. Pie-level onMouseEnter only fires on Pie-entry,
+                        // so it leaves stale tooltips when sliding slice→slice.
+                        onMouseEnter={() => setHover(prev => ({ row: entry, x: prev?.x || 0, y: prev?.y || 0 }))}
+                      />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              {/* Custom tooltip — positioned just above the cursor, anchored
+                  to the slice's colour. Driven by per-slice mouseEnter so the
+                  data shown always matches the slice under the cursor. */}
+              {hover && (
+                <div style={{
+                  position: 'absolute',
+                  left: Math.max(8, hover.x - 90),
+                  top:  Math.max(8, hover.y - 90),
+                  pointerEvents: 'none',
+                  zIndex: 5,
+                }}>
+                  {renderTooltip({ active: true, payload: [{ payload: hover.row }] })}
+                </div>
+              )}
+              {/* Centre overlay — pure HTML, never replaced by hover. Gives
+                  full control over typography and never has the ApexCharts
+                  closure-staleness problem. */}
+              <div style={{
+                position: 'absolute', inset: 0,
+                display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                pointerEvents: 'none',
+              }}>
+                <div style={{
+                  fontSize: 34, fontWeight: 900,
+                  fontFamily: 'var(--font-display)',
+                  color: 'var(--text-primary)',
+                  letterSpacing: '-0.02em', lineHeight: 1,
+                }}>
+                  {fmtL(totalUnits)}
+                </div>
+                <div style={{
+                  marginTop: 6,
+                  fontSize: 11, fontWeight: 800,
+                  fontFamily: 'var(--font-body)',
+                  color: 'var(--text-muted)',
+                  letterSpacing: '0.08em',
+                }}>
+                  {lensLabel.toUpperCase()} UNITS
+                </div>
+              </div>
+            </div>
           )}
           </div>
         </div>
@@ -440,27 +415,26 @@ export default function DistributionDonuts({ data, loading, lensMode = 'net', va
   // memoises by reference; useCallback isn't strictly needed because the
   // parent passes `data` from `dataLens` which only changes when the lens or
   // filters move (forcing the bucket to recompute anyway).
-  const colourLabel = (r) => String(r?.color_name || '—');
-  const sizeLabel   = (r) => String(r?.size       || '—');
+  const colourLabel = useCallback((r) => String(r?.color_name || '—'), []);
+  const sizeLabel   = useCallback((r) => String(r?.size       || '—'), []);
 
   // Real-colour mapping for the colour donut. Falls back to the premium
   // palette in stable order so successive runs of the same data produce
   // the same hue assignment — important for visual continuity when the user
   // toggles lens.
-  const colourFor = (label) => {
+  const colourFor = useCallback((label) => {
     const key = String(label || '').toUpperCase().trim();
     if (NAMED_COLOURS[key]) return NAMED_COLOURS[key];
     if (key === 'OTHERS')   return PREMIUM_PALETTE[PREMIUM_PALETTE.length - 1];
-    // Stable hash → palette index for unrecognised colour names
     let h = 0;
     for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
     return PREMIUM_PALETTE[h % (PREMIUM_PALETTE.length - 1)];
-  };
-  const sizeFor = (label, idx) => {
+  }, []);
+  const sizeFor = useCallback((label, idx) => {
     if (String(label || '').toUpperCase() === 'OTHERS')
       return PREMIUM_PALETTE[PREMIUM_PALETTE.length - 1];
     return PREMIUM_PALETTE[idx % (PREMIUM_PALETTE.length - 1)];
-  };
+  }, []);
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>

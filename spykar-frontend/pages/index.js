@@ -43,6 +43,7 @@ import CategoryMix from '../components/dashboard-v2/CategoryMix';
 import NeedsAttentionPanel from '../components/dashboard-v2/NeedsAttentionPanel';
 import FilterDrawer from '../components/dashboard-v2/FilterDrawer';
 import Sidebar from '../components/layout/Sidebar';
+import AiChatbot from '../components/AiChatbot';
 
 const DEFAULT_MODE = 'active';
 const DEFAULT_VALUATION = 'gross';
@@ -249,6 +250,9 @@ export default function Overview() {
           />
         </div>
       </div>
+
+      {/* Floating Spykar IQ chatbot — same instance used on every other page */}
+      <AiChatbot />
     </div>
   );
 }

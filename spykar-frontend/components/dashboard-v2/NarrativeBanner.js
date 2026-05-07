@@ -7,6 +7,7 @@
 
 import { Sparkles } from 'lucide-react';
 import { generateNarrative } from '../../lib/v2/narrative';
+import { useTheme } from '../../lib/useTheme';
 
 const TONE_BG = {
   ok:      'linear-gradient(120deg, var(--v2-ok-50)   0%, var(--v2-bg-card) 70%)',
@@ -16,6 +17,8 @@ const TONE_BG = {
 };
 
 export default function NarrativeBanner({ kpis, asOf, loading }) {
+  const { isDark } = useTheme();
+
   if (loading) {
     return (
       <div
@@ -41,6 +44,17 @@ export default function NarrativeBanner({ kpis, asOf, loading }) {
 
   const { text, bold, tone } = generateNarrative({ kpis, asOf });
 
+  // Tone → accent color for bold metric fragments.  These mid-saturation hues
+  // have enough contrast against BOTH the light gradient start (--v2-ok-50 etc.)
+  // and the dark card end (--v2-ink-800) so numbers pop in every theme variant.
+  const TONE_ACCENT = {
+    ok:      'var(--v2-ok-500)',
+    warn:    'var(--v2-warn-500)',
+    bad:     'var(--v2-bad-500)',
+    neutral: 'var(--v2-brand-500)',
+  };
+  const accentColor = TONE_ACCENT[tone] || TONE_ACCENT.neutral;
+
   // Render text with bolded spans.  Single-pass split on bold tokens; each
   // token becomes <strong>.  We escape regex chars so "₹3.2 Cr" works.
   const renderRich = () => {
@@ -49,7 +63,7 @@ export default function NarrativeBanner({ kpis, asOf, loading }) {
     const re = new RegExp(`(${escaped.join('|')})`);
     return text.split(re).map((chunk, i) =>
       bold.includes(chunk)
-        ? <strong key={i} style={{ color: 'var(--v2-fg-primary)', fontWeight: 700 }}>{chunk}</strong>
+        ? <strong key={i} style={{ color: accentColor, fontWeight: 800, letterSpacing: '-0.01em' }}>{chunk}</strong>
         : <span key={i}>{chunk}</span>
     );
   };
@@ -84,8 +98,17 @@ export default function NarrativeBanner({ kpis, asOf, loading }) {
           fontFamily: 'var(--v2-font-serif)',
           fontSize: 18,
           lineHeight: 1.45,
-          color: 'var(--v2-fg-secondary)',
           letterSpacing: '-0.005em',
+          // Dark mode: gradient runs #ECFDF5 (near-white) → #171A20 (near-black).
+          // No single solid color is readable on both extremes.  White text with a
+          // dark multi-shadow gives sharp letterforms on the light part while
+          // remaining clear on the dark part — classic broadcast/photo overlay
+          // technique.  Light mode: gradient stays pale throughout, so dark text
+          // without any shadow has sufficient contrast.
+          color: isDark ? 'rgba(250,250,250,0.95)' : 'var(--v2-fg-primary)',
+          textShadow: isDark
+            ? '0 1px 3px rgba(10,11,13,0.60), 0 0 10px rgba(10,11,13,0.45)'
+            : 'none',
         }}
       >
         {renderRich()}

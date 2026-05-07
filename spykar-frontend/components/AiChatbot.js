@@ -98,41 +98,41 @@ const CAT_COLORS = {
 
 // ─── Premium Light Theme (matches website) ────────────────────────────────────
 const T = {
-  panelBg:       '#FFFFFF',
-  panelBorder:   'rgba(15,23,42,0.1)',
+  panelBg:       'var(--bg-card, #FFFFFF)',
+  panelBorder:   'var(--border-default, rgba(15,23,42,0.1))',
   headerBg:      'linear-gradient(135deg, #C0392B 0%, #E74C3C 100%)',
   headerBorder:  'rgba(192,57,43,0.3)',
   accentRed:     '#C0392B',
   accentGold:    '#D4AF37',
-  msgsBg:        '#F8FAFC',
+  msgsBg:        'var(--bg-canvas, #F8FAFC)',
   userBubble:    'linear-gradient(135deg, #C0392B, #E74C3C)',
   userText:      '#FFFFFF',
   userBorder:    'rgba(192,57,43,0.4)',
-  botBubble:     '#FFFFFF',
-  botBorder:     'rgba(15,23,42,0.08)',
-  botText:       '#1F2937',
-  botTextMuted:  '#6B7280',
-  timestampC:    '#9CA3AF',
-  inputBg:       '#FFFFFF',
-  inputBorder:   'rgba(15,23,42,0.15)',
+  botBubble:     'var(--bg-card, #FFFFFF)',
+  botBorder:     'var(--border-default, rgba(15,23,42,0.08))',
+  botText:       'var(--text-primary, #1F2937)',
+  botTextMuted:  'var(--text-muted, #6B7280)',
+  timestampC:    'var(--text-disabled, #9CA3AF)',
+  inputBg:       'var(--bg-elevated, #FFFFFF)',
+  inputBorder:   'var(--border-default, rgba(15,23,42,0.15))',
   inputFocus:    '#C0392B',
-  inputText:     '#1F2937',
+  inputText:     'var(--text-primary, #1F2937)',
   sendBtnOn:     'linear-gradient(135deg, #C0392B, #E74C3C)',
-  sendBtnOff:    '#F3F4F6',
-  chipBg:        '#FFF5F4',
-  chipBorder:    'rgba(192,57,43,0.2)',
-  chipText:      '#374151',
-  divider:       'rgba(15,23,42,0.08)',
-  tableBg:       '#FFFFFF',
-  tableThBg:     '#FEF2F2',
-  tableThText:   '#991B1B',
-  tableTdText:   '#374151',
-  tableRowAlt:   '#FFFAF9',
+  sendBtnOff:    'var(--bg-elevated, #F3F4F6)',
+  chipBg:        'var(--bg-elevated, #FFF5F4)',
+  chipBorder:    'var(--border-default, rgba(192,57,43,0.2))',
+  chipText:      'var(--text-secondary, #374151)',
+  divider:       'var(--border-subtle, rgba(15,23,42,0.08))',
+  tableBg:       'var(--bg-card, #FFFFFF)',
+  tableThBg:     'var(--bg-elevated, #FEF2F2)',
+  tableThText:   'var(--text-secondary, #991B1B)',
+  tableTdText:   'var(--text-secondary, #374151)',
+  tableRowAlt:   'var(--bg-card-hover, #FFFAF9)',
   shadowColor:   'rgba(15,23,42,0.12)',
   glowColor:     'rgba(192,57,43,0.1)',
   fabGradient:   'linear-gradient(135deg, #C0392B, #E74C3C)',
   fabShadow:     'rgba(192,57,43,0.45)',
-  resizeHandle:  'rgba(15,23,42,0.2)',
+  resizeHandle:  'var(--text-muted, rgba(15,23,42,0.2))',
   scrollThumb:   'rgba(192,57,43,0.25)',
 };
 
@@ -381,7 +381,7 @@ function Bubble({ msg }) {
         <div style={{
           padding: '11px 15px',
           borderRadius: isUser ? '14px 4px 14px 14px' : '4px 14px 14px 14px',
-          background: isUser ? T.userBubble : msg.error ? '#FFF5F5' : T.botBubble,
+          background: isUser ? T.userBubble : msg.error ? 'rgba(220,38,38,0.10)' : T.botBubble,
           border: isUser ? `1px solid ${T.userBorder}` : msg.error ? '1px solid #FECACA' : `1px solid ${T.botBorder}`,
           color: isUser ? T.userText : msg.error ? '#991B1B' : T.botText,
           fontSize: 13, lineHeight: 1.6, wordBreak: 'break-word',
@@ -633,26 +633,32 @@ export default function AiChatbot() {
                 </div>
               </div>
               {/* Header buttons */}
+              {/* NOTE: header is always the red gradient (theme-independent),
+                  so these buttons must NOT use var(--bg-elevated) — that
+                  resolves to a near-white surface in day mode and makes the
+                  white icons disappear against the red header. Hardcoded
+                  translucent-white surface works in both day and night. */}
               {hasMessages && (
                 <button onClick={() => { setMessages([]); setUnread(0); setTimeout(() => inputRef.current?.focus(), 50); }}
                   title="Clear chat"
-                  style={{ background: 'var(--bg-elevated)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.18s', color: 'rgba(255,255,255,0.6)' }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; e.currentTarget.style.color = '#fff'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; }}>
+                  style={{ background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.35)', borderRadius: 8, width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.18s', color: '#fff' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.32)'; e.currentTarget.style.color = '#fff'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.18)'; e.currentTarget.style.color = '#fff'; }}>
                   <RotateCcw size={13} />
                 </button>
               )}
               <button onClick={() => setMaximized(m => !m)}
                 title={maximized ? 'Restore' : 'Maximize'}
-                style={{ background: 'var(--bg-elevated)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.18s', color: 'rgba(255,255,255,0.6)' }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; e.currentTarget.style.color = '#fff'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; }}>
+                style={{ background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.35)', borderRadius: 8, width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.18s', color: '#fff' }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.32)'; e.currentTarget.style.color = '#fff'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.18)'; e.currentTarget.style.color = '#fff'; }}>
                 {maximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
               </button>
               <button onClick={() => setOpen(false)}
-                style={{ background: 'var(--bg-elevated)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.18s', color: 'rgba(255,255,255,0.6)' }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(220,38,38,0.2)'; e.currentTarget.style.color = '#F87171'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; }}>
+                title="Close"
+                style={{ background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.35)', borderRadius: 8, width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.18s', color: '#fff' }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(220,38,38,0.55)'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.5)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.18)'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.35)'; }}>
                 <X size={14} />
               </button>
             </div>
@@ -679,7 +685,7 @@ export default function AiChatbot() {
 
             {/* ── Quick Asks (when no messages) ── */}
             {!hasMessages && (
-              <div style={{ borderTop: `1px solid ${T.divider}`, background: '#FFF5F4', flexShrink: 0 }}>
+              <div style={{ borderTop: `1px solid ${T.divider}`, background: T.chipBg, flexShrink: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px 4px', color: T.accentGold, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                   <Sparkles size={11} color={T.accentGold} style={{ animation: 'glowPulse 2s ease-in-out infinite' }} />
                   Quick Asks
@@ -691,14 +697,14 @@ export default function AiChatbot() {
             )}
 
             {/* ── Input ── */}
-            <div style={{ padding: '10px 12px 13px', background: '#FFFFFF', borderTop: `1px solid ${T.divider}`, flexShrink: 0 }}>
+            <div style={{ padding: '10px 12px 13px', background: T.panelBg, borderTop: `1px solid ${T.divider}`, flexShrink: 0 }}>
               {/* Mini chips when chat active */}
               {hasMessages && (
                 <div className="ai-scroll" style={{ display: 'flex', gap: 5, overflowX: 'auto', paddingBottom: 8 }}>
                   {suggestions.filter(s => typeof s?.q === 'string' && s.q.trim()).slice(0, 14).map((s, i) => (
                     <button key={i} onClick={() => handleSubmit(s.q)} style={{
                       flexShrink: 0, padding: '3px 10px', borderRadius: 14,
-                      border: `1px solid rgba(220,38,38,0.25)`,
+                      border: `1px solid ${T.chipBorder}`,
                       background: 'rgba(220,38,38,0.07)',
                       color: T.chipText, fontSize: 11, cursor: 'pointer',
                       whiteSpace: 'nowrap', transition: 'all 0.15s', fontWeight: 500, fontFamily: 'inherit',
@@ -730,7 +736,7 @@ export default function AiChatbot() {
                   disabled={!input.trim() || loading}
                   style={{
                     width: 42, height: 42, borderRadius: 13, border: 'none',
-                    background: !input.trim() || loading ? '#F3F4F6' : T.sendBtnOn,
+                    background: !input.trim() || loading ? T.sendBtnOff : T.sendBtnOn,
                     cursor: !input.trim() || loading ? 'not-allowed' : 'pointer',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     flexShrink: 0, transition: 'all 0.2s',

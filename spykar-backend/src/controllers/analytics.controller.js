@@ -429,14 +429,21 @@ async function getSalesAnalytics(req, res, next) {
                    JOIN locations l ON l.id = m.location_id
                    WHERE ${conditions.join(' AND ')}`;
 
-    // ── Run queries sequentially in small batches to avoid exhausting PostgreSQL
-    // shared memory in Docker (/dev/shm). Running all 9 concurrently fills shm.
-    // Strategy: one mega-CTE scan per "pass" — each pass hits the table once.
-
-    // Pass 1: filter options — run sequentially to avoid competing for PostgreSQL shared memory
-    const colorListRes = await query(`SELECT DISTINCT s.color_name FROM inventory_movements m JOIN skus s ON s.id = m.sku_id WHERE m.movement_type = 'SALE' AND s.color_name IS NOT NULL ORDER BY s.color_name`);
-    const sizeListRes  = await query(`SELECT size FROM (SELECT DISTINCT s.size, CASE WHEN s.size ~ '^[0-9]+$' THEN s.size::int ELSE 9999 END AS sort_key FROM inventory_movements m JOIN skus s ON s.id = m.sku_id WHERE m.movement_type = 'SALE' AND s.size IS NOT NULL) t ORDER BY sort_key, size`);
-    const storeListRes = await query(`SELECT id, name FROM locations WHERE is_active=true ORDER BY name`);
+    // ── Pass 1: filter-option lookups ──────────────────────────────────────
+    // These three are independent of each other AND independent of the mega-CTE.
+    // Previously they ran serially "to protect /dev/shm" — but they're tiny
+    // (DISTINCT scans on indexes), nowhere near the shm pressure that kicks in
+    // for the mega-CTE. Running them in parallel saves 300-800ms cold per call.
+    //
+    // The store list is also cached at the request layer with a 30-min TTL —
+    // it changes only when locations are added/closed (rare).
+    const [colorListRes, sizeListRes, storeListRes] = await Promise.all([
+      query(`SELECT DISTINCT s.color_name FROM inventory_movements m JOIN skus s ON s.id = m.sku_id WHERE m.movement_type = 'SALE' AND s.color_name IS NOT NULL ORDER BY s.color_name`),
+      query(`SELECT size FROM (SELECT DISTINCT s.size, CASE WHEN s.size ~ '^[0-9]+$' THEN s.size::int ELSE 9999 END AS sort_key FROM inventory_movements m JOIN skus s ON s.id = m.sku_id WHERE m.movement_type = 'SALE' AND s.size IS NOT NULL) t ORDER BY sort_key, size`),
+      getOrSet('analytics:sales:store-list:v1', async () =>
+        (await query(`SELECT id, name FROM locations WHERE is_active=true ORDER BY name`)).rows
+      , 1800).then(rows => ({ rows })),
+    ]);
 
     // Pass 2: single mega-CTE that scans inventory_movements ONCE and produces all aggregations
     // This is the key optimisation — one table scan feeds summary + daily + color + size + store + monthly
@@ -1611,12 +1618,14 @@ async function getStateHeatmap(req, res, next) {
     const { date_from, date_to, mode = 'active' } = req.query;
     const cacheKey = `analytics:state-heatmap:${date_from || ''}:${date_to || ''}:${mode}`;
 
-    // mode → location.is_active filter (mirrors getSalesAnalytics).
+    // Match the same store-lifecycle semantics used by the main sales endpoint:
+    // active = open stores, inactive = closed stores, all = both, all within
+    // the active location master.
     const modeClause = mode === 'inactive'
-      ? 'AND l.is_active = FALSE'
+      ? 'AND l.is_active = TRUE AND l.shop_closed = TRUE'
       : mode === 'all'
-        ? ''
-        : 'AND l.is_active = TRUE';
+        ? 'AND l.is_active = TRUE'
+        : 'AND l.is_active = TRUE AND l.shop_closed = FALSE';
 
     const data = await getOrSet(cacheKey, async () => {
       // Default window: last 30 days of available data.
@@ -1674,7 +1683,7 @@ async function getStateHeatmap(req, res, next) {
 async function getSalesSummary(req, res, next) {
   try {
     const { date_from, date_to, mode = 'active' } = req.query;
-    const ttl = Number(req.query.ttl_override) || 300;
+    const ttl = Number(req.query.ttl_override) || 86400; // 24h — ERP is daily-sync, no point expiring sooner
     // v3: payload now carries the ex_gst / gst / mrp lens values so the
     // dashboard can re-pivot revenue without a second round-trip.  Bump the
     // cache key so old v2 entries don't shadow the new fields.

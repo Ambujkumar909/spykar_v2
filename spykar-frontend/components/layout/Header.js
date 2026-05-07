@@ -7,7 +7,7 @@ import { timeAgo } from '../../lib/utils';
 import { useAuth } from '../../lib/auth-context';
 import { useTheme } from '../../lib/useTheme';
 
-export default function Header({ title, subtitle }) {
+export default function Header({ title, subtitle, headerSlot }) {
   const router = useRouter();
   const { user } = useAuth();
   const { isDark, toggle: toggleTheme } = useTheme();
@@ -97,6 +97,16 @@ export default function Header({ title, subtitle }) {
           }}>{subtitle}</div>
         )}
       </div>
+
+      {/* Page-supplied slot — sits between title and date/time so each page
+          can inject a control (e.g. TimeRangeControl on /sales) directly into
+          the persistent header bar. Matches the dashboard's TopBar layout
+          where the time-range pill is centered next to the page brand. */}
+      {headerSlot && (
+        <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+          {headerSlot}
+        </div>
+      )}
 
       {/* Date / time */}
       <div style={{

@@ -23,7 +23,7 @@
 //   • Each dropdown handles Escape, click-outside, and focus trap
 //   • Reduced-motion users get instant transitions (respects prefers-reduced-motion)
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { filterService } from '../../lib/services';
 import { getCached, setCached, isFresh } from '../../lib/dashboardCache';
 import MultiSelect from './MultiSelect';
@@ -87,6 +87,10 @@ const FILTER_GROUPS = [
 // Flat catalog kept for backwards compatibility with anything that still
 // reads DIMS (e.g. dropdown-options pre-fetch loops).
 const DIMS = FILTER_GROUPS.flatMap(g => g.dims);
+
+// Module-level stable empty array — passing the same reference to MultiSelect
+// when there are no options/values lets React.memo skip re-renders.
+const EMPTY_ARR = Object.freeze([]);
 
 export default function FilterBar({ filters, setFilter, clearAll, activeCount }) {
   // Module-cached options bundle — toggling Active/Inactive/All (or picking
@@ -179,6 +183,19 @@ export default function FilterBar({ filters, setFilter, clearAll, activeCount })
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // ── Stable per-dimension change handlers ────────────────────────────────
+  // Each dimension gets its own memoised callback so React.memo on
+  // MultiSelect can short-circuit re-renders of the 12 dropdowns the user
+  // didn't touch. Without these, every `setFilter` from the parent rebuilds
+  // 13 inline arrow functions on every render and breaks memoisation.
+  const handlersRef = useRef({});
+  const dimChange = useCallback((dimKey) => {
+    if (!handlersRef.current[dimKey]) {
+      handlersRef.current[dimKey] = (v) => setFilter(dimKey, v);
+    }
+    return handlersRef.current[dimKey];
+  }, [setFilter]);
 
   // ── Mode toggle (Active vs All) ──────────────────────────────────────────
   const mode = filters.mode || 'active';
@@ -298,9 +315,9 @@ export default function FilterBar({ filters, setFilter, clearAll, activeCount })
                   <div key={d.key} data-filterbar-trigger-wrap>
                     <MultiSelect
                       label={d.label}
-                      options={optionsByDim[d.apiKey] || []}
-                      value={filters[d.key] || []}
-                      onChange={(v) => setFilter(d.key, v)}
+                      options={optionsByDim[d.apiKey] || EMPTY_ARR}
+                      value={filters[d.key] || EMPTY_ARR}
+                      onChange={dimChange(d.key)}
                       loading={loading && !optionsByDim[d.apiKey]}
                       placeholder="All"
                       compact
