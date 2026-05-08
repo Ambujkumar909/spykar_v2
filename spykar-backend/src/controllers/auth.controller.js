@@ -157,8 +157,6 @@ async function me(req, res) {
       name: req.user.name,
       email: req.user.email,
       role: req.user.role,
-      state: req.user.state || null,
-      zone_id: req.user.zone_id || null,
     },
   });
 }
@@ -217,13 +215,9 @@ async function listUsers(req, res, next) {
           u.role,
           u.is_active,
           u.last_login_at,
-          u.state,
-          u.zone_id,
-          z.name AS zone_name,
           u.created_at,
           u.updated_at
         FROM users u
-        LEFT JOIN zones z ON z.id = u.zone_id
         ${whereClause}
         ORDER BY u.created_at DESC
         LIMIT $${params.length - 1} OFFSET $${params.length}
@@ -252,7 +246,7 @@ async function listUsers(req, res, next) {
 
 async function createUser(req, res, next) {
   try {
-    const { name, email, password, role, state } = req.body;
+    const { name, email, password, role } = req.body;
 
     const existing = await query('SELECT id FROM users WHERE email = $1', [email]);
     if (existing.rows.length) {
@@ -261,10 +255,10 @@ async function createUser(req, res, next) {
 
     const password_hash = await bcrypt.hash(password, 12);
     const result = await query(`
-      INSERT INTO users (name, email, password_hash, role, state)
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING id, name, email, role, is_active, last_login_at, state, zone_id, created_at, updated_at
-    `, [name, email, password_hash, role, state || null]);
+      INSERT INTO users (name, email, password_hash, role)
+      VALUES ($1, $2, $3, $4)
+      RETURNING id, name, email, role, is_active, last_login_at, created_at, updated_at
+    `, [name, email, password_hash, role]);
 
     logger.info(`User created: ${email} by ${req.user.email}`);
     res.status(201).json({ success: true, data: result.rows[0] });
@@ -276,7 +270,7 @@ async function createUser(req, res, next) {
 async function updateUser(req, res, next) {
   try {
     const { id } = req.params;
-    const { name, role, is_active, state } = req.body;
+    const { name, role, is_active } = req.body;
     const updates = [];
     const params = [];
 
@@ -292,11 +286,6 @@ async function updateUser(req, res, next) {
       params.push(is_active);
       updates.push(`is_active = $${params.length}`);
     }
-    if (state !== undefined) {
-      params.push(state || null);
-      updates.push(`state = $${params.length}`);
-    }
-
     if (!updates.length) {
       throw new AppError('No valid fields were provided for update.', 400);
     }
@@ -306,7 +295,7 @@ async function updateUser(req, res, next) {
       UPDATE users
       SET ${updates.join(', ')}, updated_at = NOW()
       WHERE id = $${params.length}
-      RETURNING id, name, email, role, is_active, last_login_at, state, zone_id, created_at, updated_at
+      RETURNING id, name, email, role, is_active, last_login_at, created_at, updated_at
     `, params);
 
     if (!result.rows.length) {
@@ -332,7 +321,7 @@ async function toggleUser(req, res, next) {
       UPDATE users
       SET is_active = NOT is_active, updated_at = NOW()
       WHERE id = $1
-      RETURNING id, name, email, role, is_active, last_login_at, zone_id, created_at, updated_at
+      RETURNING id, name, email, role, is_active, last_login_at, created_at, updated_at
     `, [id]);
 
     if (!result.rows.length) {

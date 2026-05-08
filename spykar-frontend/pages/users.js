@@ -12,13 +12,11 @@ import {
 import DashboardLayout from '../components/layout/DashboardLayout';
 import KpiCard from '../components/ui/KpiCard';
 import { authService } from '../lib/services';
-import { filterService } from '../lib/services';
 import { useAuth } from '../lib/auth-context';
 import { formatDateTime, formatNumber } from '../lib/utils';
 import toast from 'react-hot-toast';
 
 const ROLE_OPTIONS = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'VIEWER'];
-const DEFAULT_STATE_OPTIONS = [{ label: 'All States', value: '' }];
 
 const ROLE_BADGES = {
   SUPER_ADMIN: 'badge-violet',
@@ -39,7 +37,6 @@ const EMPTY_CREATE_FORM = {
   email: '',
   password: '',
   role: 'MANAGER',
-  state: '',
 };
 
 export default function UsersPage() {
@@ -51,8 +48,7 @@ export default function UsersPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState(EMPTY_CREATE_FORM);
   const [editUser, setEditUser] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', role: 'VIEWER', is_active: true, state: '' });
-  const [stateOptions, setStateOptions] = useState(DEFAULT_STATE_OPTIONS);
+  const [editForm, setEditForm] = useState({ name: '', role: 'VIEWER', is_active: true });
   const [submitting, setSubmitting] = useState(false);
 
   const fetchUsers = useCallback(async () => {
@@ -75,25 +71,6 @@ export default function UsersPage() {
     fetchUsers();
   }, [fetchUsers]);
 
-  useEffect(() => {
-    let ignore = false;
-    (async () => {
-      try {
-        const res = await filterService.getAllOptions({ mode: 'all' });
-        const states = Array.isArray(res?.data?.options?.state) ? res.data.options.state : [];
-        if (!ignore) {
-          setStateOptions([
-            { label: 'All States', value: '' },
-            ...states.map((state) => ({ label: state, value: state })),
-          ]);
-        }
-      } catch (_) {
-        if (!ignore) setStateOptions(DEFAULT_STATE_OPTIONS);
-      }
-    })();
-    return () => { ignore = true; };
-  }, []);
-
   const metrics = useMemo(() => {
     const activeCount = users.filter((entry) => entry.is_active).length;
     const adminCount = users.filter((entry) => ['SUPER_ADMIN', 'ADMIN'].includes(entry.role)).length;
@@ -108,7 +85,6 @@ export default function UsersPage() {
       name: targetUser.name || '',
       role: targetUser.role || 'VIEWER',
       is_active: Boolean(targetUser.is_active),
-      state: targetUser.state || '',
     });
   }
 
@@ -116,17 +92,14 @@ export default function UsersPage() {
     setIsCreateOpen(false);
     setCreateForm(EMPTY_CREATE_FORM);
     setEditUser(null);
-    setEditForm({ name: '', role: 'VIEWER', is_active: true, state: '' });
+    setEditForm({ name: '', role: 'VIEWER', is_active: true });
   }
 
   async function handleCreateUser(event) {
     event.preventDefault();
     setSubmitting(true);
     try {
-      await authService.createUser({
-        ...createForm,
-        state: createForm.state || null,
-      });
+      await authService.createUser(createForm);
       toast.success('User created successfully');
       closeModals();
       fetchUsers();
@@ -147,7 +120,6 @@ export default function UsersPage() {
         name: editForm.name,
         role: editForm.role,
         is_active: editForm.is_active,
-        state: editForm.state || null,
       });
       toast.success('User updated successfully');
       closeModals();
@@ -230,7 +202,6 @@ export default function UsersPage() {
               <tr>
                 <th>User</th>
                 <th>Role</th>
-                <th>State</th>
                 <th>Status</th>
                 <th>Last Login</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
@@ -239,7 +210,7 @@ export default function UsersPage() {
             <tbody>
               {loading && Array.from({ length: 6 }).map((_, index) => (
                 <tr key={index}>
-                  <td colSpan={6}><div className="skeleton" style={{ height: 44 }} /></td>
+                  <td colSpan={5}><div className="skeleton" style={{ height: 44 }} /></td>
                 </tr>
               ))}
 
@@ -256,7 +227,6 @@ export default function UsersPage() {
                       {entry.role.replace(/_/g, ' ')}
                     </span>
                   </td>
-                  <td>{entry.state || 'All States'}</td>
                   <td>
                     <span className={`badge ${entry.is_active ? 'badge-success' : 'badge-danger'}`}>
                       {entry.is_active ? 'Active' : 'Inactive'}
@@ -286,7 +256,7 @@ export default function UsersPage() {
 
               {!loading && !users.length && (
                 <tr>
-                  <td colSpan={6}>
+                  <td colSpan={5}>
                     <div className="empty-state">
                       <UserCog size={32} />
                       <p>No users matched the current filters.</p>
@@ -358,7 +328,7 @@ export default function UsersPage() {
                 </>
               )}
 
-              <div className="grid-2">
+              <div>
                 <div>
                   <label style={{ display: 'block', marginBottom: 6, fontSize: 12, color: 'var(--text-muted)' }}>Role</label>
                   <select
@@ -372,23 +342,6 @@ export default function UsersPage() {
                   >
                     {ROLE_OPTIONS.map((role) => (
                       <option key={role} value={role}>{role.replace(/_/g, ' ')}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', marginBottom: 6, fontSize: 12, color: 'var(--text-muted)' }}>State Assignment</label>
-                  <select
-                    className="input"
-                    value={editUser ? editForm.state : createForm.state}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      if (editUser) setEditForm((current) => ({ ...current, state: value }));
-                      else setCreateForm((current) => ({ ...current, state: value }));
-                    }}
-                  >
-                    {stateOptions.map((state) => (
-                      <option key={state.value} value={state.value}>{state.label}</option>
                     ))}
                   </select>
                 </div>

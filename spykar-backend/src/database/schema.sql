@@ -29,7 +29,6 @@ CREATE TABLE users (
   email           VARCHAR(150) UNIQUE NOT NULL,
   password_hash   VARCHAR(255) NOT NULL,
   role            user_role NOT NULL DEFAULT 'VIEWER',
-  state           VARCHAR(100),
   is_active       BOOLEAN DEFAULT true,
   last_login_at   TIMESTAMPTZ,
   created_at      TIMESTAMPTZ DEFAULT NOW(),
