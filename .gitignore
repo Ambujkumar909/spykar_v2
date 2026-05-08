@@ -61,3 +61,4 @@ redis_data/
 .turbo/
 coverage/
 .nyc_output/
+.claude
