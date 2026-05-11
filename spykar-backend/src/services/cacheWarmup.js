@@ -450,7 +450,8 @@ async function warmCrossPivot(mode) {
   try {
     const axiosLike = require('http');
     const port = process.env.PORT || 4000;
-    const path = `/api/v1/analytics/overview/cross-pivot?mode=${mode}&date_from=2025-01-01&date_to=2026-01-31`;
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const path = `/api/v1/analytics/overview/cross-pivot?mode=${mode}&date_from=2025-01-01&date_to=${todayISO}`;
     // We don't have a token; instead, directly invoke the controller's
     // cache-population path by hitting the same code through getOrSet.
     // But the controller is the single source of SQL truth, so we go via
@@ -527,7 +528,7 @@ async function warmNetworkPulseAllModes() {
 
 /**
  * Warm /analytics/sales for one mode using the FY default date range
- * (2025-04-01 → 2026-01-31).  This is the range the existing /sales page
+ * (2025-04-01 → today).  This is the range the existing /sales page
  * lands on by default — filtered drilldowns aren't pre-warmed (their cache
  * keys are per-filter-combo, exponential to enumerate).
  */
@@ -537,7 +538,7 @@ async function warmSalesAnalytics(mode) {
     const { getSalesAnalytics } = require('../controllers/analytics.controller');
     await invokeController(getSalesAnalytics, {
       date_from: '2025-04-01',
-      date_to:   '2026-01-31',
+      date_to:   new Date().toISOString().slice(0, 10),
       mode,
     });
     logger.info(`🔥 analytics/sales[${mode}] warmed in ${Date.now() - start}ms`);

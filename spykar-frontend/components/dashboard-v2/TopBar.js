@@ -120,6 +120,7 @@ export default function TopBar({
   const showCustomPickers = preset === 'custom';
   return (
     <header
+      className="v2-topbar"
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -139,7 +140,7 @@ export default function TopBar({
       }}
     >
       {/* Left — brand */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+      <div className="v2-topbar__brand" style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
         <div style={{
           width: 32, height: 32, borderRadius: 8,
           background: 'linear-gradient(135deg, var(--v2-brand-500), var(--v2-brand-600))',
@@ -171,12 +172,12 @@ export default function TopBar({
       </div>
 
       {/* Center — time control */}
-      <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+      <div className="v2-topbar__range" style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
         <TimeRangeControl preset={preset} onChange={onPresetChange} />
       </div>
 
       {/* Right — controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+      <div className="v2-topbar__actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
         <SyncPill lastSyncAt={lastSyncAt} />
 
         <SavedViews currentViewId={currentViewId} onApply={onApplyView} />
@@ -230,6 +231,7 @@ export default function TopBar({
 
         {/* Avatar */}
         <div
+          className="v2-topbar__custom"
           title={user?.full_name || user?.email || 'Account'}
           style={{
             width: 34, height: 34, borderRadius: '50%',

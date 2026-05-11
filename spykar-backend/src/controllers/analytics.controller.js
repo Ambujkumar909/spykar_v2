@@ -2,6 +2,10 @@ const { query } = require('../config/database');
 const { getOrSet, TTL } = require('../config/redis');
 const { canonicalizeCategory, applyCategoryFilter } = require('../utils/categoryFilter');
 
+// Today as 'YYYY-MM-DD' (server local time). Used as the default upper bound
+// for date filters so the data window tracks the wall clock — never hardcode.
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
 async function getNetworkOverview(req, res, next) {
   try {
     const data = await getOrSet('analytics:network-overview', async () => {
@@ -367,9 +371,9 @@ async function getSalesAnalytics(req, res, next) {
       params.push(arr.map(v => v.toUpperCase())); return `UPPER(${col}::text) = ANY($${params.length}::text[])`;
     };
 
-    // Date range — default to full available window (Apr 2024 → Jan 2026)
+    // Date range — default to full available window (Apr 2024 → today)
     const from = date_from || '2024-04-01';
-    const to   = date_to   || '2026-01-31';
+    const to   = date_to   || todayISO();
     params.push(from); conditions.push(`m.moved_at >= $${params.length}::date`);
     params.push(to);   conditions.push(`m.moved_at <  $${params.length}::date + interval '1 day'`);
 
@@ -710,8 +714,8 @@ async function getSalesAnalytics(req, res, next) {
         (SELECT COUNT(*)::int FROM sku_agg) AS sku_universe_count
     `, params);
 
-    // Pass 3: stock snapshot — anchored at 1 Feb 2026 (the AIGetStock pull
-    // date) and now narrowed by the FULL v2 filter set so picking gender=
+    // Pass 3: stock snapshot — anchored at the latest AIGetStock pull
+    // (today, refreshed nightly) and now narrowed by the FULL v2 filter set so picking gender=
     // MENS shows MENS-only stock, mode=inactive shows closed-store stock,
     // etc. Previously this query only honoured 3 legacy single-value filters
     // and ignored every v2 dimension — so the Stock KPI didn't track with
@@ -983,7 +987,7 @@ async function getSalesDrilldown(req, res, next) {
       };
 
       const from = date_from || '2024-04-01';
-      const to   = date_to   || '2026-01-31';
+      const to   = date_to   || todayISO();
       params.push(from); conditions.push(`m.moved_at >= $${params.length}::date`);
       params.push(to);   conditions.push(`m.moved_at <  $${params.length}::date + interval '1 day'`);
 
@@ -1691,7 +1695,7 @@ async function getSalesSummary(req, res, next) {
 
     const data = await getOrSet(cacheKey, async () => {
       const from = date_from || '2024-04-01';
-      const to   = date_to   || '2026-01-31';
+      const to   = date_to   || todayISO();
       const params = [from, to];
 
       // Mode filter mirrors getSalesAnalytics:124 — "active" means open shops

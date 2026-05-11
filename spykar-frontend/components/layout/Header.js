@@ -51,7 +51,7 @@ export default function Header({ title, subtitle, headerSlot }) {
   const dateStr = now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
   return (
-    <header style={{
+    <header className="app-header" style={{
       position: 'fixed',
       top: 0,
       left: 'var(--sidebar-width)',
@@ -72,7 +72,7 @@ export default function Header({ title, subtitle, headerSlot }) {
     }}>
 
       {/* Page title */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div className="app-header__title" style={{ flex: 1, minWidth: 0 }}>
         {title && (
           <div style={{
             fontFamily: 'var(--font-display)',
@@ -103,13 +103,13 @@ export default function Header({ title, subtitle, headerSlot }) {
           the persistent header bar. Matches the dashboard's TopBar layout
           where the time-range pill is centered next to the page brand. */}
       {headerSlot && (
-        <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+        <div className="app-header__slot" style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
           {headerSlot}
         </div>
       )}
 
       {/* Date / time */}
-      <div style={{
+      <div className="app-header__clock" style={{
         display: 'flex', alignItems: 'center', gap: 8,
         color: 'var(--text-muted)',
         fontFamily: 'var(--font-body)',
@@ -123,10 +123,10 @@ export default function Header({ title, subtitle, headerSlot }) {
       </div>
 
       {/* Divider */}
-      <div style={{ width: 1, height: 20, background: 'var(--border-default)' }} />
+      <div className="app-header__divider" style={{ width: 1, height: 20, background: 'var(--border-default)' }} />
 
       {/* Live indicator */}
-      <div style={{
+      <div className="app-header__live" style={{
         display: 'flex', alignItems: 'center', gap: 7,
         fontSize: 11, color: '#10B981',
         background: 'rgba(16,185,129,0.10)',
@@ -143,7 +143,7 @@ export default function Header({ title, subtitle, headerSlot }) {
 
       {/* Last sync */}
       {syncStatus && (
-        <div style={{
+        <div className="app-header__sync" style={{
           display: 'flex', alignItems: 'center', gap: 7,
           fontSize: 12, color: '#64748B',
           background: 'rgba(255,255,255,0.04)',
@@ -195,7 +195,7 @@ export default function Header({ title, subtitle, headerSlot }) {
       )}
 
       {/* Divider */}
-      <div style={{ width: 1, height: 20, background: 'var(--border-default)' }} />
+      <div className="app-header__divider" style={{ width: 1, height: 20, background: 'var(--border-default)' }} />
 
       {/* Theme toggle — same source of truth as the v2 dashboard's toggle.
           Sun in dark mode, Moon in light mode (icon shows the destination). */}

@@ -84,7 +84,7 @@ function KpiHero({ label, value, format = 'indian', icon: Icon, accent, context,
     : (value != null ? String(value) : '');
   return (
     <div
-      className="sx-card"
+      className="sx-card sales-kpi-card"
       style={{
         position: 'relative',
         padding: '20px 22px 18px',
@@ -196,7 +196,7 @@ function SalesPareto({ rows, totalValue, label = 'SKUs', loading }) {
           </div>
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, position: 'relative' }}>
+      <div className="sx-mobile-three-grid sales-pareto-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, position: 'relative' }}>
         <Slice n={stats.n50} of={stats.total} pct={Math.round((stats.n50/stats.total)*100)} label={`${label} drive 50% of sales`} tone="strong" />
         <Slice n={stats.n80} of={stats.total} pct={Math.round((stats.n80/stats.total)*100)} label={`${label} drive 80% of sales`} tone="medium" />
         <Slice n={stats.n90} of={stats.total} pct={Math.round((stats.n90/stats.total)*100)} label={`${label} drive 90% of sales`} tone="soft" />
@@ -242,13 +242,13 @@ function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, em
     </select>
   );
   return (
-    <div className="sx-card" style={{ padding: '18px 20px 16px' }}>
+    <div className="sx-card sales-rank-card" style={{ padding: '18px 20px 16px' }}>
       {/* Header — title on row 1, controls on row 2. Two-row layout keeps the
           title readable even when the parent column is narrow (the Shades
           column is 1.2fr and was wrapping the title to 4 lines when 3 chips
           were stuffed onto the same row). */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+      <div className="sales-rank-card__header" style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 14 }}>
+        <div className="sales-rank-card__title" style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
           {Icon && <Icon size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
           <span style={{
             fontSize: 11, fontWeight: 800, letterSpacing: '0.07em',
@@ -257,7 +257,7 @@ function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, em
             flex: 1, minWidth: 0,
           }} title={title}>{title}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <div className="sales-rank-card__controls" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <SelectChip value={direction} onChange={setDirection}
             options={[{ value: 'top', label: 'Top' }, { value: 'bottom', label: 'Bottom' }]} />
           <SelectChip value={sortBy} onChange={setSortBy}
@@ -281,6 +281,7 @@ function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, em
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           {visible.map((r, i) => (
             <div key={i}
+              className="sales-rank-row"
               onClick={onRowClick ? () => onRowClick(r) : undefined}
               title={onRowClick ? 'Open drilldown' : undefined}
               style={{ display: 'flex', alignItems: 'center', gap: 10,
@@ -290,7 +291,7 @@ function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, em
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
               {/* Top 3 badges glow accent (gold-ish); Worst 3 badges glow red
                   so the bottom view reads as a problem signal at a glance. */}
-              <div style={{ width: 22, height: 22, flexShrink: 0, borderRadius: 6,
+              <div className="sales-rank-row__index" style={{ width: 22, height: 22, flexShrink: 0, borderRadius: 6,
                 background: i < 3
                   ? (direction === 'bottom' ? 'rgba(220,38,38,0.12)' : 'var(--accent-glow)')
                   : 'var(--bg-elevated)',
@@ -299,8 +300,8 @@ function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, em
                   : 'var(--text-muted)',
                 fontSize: 11, fontWeight: 800,
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>{renderLeft(r)}</div>
-              <div style={{ flexShrink: 0 }}>{renderRight(r)}</div>
+              <div className="sales-rank-row__main" style={{ flex: 1, minWidth: 0 }}>{renderLeft(r)}</div>
+              <div className="sales-rank-row__metric" style={{ flexShrink: 0 }}>{renderRight(r)}</div>
             </div>
           ))}
         </div>
@@ -313,8 +314,8 @@ function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, em
 function ChannelMixBars({ rows, totalValue, loading }) {
   const total = totalValue || (rows || []).reduce((s, r) => s + Number(r.value || 0), 0);
   return (
-    <div className="sx-card" style={{ padding: '18px 20px 16px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+    <div className="sx-card sales-channel-card" style={{ padding: '18px 20px 16px' }}>
+      <div className="sales-channel-card__header" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
         <Layers size={13} strokeWidth={2.2} style={{ color: 'var(--text-muted)' }} />
         <span className="sx-eyebrow">Channels — sales mix</span>
       </div>
@@ -421,7 +422,7 @@ function ActionPanel({ summary, byColor, byStore, allStores, loading }) {
 
   const overallRate = summary?.return_rate_pct ?? 0;
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
+    <div className="sx-mobile-card-grid sales-action-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
       <Card
         accent="#DC2626" tint="rgba(220,38,38,0.05)" border="rgba(220,38,38,0.20)"
         icon={RotateCcw}
@@ -501,7 +502,7 @@ export function SalesPulseTables({ data, loading, lensMode = 'net', valuation = 
 
   return (
     <div style={{ marginBottom: 24 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1fr', gap: 14 }}>
+      <div className="sx-mobile-three-grid sales-pulse-tables-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1fr', gap: 14 }}>
         <TopList
           title={`Top Stores · ${lensLabel} ${valuationLabel}`}
           icon={Building2}
@@ -669,9 +670,9 @@ export default function SalesPulse({ data, loading, lensMode = 'net', valuation 
   const dailyAvg  = Number(s.active_days || 0) > 0 ? Math.round(units / Number(s.active_days)) : 0;
 
   return (
-    <div style={{ marginBottom: 32 }}>
+    <div className="sales-pulse-section" style={{ marginBottom: 32 }}>
       {/* ── Header strip — refined eyebrow + lens chip + date capsule ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      <div className="sales-pulse-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Sparkles size={13} strokeWidth={2} style={{ color: 'var(--accent-primary)' }} />
@@ -700,7 +701,7 @@ export default function SalesPulse({ data, loading, lensMode = 'net', valuation 
           Single row with the 7 most decision-driving numbers. Lens-aware
           where the metric makes sense; static for what doesn't depend on
           Sale/Return/Net (Returns Rate, Active Days, Best Day, Stock). ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(208px, 1fr))',
+      <div className="sx-mobile-card-grid sales-pulse-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(208px, 1fr))',
         gap: 16, marginBottom: 28 }}>
         <KpiHero
           label={`${lensLabel} — Units`}

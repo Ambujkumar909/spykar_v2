@@ -283,7 +283,7 @@ async function loadOneDate(erpPool, lookupMaps, snapshotDate) {
  * Backfill stock history across a date range. Skips dates already SUCCESS.
  *
  * @param {Date|string} fromDate — inclusive (e.g. '2024-01-01')
- * @param {Date|string} toDate   — inclusive (e.g. '2026-01-31')
+ * @param {Date|string} toDate   — inclusive (e.g. today's ISO date)
  * @param {Object}      opts
  *   - force: boolean — if true, re-load dates already marked SUCCESS
  *   - onProgress: (state) => void — called after each date

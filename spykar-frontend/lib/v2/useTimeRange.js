@@ -21,14 +21,16 @@ function fmt(d) {
   return `${y}-${m}-${day}`;
 }
 
-// Spykar ERP feed currently ends 2026-01-31. Anchoring "today" to the last
-// data date keeps MTD/YTD/QTD computations meaningful — otherwise every
-// preset reads zero because real-now is past the data window.
-// TODO: replace with /sync/status.last_sync_at once Phase 4 wires it up.
-const DATA_ANCHOR_ISO = '2026-01-31';
+// "Today" anchor — wall-clock today. ERP is sync'd nightly (11 PM IST), so
+// new dates light up automatically the next day.
+function anchorToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
 
 function rangeFor(preset, customFrom, customTo) {
-  const today = new Date(DATA_ANCHOR_ISO + 'T00:00:00');
+  const today = anchorToday();
   const to = fmt(today);
 
   switch (preset) {

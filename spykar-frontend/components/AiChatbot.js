@@ -577,11 +577,11 @@ export default function AiChatbot() {
 
   return (
     <>
-      <div style={{ position: 'fixed', bottom: 28, right: 28, zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', pointerEvents: 'none' }}>
+      <div className="ai-chat-shell" style={{ position: 'fixed', bottom: 28, right: 28, zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', pointerEvents: 'none' }}>
 
         {/* ── Chat Panel ── */}
         {isVisible && (
-          <div ref={resizeRef} style={{
+          <div ref={resizeRef} className="ai-chat-panel" style={{
             width: effectiveW, height: effectiveH,
             borderRadius: 18,
             background: T.panelBg,
@@ -757,6 +757,7 @@ export default function AiChatbot() {
 
         {/* ── FAB ── */}
         <button
+          className="ai-chat-fab"
           onClick={() => setOpen(o => !o)}
           style={{
             width: 58, height: 58, borderRadius: '50%', border: '1px solid rgba(220,38,38,0.5)',

@@ -141,7 +141,7 @@ export default function NetworkPulse({ filters, onParetoPick }) {
     <div style={{ marginBottom: 32 }}>
 
       {/* ── Header strip — pulse label + lens chip + as-of date ─────────── */}
-      <div style={{
+      <div className="network-pulse-header" style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         gap: 12, marginBottom: 18, flexWrap: 'wrap',
       }}>
@@ -171,7 +171,7 @@ export default function NetworkPulse({ filters, onParetoPick }) {
       </div>
 
       {/* ── HERO KPI STRIP — single-number cards, lens-aware ────────────── */}
-      <div style={{
+      <div className="sx-mobile-card-grid network-pulse-kpis" style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(208px, 1fr))',
         gap: 16, marginBottom: 28,
@@ -236,7 +236,7 @@ export default function NetworkPulse({ filters, onParetoPick }) {
       )}
 
       {/* ── WHERE'S MY MONEY? — top stores + top states + channel mix ──── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1fr', gap: 14, marginBottom: 24 }}>
+      <div className="sx-mobile-three-grid network-pulse-spotlight-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1fr', gap: 14, marginBottom: 24 }}>
         <TopList
           title="Top Stores by Stock Value"
           icon={Building2}
@@ -335,7 +335,7 @@ function ParetoReveal({ totalStores, stores50, stores80, stores90, loading, onPi
           </div>
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, position: 'relative' }}>
+      <div className="sx-mobile-three-grid network-pareto-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, position: 'relative' }}>
         <ParetoSlice n={stores50} of={totalStores} pct={pct50}
           label="hold 50%" tone="strong"
           onClick={onPick ? () => onPick({ tier: 50, n: stores50 }) : null} />
@@ -453,11 +453,11 @@ function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, em
   );
 
   return (
-    <div className="sx-card" style={{ padding: '18px 20px 16px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+    <div className="sx-card network-rank-card" style={{ padding: '18px 20px 16px' }}>
+      <div className="network-rank-card__header" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
         {Icon && <Icon size={13} strokeWidth={2.2} style={{ color: 'var(--text-muted)' }} />}
         <span className="sx-eyebrow">{title}</span>
-        <div style={{ flex: 1 }} />
+        <div className="network-rank-card__spacer" style={{ flex: 1 }} />
         {/* Sort + limit pills, top-right corner */}
         <SelectChip
           value={sortBy}
@@ -481,7 +481,7 @@ function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, em
       {!loading && visible.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           {visible.map((r, i) => (
-            <div key={i} style={{
+            <div key={i} className="network-rank-row" style={{
               display: 'flex', alignItems: 'center', gap: 10,
               padding: '8px 8px', borderRadius: 8,
               transition: 'background 120ms',
@@ -489,7 +489,7 @@ function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, em
               onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >
-              <div style={{
+              <div className="network-rank-row__index" style={{
                 width: 22, height: 22, flexShrink: 0,
                 borderRadius: 6,
                 background: i < 3 ? 'var(--accent-glow)' : 'var(--bg-elevated)',
@@ -497,8 +497,8 @@ function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, em
                 fontSize: 11, fontWeight: 800,
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               }}>{i + 1}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>{renderLeft(r)}</div>
-              <div style={{ flexShrink: 0 }}>{renderRight(r)}</div>
+              <div className="network-rank-row__main" style={{ flex: 1, minWidth: 0 }}>{renderLeft(r)}</div>
+              <div className="network-rank-row__metric" style={{ flexShrink: 0 }}>{renderRight(r)}</div>
             </div>
           ))}
         </div>
@@ -556,7 +556,7 @@ function ActionPanel({ actions, loading }) {
   const ds  = actions?.dead_stock || { count: 0, units: 0, value: 0 };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+    <div className="sx-mobile-card-grid network-action-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
       <PremiumKpi
         label="Empty Active Stores"
         icon={AlertTriangle}
@@ -637,4 +637,3 @@ function ActionCard({ accent, tint, border, icon: Icon, title, headline, bullets
     </div>
   );
 }
-

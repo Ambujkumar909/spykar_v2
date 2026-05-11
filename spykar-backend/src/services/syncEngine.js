@@ -37,11 +37,8 @@ const logger            = require('../config/logger');
 // Earliest date Spykar ERP has reliable data from (do not go before this)
 const FULL_HISTORY_START = new Date('2024-01-01');
 
-// ERP sales data is available up to this date (SalesAI ceiling — Jan 31 2026)
-const SALES_DATA_CEILING = new Date('2026-01-31');
-
-// AIGetStock snapshot date — stock as of Feb 1, 2026 closing
-const STOCK_SNAPSHOT_DATE = new Date('2026-02-01');
+// SALES_DATA_CEILING and STOCK_SNAPSHOT_DATE are evaluated per-run inside
+// runDeltaSync() via today() — never hardcode a date here.
 
 // Months of lookback on a DELTA sync
 const DELTA_LOOKBACK_MONTHS = 2;
@@ -515,13 +512,13 @@ async function updateStockAgeing() {
 
   // ── Reference date strategy ────────────────────────────────────────────────
   // We NEVER use NOW() as the ageing reference because:
-  //   - ERP sales data is capped at Jan 31, 2026 (SALES_DATA_CEILING)
-  //   - Using NOW() (e.g. Apr 2026) makes every item appear 65–95+ days staler
-  //     than it really is, collapsing ALL stock into the 180+ "Dead Stock" bucket
+  //   - ERP sales data may lag the wall clock by hours/days depending on the
+  //     last successful sync. Using NOW() makes every item appear staler than
+  //     it really is, collapsing stock into the 180+ "Dead Stock" bucket.
   //
   // Instead: use MAX(moved_at) of SALE movements as the reference point.
-  // This measures "days since last sale" relative to the latest date in our data
-  // (Jan 2026), which is the correct business interpretation.
+  // This measures "days since last sale" relative to the latest date in our
+  // data, which is the correct business interpretation.
   //
   // Bucket definitions (industry standard retail):
   //   0–30  days  → Fresh / Fast-moving
@@ -651,15 +648,16 @@ async function runDeltaSync(syncType = 'DELTA') {
 
   try {
     // ── Determine date range ───────────────────────────────────────────────────
-    // Stock snapshot is always Feb 1, 2026 (latest available AIGetStock date)
-    const stockDate = STOCK_SNAPSHOT_DATE;
+    // Stock snapshot + sales ceiling are always TODAY (evaluated per run).
+    const runToday  = today();
+    const stockDate = runToday;
 
     let salesFrom, salesTo;
 
     if (syncType === 'FULL') {
-      // Full history: Jan 1 2024 → Jan 31 2026 (complete ERP data window)
+      // Full history: 2024-01-01 → today
       salesFrom = FULL_HISTORY_START;
-      salesTo   = SALES_DATA_CEILING;
+      salesTo   = runToday;
       logger.info(`[RANGE] FULL sync: ${toErpDate(salesFrom)} → ${toErpDate(salesTo)} (${generateMonthlyChunks(salesFrom, salesTo).length} months)`);
 
       // Wipe existing SQL Server movements for clean rebuild
@@ -667,11 +665,11 @@ async function runDeltaSync(syncType = 'DELTA') {
       logger.info(`[RANGE] Cleared ${del.rowCount.toLocaleString()} existing movements for full rebuild`);
 
     } else {
-      // Delta: last N months — capped at sales data ceiling (Jan 31 2026)
+      // Delta: last N months → today
       const now = new Date();
       const deltaStart = startOfMonth(now.getFullYear(), now.getMonth() - DELTA_LOOKBACK_MONTHS);
       salesFrom = new Date(Math.max(deltaStart, FULL_HISTORY_START));
-      salesTo   = new Date(Math.min(today(),    SALES_DATA_CEILING));
+      salesTo   = runToday;
       logger.info(`[RANGE] DELTA sync: ${toErpDate(salesFrom)} → ${toErpDate(salesTo)}`);
     }
 

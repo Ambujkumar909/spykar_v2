@@ -40,6 +40,7 @@ export default function Sidebar() {
 
   return (
     <aside
+      className="app-sidebar"
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
       style={{
@@ -241,7 +242,9 @@ export default function Sidebar() {
             so the heavy MultiSelects don't pay a render cost when the
             rail is collapsed and any open dropdown closes naturally
             when the cursor leaves the sidebar. ─────────────────────── */}
-        <PremiumFilterBar isOpen={expanded} />
+        <div className="app-sidebar__filters">
+          <PremiumFilterBar isOpen={expanded} />
+        </div>
       </nav>
 
       {/* ── User footer ── */}

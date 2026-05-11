@@ -43,6 +43,12 @@ export default function NarrativeBanner({ kpis, asOf, loading }) {
   }
 
   const { text, bold, tone } = generateNarrative({ kpis, asOf });
+  const darkToneBg = {
+    ok:      'linear-gradient(120deg, rgba(16,185,129,0.18) 0%, var(--v2-bg-card) 62%)',
+    warn:    'linear-gradient(120deg, rgba(245,158,11,0.18) 0%, var(--v2-bg-card) 62%)',
+    bad:     'linear-gradient(120deg, rgba(239,68,68,0.18) 0%, var(--v2-bg-card) 62%)',
+    neutral: 'linear-gradient(120deg, rgba(225,29,46,0.16) 0%, var(--v2-bg-card) 62%)',
+  };
 
   // Tone → accent color for bold metric fragments.  These mid-saturation hues
   // have enough contrast against BOTH the light gradient start (--v2-ok-50 etc.)
@@ -76,7 +82,7 @@ export default function NarrativeBanner({ kpis, asOf, loading }) {
         display: 'flex',
         alignItems: 'center',
         gap: 14,
-        background: TONE_BG[tone] || TONE_BG.neutral,
+        background: isDark ? (darkToneBg[tone] || darkToneBg.neutral) : (TONE_BG[tone] || TONE_BG.neutral),
         borderLeft: `3px solid ${tone === 'bad' ? 'var(--v2-bad-500)'
                               : tone === 'warn' ? 'var(--v2-warn-500)'
                               : tone === 'ok'   ? 'var(--v2-ok-500)'
@@ -99,16 +105,8 @@ export default function NarrativeBanner({ kpis, asOf, loading }) {
           fontSize: 18,
           lineHeight: 1.45,
           letterSpacing: '-0.005em',
-          // Dark mode: gradient runs #ECFDF5 (near-white) → #171A20 (near-black).
-          // No single solid color is readable on both extremes.  White text with a
-          // dark multi-shadow gives sharp letterforms on the light part while
-          // remaining clear on the dark part — classic broadcast/photo overlay
-          // technique.  Light mode: gradient stays pale throughout, so dark text
-          // without any shadow has sufficient contrast.
           color: isDark ? 'rgba(250,250,250,0.95)' : 'var(--v2-fg-primary)',
-          textShadow: isDark
-            ? '0 1px 3px rgba(10,11,13,0.60), 0 0 10px rgba(10,11,13,0.45)'
-            : 'none',
+          textShadow: 'none',
         }}
       >
         {renderRich()}

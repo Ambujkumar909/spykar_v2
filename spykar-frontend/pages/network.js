@@ -378,7 +378,7 @@ function NetworkChartsSection({ groups, filteredGroups, locations, loading }) {
       </div>
 
       {/* Charts Row: Billing model donut + Top stores bar */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 20, marginBottom: 24 }}>
+      <div className="sx-mobile-two-grid network-mobile-chart-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 20, marginBottom: 24 }}>
         {/* Chart 2: Billing Split Donut */}
         <div className={chartCardClass} style={chartCardStyle}>
           <div style={chartHeaderStyle}>
@@ -625,11 +625,11 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
       </div>
 
       {/* Two charts side by side */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      <div className="sx-mobile-two-grid network-mobile-breakdown-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
 
         {/* Colour chart */}
         <div className={cardClass} style={cardStyle}>
-          <div style={hdrStyle}>
+          <div className="network-breakdown-card__header" style={hdrStyle}>
             <PieChart size={13} color='#2563EB' strokeWidth={2.5} />
             <span style={ttlStyle}>Stock by Colour</span>
             {colorData.length > 0 &&
@@ -645,7 +645,7 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
               <ChevronIcon />
             </div>
           </div>
-          <div style={{ padding: '12px 16px 8px', position: 'relative' }}>
+          <div className="network-breakdown-card__body" style={{ padding: '12px 16px 8px', position: 'relative' }}>
             {/* Cold load (no data yet) → skeleton. Subsequent refetches keep
                 the existing chart visible with a subtle dim so the user
                 never sees the chart disappear and snap back. */}
@@ -662,7 +662,7 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
 
         {/* Size chart */}
         <div className={cardClass} style={cardStyle}>
-          <div style={hdrStyle}>
+          <div className="network-breakdown-card__header" style={hdrStyle}>
             <Activity size={13} color='#059669' strokeWidth={2.5} />
             <span style={ttlStyle}>Stock by Size</span>
             {sizeData.length > 0 &&
@@ -678,7 +678,7 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
               <ChevronIcon />
             </div>
           </div>
-          <div style={{ padding: '12px 16px 8px', position: 'relative' }}>
+          <div className="network-breakdown-card__body" style={{ padding: '12px 16px 8px', position: 'relative' }}>
             {loading && sizeRows.length === 0
               ? <div style={{ height: Math.max(180, skeletonH), background: T.bg, borderRadius: 8 }} />
               : sizeRows.length === 0
@@ -1225,7 +1225,7 @@ export default function NetworkPage() {
       {/* Mode + chips strip — dimensional filters live in the sidebar
           (LENS cluster).  Mode (Active/Inactive/All) stays on-page so it's
           one click away regardless of sidebar state. */}
-      <div style={{
+      <div className="sx-mobile-control-row network-mobile-control-row" style={{
         display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12,
         padding: '8px 24px 6px',
       }}>
@@ -1235,7 +1235,7 @@ export default function NetworkPage() {
           onChange={(m) => setV2('mode', m)}
         />
       </div>
-      <div style={{ marginTop: 28 }}>
+      <div className="sx-mobile-chip-strip" style={{ marginTop: 28 }}>
         <FilterChips
           filters={v2Filters}
           setFilter={setV2}
@@ -1472,7 +1472,7 @@ function NetworkStockHealth({ v2Filters = {} }) {
           Headline numbers come from the backend SUMMARY (true network total,
           NOT capped by detail-row LIMIT) when no filter is active; from the
           filtered row sample when filters are applied. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 10 }}>
+      <div className="sx-mobile-three-grid network-mobile-health-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 10 }}>
         <Card icon={XCircle}      title="Out of Stock"  count={oos}     total={totalFiltered} fg="#DC2626" bg="rgba(220,38,38,0.10)"  subtitle="Zero on-hand · revenue at risk" />
         <Card icon={PackageMinus} title="Reorder Now"   count={reorder} total={totalFiltered} fg="#D97706" bg="rgba(217,119,6,0.10)"  subtitle="Below reorder point · raise PO" />
         <Card icon={AlertCircle}  title="Low Stock"     count={low}     total={totalFiltered} fg="#2563EB" bg="rgba(37,99,235,0.10)"  subtitle="Below safety stock · monitor" />
@@ -1512,7 +1512,7 @@ function NetworkStockHealth({ v2Filters = {} }) {
         </div>
 
         {loading ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+          <div className="sx-mobile-two-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
             {[0,1,2,3,4,5].map(i => <div key={i} style={{ height: 56, borderRadius: 10, background: T.border, opacity: 0.5 }} />)}
           </div>
         ) : criticalSample.length === 0 ? (
@@ -1522,7 +1522,7 @@ function NetworkStockHealth({ v2Filters = {} }) {
             <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>No SKUs below safety stock for the selected filters</div>
           </div>
         ) : (
-          <div className="ai-scroll" style={{
+          <div className="ai-scroll network-critical-grid" style={{
             display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 8,
             // Cap height when N is large so the panel never dominates the page.
             // 4 rows of cards is a comfortable window; the rest is scrollable.

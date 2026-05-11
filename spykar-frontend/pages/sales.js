@@ -36,8 +36,8 @@ function rangeForPreset(preset) {
     case 'mtd':     { return { from: fmt(new Date(today.getFullYear(), today.getMonth(), 1)), to: fmt(today) }; }
     case 'qtd':     { const q = Math.floor(today.getMonth() / 3) * 3; return { from: fmt(new Date(today.getFullYear(), q, 1)), to: fmt(today) }; }
     case 'ytd':     { return { from: fmt(new Date(today.getFullYear(), 0, 1)), to: fmt(today) }; }
-    case 'cy':      return { from: '2025-01-01', to: '2026-01-31' };  // calendar year of available ERP data
-    case 'fy':      return { from: '2025-04-01', to: '2026-01-31' };  // Indian FY 2025-26 (so far)
+    case 'cy':      return { from: '2025-01-01', to: fmt(today) };  // calendar year → today
+    case 'fy':      return { from: '2025-04-01', to: fmt(today) };  // Indian FY 2025-26 → today
     default:        return null;
   }
 }
@@ -268,9 +268,9 @@ function ColourBreakdownSection({ data, loading, lensMode = 'net', valuation = '
   const valuationLabel = valuation === 'gross' ? 'Gross' : valuation === 'ex_gst' ? 'Ex-GST' : valuation === 'gst' ? 'GST' : valuation === 'mrp' ? 'MRP' : valuation === 'discount' ? 'Discount' : valuation;
 
   return (
-    <div className="sx-card" style={{ overflow: 'hidden' }}>
+      <div className="sx-card sales-breakdown-card" style={{ overflow: 'hidden' }}>
       {/* Header */}
-      <div style={{ padding: '16px 20px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+      <div className="sales-breakdown-card__header" style={{ padding: '16px 20px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <PieChart size={13} color={T.primary} strokeWidth={2.2} />
           <span style={{ fontSize: 11, fontWeight: 800, color: T.primary, letterSpacing: '0.10em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Colour Breakdown</span>
@@ -314,7 +314,7 @@ function ColourBreakdownSection({ data, loading, lensMode = 'net', valuation = '
       </div>
 
       {/* Table */}
-      <div style={{ overflowY: 'auto', maxHeight: 480 }}>
+      <div className="sales-breakdown-card__table" style={{ overflowY: 'auto', maxHeight: 480 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
             <tr style={{ background: 'var(--bg-card-hover)' }}>
@@ -417,9 +417,9 @@ function SizeBreakdownSection({ data, loading, lensMode = 'net', valuation = 'gr
   const valuationLabel = valuation === 'gross' ? 'Gross' : valuation === 'ex_gst' ? 'Ex-GST' : valuation === 'gst' ? 'GST' : valuation === 'mrp' ? 'MRP' : valuation === 'discount' ? 'Discount' : valuation;
 
   return (
-    <div className="sx-card" style={{ overflow: 'hidden' }}>
+      <div className="sx-card sales-breakdown-card" style={{ overflow: 'hidden' }}>
       {/* Header */}
-      <div style={{ padding: '16px 20px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+      <div className="sales-breakdown-card__header" style={{ padding: '16px 20px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <BarChart2 size={13} color={T.primary} strokeWidth={2.2} />
           <span style={{ fontSize: 11, fontWeight: 800, color: T.primary, letterSpacing: '0.10em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Size Breakdown</span>
@@ -463,7 +463,7 @@ function SizeBreakdownSection({ data, loading, lensMode = 'net', valuation = 'gr
       </div>
 
       {/* Table */}
-      <div style={{ overflowY: 'auto', maxHeight: 480 }}>
+      <div className="sales-breakdown-card__table" style={{ overflowY: 'auto', maxHeight: 480 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
             <tr style={{ background: 'var(--bg-card-hover)' }}>
@@ -1335,7 +1335,7 @@ export default function SalesAnalyticsPage() {
           where the user requested. The lens sits on the LEFT of the row
           (with its "Show" + "Valuation" labels), ModePill hugs the
           far-right edge under the Sync chip above. */}
-      <div style={{
+      <div className="sx-mobile-control-row sales-mobile-control-row" style={{
         display: 'flex', alignItems: 'center',
         // Generous gap between cluster groups + a row gap so the controls
         // don't crowd each other when the page wraps. The user flagged the
@@ -1459,7 +1459,7 @@ export default function SalesAnalyticsPage() {
           and the "SHOWING …" chips strip — bumped from 14 → 28 so the
           chips visually live in their own band instead of butting up
           against the SaleModePill / Valuation / ModePill controls. */}
-      <div style={{ marginTop: 28 }}>
+      <div className="sx-mobile-chip-strip" style={{ marginTop: 28 }}>
         <FilterChips
           filters={v2Filters}
           setFilter={setV2}
@@ -1527,7 +1527,7 @@ export default function SalesAnalyticsPage() {
       </div>
 
       {/* ── Charts Row: Monthly bars + Monthly revenue ────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+      <div className="sx-mobile-two-grid sales-mobile-chart-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
         <div className="sx-card" style={{ padding: '24px 26px' }}>
           <SectionTitle icon={BarChart2} label="Monthly — Sales vs Returns (Units)" />
           {loading && !data?.by_month?.length
@@ -1557,7 +1557,7 @@ export default function SalesAnalyticsPage() {
       />
 
       {/* ── Colour + Size sections with dedicated filters ─────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+      <div className="sx-mobile-two-grid sales-mobile-breakdown-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
         <ColourBreakdownSection data={dataLens} loading={loading}
           lensMode={v2Filters.sale_mode || 'net'}
           valuation={v2Filters.valuation || 'gross'} />

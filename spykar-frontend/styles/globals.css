@@ -1323,6 +1323,365 @@ html.theme-light .sx-page {
 }
 .nav-item:hover .nav-tooltip { opacity: 1; }
 
+/* ─── Mobile Experience Layer ──────────────────────────────────────────────
+   Phone-only shell refinements. Desktop/tablet-wide layouts keep their
+   existing rail, header, spacing, and hover behavior. */
+@media (max-width: 768px) {
+  :root {
+    --mobile-header-height: 58px;
+    --mobile-tabbar-height: 76px;
+  }
+
+  html,
+  body {
+    width: 100%;
+    overflow-x: hidden;
+    overflow-y: auto !important;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body {
+    background:
+      radial-gradient(circle at 18% 0%, rgba(239,68,68,0.14), transparent 28rem),
+      linear-gradient(180deg, var(--bg-canvas), var(--bg-canvas));
+  }
+
+  .app-shell {
+    display: block;
+    min-height: 100dvh;
+    padding-bottom: calc(var(--mobile-tabbar-height) + env(safe-area-inset-bottom));
+  }
+
+  .main-content {
+    margin-left: 0 !important;
+    min-height: 100dvh;
+    width: 100%;
+    overflow: visible !important;
+  }
+
+  .page-content {
+    margin-top: var(--mobile-header-height) !important;
+    padding: 14px 12px calc(var(--mobile-tabbar-height) + 22px) !important;
+    animation: pageEnter 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .app-header {
+    left: 0 !important;
+    min-height: var(--mobile-header-height) !important;
+    height: auto !important;
+    padding: 8px 12px !important;
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+    align-content: center !important;
+    background: color-mix(in srgb, var(--bg-canvas) 88%, transparent) !important;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.18) !important;
+  }
+
+  .app-header:has(.app-header__slot) {
+    min-height: 98px !important;
+    align-content: flex-start !important;
+    row-gap: 8px !important;
+  }
+
+  .main-content:has(.app-header .app-header__slot) .page-content {
+    margin-top: 98px !important;
+  }
+
+  html.theme-light .app-header {
+    background: rgba(255,255,255,0.94) !important;
+    box-shadow: 0 8px 24px rgba(15,23,42,0.08) !important;
+  }
+
+  .app-header__title {
+    order: 1;
+    min-width: 0 !important;
+  }
+
+  .app-header__title > div:first-child {
+    font-size: 15px !important;
+    max-width: 46vw;
+  }
+
+  .app-header__title > div:nth-child(2),
+  .app-header__clock,
+  .app-header__live,
+  .app-header__sync,
+  .app-header__divider {
+    display: none !important;
+  }
+
+  .app-header__slot {
+    order: 5;
+    flex: 0 0 100% !important;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    justify-content: flex-start !important;
+    scrollbar-width: none;
+    padding-bottom: 1px;
+  }
+  .app-header__slot::-webkit-scrollbar { display: none; }
+
+  .app-header__slot .time-range-control {
+    width: max-content;
+    min-width: max-content;
+  }
+
+  .app-header button {
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+  }
+
+  .app-header__slot button {
+    width: auto !important;
+    min-width: auto !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  .app-sidebar {
+    top: auto !important;
+    left: 10px !important;
+    right: 10px !important;
+    bottom: calc(8px + env(safe-area-inset-bottom)) !important;
+    width: auto !important;
+    height: 66px !important;
+    border: 1px solid var(--border-default) !important;
+    border-radius: 18px !important;
+    background: color-mix(in srgb, var(--bg-surface) 92%, transparent) !important;
+    box-shadow: 0 18px 42px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.06) !important;
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
+    z-index: 220 !important;
+    transition: none !important;
+  }
+
+  html.theme-light .app-sidebar {
+    background: rgba(255,255,255,0.94) !important;
+    box-shadow: 0 16px 38px rgba(15,23,42,0.16), inset 0 1px 0 rgba(255,255,255,0.85) !important;
+  }
+
+  .app-sidebar > div:first-child,
+  .app-sidebar > div:last-child,
+  .app-sidebar__filters,
+  .nav-tooltip {
+    display: none !important;
+  }
+
+  .app-sidebar nav {
+    padding: 6px !important;
+    display: flex !important;
+    align-items: stretch !important;
+    justify-content: space-around !important;
+    gap: 4px !important;
+    overflow: hidden !important;
+  }
+
+  .app-sidebar nav > div {
+    display: contents !important;
+  }
+
+  .app-sidebar nav > div > div:first-child {
+    display: none !important;
+  }
+
+  .app-sidebar nav a {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+  }
+
+  .app-sidebar .nav-item {
+    height: 54px !important;
+    margin: 0 !important;
+    padding: 6px 4px !important;
+    border-radius: 14px !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    gap: 3px !important;
+  }
+
+  .app-sidebar .nav-item > div {
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
+
+  .app-sidebar .nav-item span {
+    opacity: 1 !important;
+    transform: none !important;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 10px !important;
+    line-height: 1.1 !important;
+    font-weight: 800 !important;
+    letter-spacing: 0 !important;
+  }
+
+  .grid-4,
+  .grid-3,
+  .grid-2,
+  .grid-2-1,
+  .grid-1-2 {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .page-header {
+    margin-bottom: 16px !important;
+    padding: 2px 2px 0;
+  }
+
+  .page-title {
+    font-size: 22px !important;
+    line-height: 1.12 !important;
+    letter-spacing: 0 !important;
+  }
+
+  .page-subtitle {
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+  }
+
+  .card,
+  .kpi-card,
+  .sx-card,
+  .v2-app .v2-card {
+    border-radius: 14px !important;
+    box-shadow: var(--shadow-card) !important;
+  }
+
+  .card:hover,
+  .kpi-card:hover,
+  .sx-card:hover,
+  .v2-app .v2-card:hover {
+    transform: none !important;
+  }
+
+  .card-header {
+    padding: 14px 14px 12px !important;
+    align-items: flex-start !important;
+    flex-wrap: wrap !important;
+  }
+
+  .card-body {
+    padding: 14px !important;
+  }
+
+  .kpi-card {
+    padding: 18px 16px 16px !important;
+  }
+
+  .kpi-value,
+  .sx-hero-num {
+    font-size: 28px !important;
+    letter-spacing: 0 !important;
+  }
+
+  .kpi-icon {
+    width: 38px !important;
+    height: 38px !important;
+    top: 16px !important;
+    right: 16px !important;
+  }
+
+  .filter-bar {
+    gap: 8px !important;
+  }
+
+  .filter-bar > *,
+  .sx-chip,
+  .btn,
+  .input,
+  select.input {
+    min-height: 40px;
+  }
+
+  .btn {
+    justify-content: center;
+    padding: 10px 14px;
+  }
+
+  .data-table,
+  .sx-table-wrap table {
+    min-width: 680px;
+  }
+
+  .card:has(.data-table),
+  .sx-table-wrap,
+  .ai-scroll {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .card:has(.data-table) {
+    overflow-x: auto;
+  }
+
+  .empty-state {
+    min-height: 240px;
+    padding: 38px 18px !important;
+  }
+
+  .apexcharts-canvas,
+  .apexcharts-svg {
+    max-width: 100% !important;
+  }
+
+  .ai-chat-shell {
+    right: 12px !important;
+    bottom: calc(var(--mobile-tabbar-height) + 18px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .ai-chat-fab {
+    width: 54px !important;
+    height: 54px !important;
+  }
+
+  .ai-chat-panel {
+    position: fixed !important;
+    left: 10px !important;
+    right: 10px !important;
+    bottom: calc(var(--mobile-tabbar-height) + 12px + env(safe-area-inset-bottom)) !important;
+    width: auto !important;
+    height: min(72dvh, 620px) !important;
+    max-height: calc(100dvh - var(--mobile-header-height) - var(--mobile-tabbar-height) - 24px) !important;
+    border-radius: 18px !important;
+    margin-bottom: 0 !important;
+    transform-origin: bottom center !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .page-content {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  .app-header__title > div:first-child {
+    max-width: 38vw;
+  }
+
+  .app-header__slot {
+    max-width: 100%;
+  }
+
+  .app-sidebar {
+    left: 8px !important;
+    right: 8px !important;
+  }
+
+  .app-sidebar .nav-item span {
+    font-size: 9px !important;
+  }
+
+  .sx-card,
+  .card,
+  .kpi-card {
+    border-radius: 12px !important;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    DASHBOARD V2 — Executive Redesign (per spykar-dashboard-claude-code-prompt)
    Scoped under .v2-app so it never leaks into the existing /  dashboard.
@@ -1456,4 +1815,707 @@ html.theme-light .sx-page {
 }
 @media (max-width: 640px) {
   .v2-app .v2-kpi-row      { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 768px) {
+  .v2-app {
+    min-height: 100dvh;
+    overflow: visible !important;
+  }
+
+  .v2-topbar {
+    position: sticky !important;
+    top: 0 !important;
+    min-height: auto !important;
+    padding: 10px 12px 9px !important;
+    gap: 8px !important;
+    align-items: center !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-areas:
+      "brand actions"
+      "range range"
+      "custom custom" !important;
+    background: color-mix(in srgb, var(--v2-bg-card) 94%, transparent) !important;
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    box-shadow: 0 10px 26px rgba(15,23,42,0.08);
+  }
+
+  .v2-topbar__brand {
+    grid-area: brand;
+    min-width: 0;
+    width: auto !important;
+  }
+
+  .v2-topbar__brand > div:nth-child(2) {
+    min-width: 0;
+  }
+
+  .v2-topbar__brand > div:nth-child(2) > div:first-child,
+  .v2-topbar__brand > div:nth-child(2) > div:nth-child(2) {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .v2-topbar__range {
+    grid-area: range;
+    min-width: 0;
+    width: 100%;
+    justify-content: flex-start !important;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+  .v2-topbar__range::-webkit-scrollbar { display: none; }
+
+  .v2-topbar__range .time-range-control,
+  .app-header__slot .time-range-control {
+    width: max-content;
+    min-width: max-content;
+    max-width: none;
+  }
+
+  .v2-topbar__range button,
+  .app-header__slot button {
+    padding-left: 11px !important;
+    padding-right: 11px !important;
+  }
+
+  .v2-topbar__actions {
+    grid-area: actions;
+    position: static !important;
+    gap: 6px !important;
+    justify-self: end;
+  }
+
+  .v2-topbar__actions > div:first-child,
+  .v2-topbar__actions > div:nth-child(2),
+  .v2-topbar__actions > div:last-child,
+  .v2-topbar kbd {
+    display: none !important;
+  }
+
+  .v2-topbar__actions button {
+    height: 34px !important;
+  }
+
+  .v2-topbar__custom {
+    grid-area: custom;
+    flex-basis: 100% !important;
+    overflow-x: auto;
+    padding-bottom: 4px !important;
+    scrollbar-width: none;
+  }
+  .v2-topbar__custom::-webkit-scrollbar { display: none; }
+
+  .v2-page-grid {
+    padding: 14px 10px calc(var(--mobile-tabbar-height) + 22px) !important;
+    gap: 14px !important;
+  }
+
+  .v2-intelligence,
+  .v2-kpi-row {
+    gap: 12px !important;
+  }
+
+  .v2-app .v2-card {
+    overflow: hidden;
+  }
+
+  .sx-page {
+    --sx-pad-card: 16px;
+    --sx-gap-row: 12px;
+    --sx-gap-section: 16px;
+  }
+
+  .sx-section-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 768px) {
+  .sx-page {
+    width: 100%;
+    overflow: visible !important;
+    padding-bottom: calc(var(--mobile-tabbar-height) + 18px);
+  }
+
+  .sx-mobile-control-row {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    padding: 12px !important;
+    margin: 0 0 12px !important;
+    background: var(--sx-card-bg);
+    border: 1px solid var(--sx-border);
+    border-radius: 14px;
+    box-shadow: var(--sx-shadow-card);
+  }
+
+  .sx-mobile-control-row > div[style*="flex: 1"] {
+    display: none !important;
+  }
+
+  .sx-mobile-control-row .sx-eyebrow {
+    margin: 0 !important;
+    padding-left: 2px;
+  }
+
+  .sx-mobile-control-row select,
+  .sx-mobile-control-row input,
+  .sx-mobile-control-row .sx-chip {
+    min-height: 38px !important;
+    width: 100%;
+  }
+
+  .sales-mobile-control-row > div,
+  .network-mobile-control-row > div {
+    max-width: 100%;
+  }
+
+  .sales-mobile-control-row > div[style*="position: relative"] {
+    width: 100%;
+  }
+
+  .sales-mobile-control-row > div[style*="inline-flex"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex-wrap: wrap !important;
+    border-radius: 12px !important;
+  }
+
+  .sales-mobile-control-row > div[style*="inline-flex"] input {
+    flex: 1 1 132px;
+    min-width: 0;
+  }
+
+  .sales-mobile-control-row .mode-pill {
+    width: 100% !important;
+    height: 42px !important;
+    padding: 4px !important;
+    border-radius: 14px !important;
+    background: var(--bg-elevated) !important;
+    box-shadow: inset 0 1px 2px rgba(15,23,42,0.08) !important;
+  }
+
+  .sales-mobile-control-row .mode-pill__indicator {
+    top: 4px !important;
+    bottom: 4px !important;
+    border-radius: 11px !important;
+  }
+
+  .sales-mobile-control-row .mode-pill__btn {
+    flex: 1 1 0 !important;
+    padding: 0 6px !important;
+    font-size: 11px !important;
+    letter-spacing: 0.02em !important;
+    text-align: center !important;
+    min-width: 0 !important;
+  }
+
+  .sx-mobile-chip-strip {
+    margin-top: 12px !important;
+    margin-bottom: 14px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .sx-mobile-chip-strip::-webkit-scrollbar { display: none; }
+
+  .sx-mobile-two-grid,
+  .sx-mobile-three-grid,
+  .sx-mobile-card-grid,
+  .sales-pulse-tables-grid,
+  .network-pulse-spotlight-grid,
+  .distribution-donuts-grid,
+  .distribution-donut-body,
+  .network-critical-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .sales-pulse-kpis,
+  .network-pulse-kpis {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    margin-bottom: 18px !important;
+  }
+
+  .sales-pareto-grid,
+  .network-pareto-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .distribution-donut-body {
+    align-items: stretch !important;
+  }
+
+  .distribution-donut-body > div:first-child {
+    min-height: 260px !important;
+  }
+
+  .distribution-donut-body > div:first-child [style*="height: 360px"] {
+    height: 280px !important;
+  }
+
+  .distribution-donut-legend {
+    max-height: 260px !important;
+    overflow-y: auto !important;
+    padding-right: 2px !important;
+  }
+
+  .sx-page .sx-card {
+    overflow: hidden;
+  }
+
+  .sx-page .sx-card[style*="padding: 24px"],
+  .sx-page .sx-card[style*="padding: 18px"],
+  .sx-page .sx-card[style*="padding: 20px"] {
+    padding: 16px !important;
+  }
+
+  .sx-page .sx-card > div[style*="overflow-y: auto"],
+  .sx-page .sx-card > div[style*="overflow: auto"],
+  .sx-page .ai-scroll {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sx-page table {
+    min-width: 720px;
+  }
+
+  .sx-page th,
+  .sx-page td {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  .sx-page .apexcharts-canvas,
+  .sx-page .apexcharts-svg {
+    max-width: 100% !important;
+  }
+
+  .sx-page .apexcharts-xaxis-label,
+  .sx-page .apexcharts-yaxis-label {
+    font-size: 10px !important;
+  }
+
+  .network-critical-grid {
+    max-height: 360px !important;
+    overflow-y: auto !important;
+  }
+
+  .network-mobile-health-grid > div {
+    min-width: 0;
+  }
+
+  .sales-mobile-chart-grid,
+  .sales-mobile-breakdown-grid,
+  .network-mobile-chart-grid,
+  .network-mobile-breakdown-grid {
+    margin-bottom: 14px !important;
+  }
+
+  /* Network page: ranked store/state panels and colour/size charts */
+  .network-pulse-header {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    align-items: start !important;
+    gap: 10px !important;
+    margin-bottom: 14px !important;
+  }
+
+  .network-pulse-header > div:first-child {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .network-pulse-header > .sx-pill {
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  .network-pulse-spotlight-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+    margin-bottom: 18px !important;
+  }
+
+  .network-rank-card {
+    padding: 14px !important;
+    border-radius: 14px !important;
+  }
+
+  .network-rank-card__header {
+    display: grid !important;
+    grid-template-columns: auto 1fr !important;
+    gap: 8px 10px !important;
+    align-items: center !important;
+    margin-bottom: 12px !important;
+  }
+
+  .network-rank-card__header .sx-eyebrow {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    letter-spacing: 0.06em;
+  }
+
+  .network-rank-card__spacer {
+    display: none !important;
+  }
+
+  .network-rank-card__header select {
+    height: 34px !important;
+    border-radius: 10px !important;
+    font-size: 11px !important;
+    background-color: var(--bg-elevated) !important;
+  }
+
+  .network-rank-card__header select:first-of-type {
+    grid-column: 1 / 2;
+  }
+
+  .network-rank-card__header select:last-of-type {
+    grid-column: 2 / 3;
+    justify-self: end;
+  }
+
+  .network-rank-row {
+    display: grid !important;
+    grid-template-columns: 28px minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 10px !important;
+    min-height: 58px;
+    padding: 10px 8px !important;
+    border-radius: 12px !important;
+    border: 1px solid transparent;
+  }
+
+  .network-rank-row:nth-child(odd) {
+    background: var(--row-stripe);
+  }
+
+  .network-rank-row__index {
+    width: 28px !important;
+    height: 28px !important;
+    border-radius: 9px !important;
+    font-size: 12px !important;
+  }
+
+  .network-rank-row__main {
+    min-width: 0 !important;
+  }
+
+  .network-rank-row__main div:first-child {
+    font-size: 13px !important;
+    line-height: 1.25 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .network-rank-row__main div:nth-child(2) {
+    font-size: 10.5px !important;
+    line-height: 1.35 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .network-rank-row__metric {
+    text-align: right;
+    min-width: 78px;
+  }
+
+  .network-rank-row__metric div:first-child {
+    font-size: 12.5px !important;
+    line-height: 1.2 !important;
+  }
+
+  .network-rank-row__metric div:nth-child(2) {
+    font-size: 10px !important;
+  }
+
+  .network-mobile-breakdown-grid {
+    gap: 14px !important;
+  }
+
+  .network-mobile-breakdown-grid > .sx-card {
+    border-radius: 14px !important;
+    overflow: hidden !important;
+  }
+
+  .network-breakdown-card__header {
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) auto !important;
+    gap: 8px !important;
+    padding: 13px 14px !important;
+  }
+
+  .network-breakdown-card__header > span:nth-of-type(1) {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 12px !important;
+  }
+
+  .network-breakdown-card__header > div[style*="flex: 1"] {
+    display: none !important;
+  }
+
+  .network-breakdown-card__header select {
+    height: 34px !important;
+    min-width: 92px !important;
+    border-radius: 10px !important;
+  }
+
+  .network-breakdown-card__body {
+    padding: 6px 8px 10px !important;
+    overflow-x: hidden !important;
+  }
+
+  .network-breakdown-card__body .apexcharts-canvas {
+    margin-left: -8px;
+  }
+
+  .network-breakdown-card__body .apexcharts-yaxis-label text,
+  .network-breakdown-card__body .apexcharts-xaxis-label text {
+    font-size: 10px !important;
+  }
+
+  .network-breakdown-card__body .apexcharts-datalabel,
+  .network-breakdown-card__body .apexcharts-data-labels text {
+    font-size: 9px !important;
+  }
+
+  /* Sales page: phone-first KPI cards, ranked lists, donuts, and breakdowns */
+  .sales-pulse-section {
+    margin-bottom: 20px !important;
+  }
+
+  .sales-pulse-header {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    align-items: start !important;
+    gap: 10px !important;
+    margin-bottom: 14px !important;
+  }
+
+  .sales-pulse-header > div:first-child {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .sales-pulse-header > .sx-pill {
+    width: fit-content;
+    max-width: 100%;
+    height: auto;
+    min-height: 30px;
+    white-space: normal;
+  }
+
+  .sales-kpi-card {
+    padding: 15px !important;
+    border-radius: 14px !important;
+  }
+
+  .sales-kpi-card .sx-hero-num {
+    font-size: 26px !important;
+    line-height: 1.05 !important;
+  }
+
+  .sales-kpi-card > div:first-child {
+    left: 12px !important;
+    right: 12px !important;
+  }
+
+  .sales-pulse-tables-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .sales-rank-card,
+  .sales-channel-card {
+    padding: 14px !important;
+    border-radius: 14px !important;
+  }
+
+  .sales-rank-card__header {
+    gap: 10px !important;
+    margin-bottom: 12px !important;
+  }
+
+  .sales-rank-card__title span {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .sales-rank-card__controls {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+  }
+
+  .sales-rank-card__controls select {
+    width: 100% !important;
+    height: 34px !important;
+    border-radius: 10px !important;
+    font-size: 10.5px !important;
+    padding-left: 8px !important;
+  }
+
+  .sales-rank-row {
+    display: grid !important;
+    grid-template-columns: 28px minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 10px !important;
+    min-height: 58px;
+    padding: 10px 8px !important;
+    border-radius: 12px !important;
+  }
+
+  .sales-rank-row:nth-child(odd) {
+    background: var(--row-stripe);
+  }
+
+  .sales-rank-row__index {
+    width: 28px !important;
+    height: 28px !important;
+    border-radius: 9px !important;
+    font-size: 12px !important;
+  }
+
+  .sales-rank-row__main {
+    min-width: 0 !important;
+  }
+
+  .sales-rank-row__main div:first-child {
+    font-size: 13px !important;
+    line-height: 1.25 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sales-rank-row__main div:nth-child(2) {
+    font-size: 10.5px !important;
+    line-height: 1.35 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sales-rank-row__metric {
+    min-width: 78px;
+    text-align: right;
+  }
+
+  .sales-rank-row__metric div:first-child {
+    font-size: 12.5px !important;
+    line-height: 1.2 !important;
+  }
+
+  .sales-rank-row__metric div:nth-child(2) {
+    font-size: 10px !important;
+  }
+
+  .sales-channel-card__header {
+    margin-bottom: 12px !important;
+  }
+
+  .distribution-donuts-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .distribution-donuts-grid > .sx-card {
+    border-radius: 14px !important;
+    padding: 14px !important;
+  }
+
+  .distribution-donut-body {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .distribution-donut-body > div:first-child {
+    min-height: 250px !important;
+  }
+
+  .distribution-donut-body > div:first-child [style*="height: 360px"] {
+    height: 260px !important;
+  }
+
+  .distribution-donut-body [style*="font-size: 34px"] {
+    font-size: 27px !important;
+  }
+
+  .distribution-donut-legend {
+    max-height: 230px !important;
+    border-top: 1px solid var(--sx-rule);
+    padding-top: 8px;
+  }
+
+  .sales-mobile-chart-grid,
+  .sales-mobile-breakdown-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .sales-mobile-chart-grid > .sx-card {
+    padding: 16px !important;
+    border-radius: 14px !important;
+  }
+
+  .sales-mobile-chart-grid .apexcharts-canvas {
+    margin-left: -6px;
+  }
+
+  .sales-breakdown-card {
+    border-radius: 14px !important;
+  }
+
+  .sales-breakdown-card__header {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    padding: 14px !important;
+  }
+
+  .sales-breakdown-card__header > div:first-child {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .sales-breakdown-card__header > div[style*="position: relative"] {
+    width: 100%;
+  }
+
+  .sales-breakdown-card__header input,
+  .sales-breakdown-card__header select {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 38px !important;
+    border-radius: 10px !important;
+  }
+
+  .sales-breakdown-card__table {
+    max-height: 420px !important;
+    overflow: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sales-breakdown-card__table table {
+    min-width: 760px !important;
+  }
 }

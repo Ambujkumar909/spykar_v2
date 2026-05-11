@@ -134,7 +134,7 @@ export default function AgingWaterfall({ data, loading }) {
         <Info size={11} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4 }} />
         <strong style={{ color: 'var(--v2-fg-secondary)', fontWeight: 700 }}>How buckets are computed:</strong> each (store × SKU) row of on-hand
         stock is binned by days since that SKU was last sold at that specific
-        store, using the latest sale date in the ERP ({"2026-01-31"}) as the
+        store, using the latest sale date in the ERP (refreshed nightly) as the
         reference. The <em>{'> 180 d or never'}</em> bucket also captures SKUs
         that have never sold at their current store — often a wrong-allocation
         signal rather than pure dead stock.

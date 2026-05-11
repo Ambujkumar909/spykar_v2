@@ -174,7 +174,7 @@ function DonutCard({
     const total = totalUnits || 1;
     const pct   = ((Number(row.units) || 0) / total * 100).toFixed(1);
     return (
-      <div style={{
+      <div className="distribution-donut-tooltip" style={{
         padding: '10px 14px', background: '#fff',
         border: '1px solid rgba(15,23,42,0.08)', borderRadius: 10,
         boxShadow: '0 12px 28px -10px rgba(15,23,42,0.18), 0 1px 2px rgba(15,23,42,0.04)',
@@ -200,15 +200,15 @@ function DonutCard({
   const showSkeleton = loading && bucketed.length === 0;
 
   return (
-    <div className="sx-card" style={{ padding: '24px 26px 26px', overflow: 'hidden' }}>
+    <div className="sx-card distribution-donut-card" style={{ padding: '24px 26px 26px', overflow: 'hidden' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div className="distribution-donut-header" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
         <span style={{
           width: 26, height: 26, borderRadius: 8,
           background: 'rgba(15,23,42,0.04)',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
         }}>
-          {Icon && <Icon size={13} color="#0B1220" strokeWidth={2.2} />}
+          {Icon && <Icon size={13} color="currentColor" strokeWidth={2.2} />}
         </span>
         <span style={{
           fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 800,
@@ -230,7 +230,7 @@ function DonutCard({
           Min-width on the donut column locks a generous canvas even when
           the legend tries to grow. Vertically aligned to top so the
           centre-text sits on the visual cross-axis with the header. */}
-      <div style={{
+      <div className="distribution-donut-body" style={{
         display: 'grid',
         gridTemplateColumns: 'minmax(320px, 1.55fr) minmax(200px, 1fr)',
         gap: 24, alignItems: 'start',
@@ -239,7 +239,7 @@ function DonutCard({
             the chart so it floats off the card surface. The halo is a
             pure CSS gradient so it costs zero to paint and animates
             with the chart's own dropShadow. */}
-        <div style={{
+        <div className="distribution-donut-visual" style={{
           minHeight: 360, position: 'relative',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
@@ -260,6 +260,7 @@ function DonutCard({
           )}
           {!showSkeleton && !isEmpty && (
             <div
+              className="distribution-donut-chart"
               style={{ position: 'relative', width: '100%', height: 360 }}
               onMouseMove={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
@@ -314,7 +315,7 @@ function DonutCard({
               {/* Centre overlay — pure HTML, never replaced by hover. Gives
                   full control over typography and never has the ApexCharts
                   closure-staleness problem. */}
-              <div style={{
+              <div className="distribution-donut-center" style={{
                 position: 'absolute', inset: 0,
                 display: 'flex', flexDirection: 'column',
                 alignItems: 'center', justifyContent: 'center',
@@ -345,7 +346,7 @@ function DonutCard({
 
         {/* Premium legend — rank dot + name + units + % share, scrollable
             so we can render all top N+1 entries without crowding the donut. */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 1, maxHeight: 360, overflowY: 'auto', paddingRight: 4 }}>
+        <div className="distribution-donut-legend" style={{ display: 'flex', flexDirection: 'column', gap: 1, maxHeight: 360, overflowY: 'auto', paddingRight: 4 }}>
           {bucketed.map((r, i) => {
             const pct = totalUnits ? (r.units / totalUnits) * 100 : 0;
             return (
@@ -437,7 +438,7 @@ export default function DistributionDonuts({ data, loading, lensMode = 'net', va
   }, []);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+    <div className="sx-mobile-two-grid distribution-donuts-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
       <DonutCard
         title="Colour Distribution"
         icon={Palette}

@@ -5,8 +5,8 @@ const logger = require('../config/logger');
 let isRunning = false;
 
 function startScheduler() {
-  // Daily delta sync — every day at 9:30 PM (after evening SQL Server sync completes)
-  cron.schedule(process.env.SYNC_CRON || '30 21 * * *', async () => {
+  // Daily delta sync — every day at 11:00 PM IST (sales + stock + returns + ageing)
+  cron.schedule(process.env.SYNC_CRON || '0 23 * * *', async () => {
     if (isRunning) {
       logger.warn('Sync already running, skipping scheduled run');
       return;
@@ -22,7 +22,7 @@ function startScheduler() {
     }
   }, { timezone: 'Asia/Kolkata' });
 
-  logger.info('📅 Sync scheduler initialized (runs 9:30 PM IST daily)');
+  logger.info('📅 Sync scheduler initialized (runs 11:00 PM IST daily)');
 }
 
 module.exports = { startScheduler };

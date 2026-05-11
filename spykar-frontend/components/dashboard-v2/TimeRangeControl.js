@@ -19,6 +19,7 @@ export default function TimeRangeControl({ preset, onChange }) {
 
   return (
     <div
+      className="time-range-control"
       role="tablist"
       aria-label="Time range"
       style={{

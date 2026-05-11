@@ -358,7 +358,7 @@ async function getNetworkPulse(req, res, next) {
           dead_capital:     Number(sum.dead_capital     || 0),
           unique_skus:      Number(sum.unique_skus      || 0),
           state_count:      Number(sum.state_count      || 0),
-          as_of_date:       '2026-02-01',
+          as_of_date:       new Date().toISOString().slice(0, 10),
         },
         top_stores: topStores.rows,
         top_states: topStates.rows,
