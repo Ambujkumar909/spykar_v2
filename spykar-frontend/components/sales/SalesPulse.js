@@ -774,7 +774,7 @@ export default function SalesPulse({ data, loading, lensMode = 'net', valuation 
           })()}
         />
         <KpiHero
-          label="Stock as of 1 Feb 2026"
+          label={`Stock as of ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`}
           icon={TrendingUp} accent="#7C3AED"
           value={Number(data?.stock_snapshot?.total_units || 0)} loading={loading}
           context={`MRP: ${fmtRs(data?.stock_snapshot?.total_mrp_value)} · narrows with filters`}

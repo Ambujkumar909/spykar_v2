@@ -52,7 +52,7 @@ const fmtNum = (n) => Number(n || 0).toLocaleString('en-IN');
 
 // Active uses the brand mint; "Closed today" uses a neutral slate so it
 // reads as "context" not "alert" — these stores were OPEN at the time of
-// the stock snapshot (Feb 1, 2026); their closure happened afterwards.
+// the nightly stock snapshot; their closure happened afterwards.
 const COL_ACTIVE = '#059669';
 const COL_CLOSED = '#64748B';
 
@@ -166,7 +166,7 @@ export default function NetworkPulse({ filters, onParetoPick }) {
           fontWeight: 700, letterSpacing: '0.02em', textTransform: 'none', fontSize: 11,
         }}>
           <span className="sx-pill-dot" style={{ background: 'var(--sky)' }} />
-          Stock as of {s.as_of_date || '—'}
+          Stock as of {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
         </span>
       </div>
 
