@@ -229,21 +229,6 @@ export default function TopBar({
           {isDark ? <Sun size={15} /> : <Moon size={15} />}
         </IconButton>
 
-        {/* Avatar */}
-        <div
-          className="v2-topbar__custom"
-          title={user?.full_name || user?.email || 'Account'}
-          style={{
-            width: 34, height: 34, borderRadius: '50%',
-            background: 'linear-gradient(135deg, var(--v2-info-400), var(--v2-info-500))',
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff', fontWeight: 700, fontSize: 12,
-            fontFamily: 'var(--v2-font-display)',
-            border: '1px solid var(--v2-border)',
-          }}
-        >
-          {(user?.full_name || user?.email || 'S').slice(0, 1).toUpperCase()}
-        </div>
       </div>
 
       {/* Custom range pickers — only render when the user has chosen
