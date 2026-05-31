@@ -138,7 +138,7 @@ export default function NetworkPulse({ filters, onParetoPick }) {
   const avgValuePerStore = lensStores ? Math.round(lensValue / lensStores) : 0;
 
   return (
-    <div style={{ marginBottom: 32 }}>
+    <div style={{ marginBottom: 28 }}>
 
       {/* ── Header strip — pulse label + lens chip + as-of date ─────────── */}
       <div className="network-pulse-header" style={{
@@ -235,8 +235,8 @@ export default function NetworkPulse({ filters, onParetoPick }) {
         />
       )}
 
-      {/* ── WHERE'S MY MONEY? — top stores + top states + channel mix ──── */}
-      <div className="sx-mobile-three-grid network-pulse-spotlight-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1fr', gap: 14, marginBottom: 24 }}>
+      {/* ── WHERE'S MY MONEY? — top stores + top states ──── */}
+      <div className="sx-mobile-three-grid network-pulse-spotlight-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr', gap: 14, marginBottom: 24 }}>
         <TopList
           title="Top Stores by Stock Value"
           icon={Building2}
@@ -280,7 +280,6 @@ export default function NetworkPulse({ filters, onParetoPick }) {
           )}
           empty="No states match"
         />
-        <ChannelMix channels={pulse?.channels || []} loading={loading} />
       </div>
 
       {/* ── ACTION PANEL — decisions to make right now ────────────────── */}
@@ -372,25 +371,45 @@ function ParetoSlice({ n, of, pct, label, tone, onClick }) {
         all: 'unset',
         display: 'block',
         textAlign: 'left',
-        padding: interactive ? '10px 12px' : 0,
-        margin: interactive ? '-10px -12px' : 0,
+        position: 'relative',
+        boxSizing: 'border-box',
+        width: '100%',
+        // Persistent card affordance so the tier reads as clickable BEFORE the
+        // user hovers — visible border, faint tint, and a chevron badge. This
+        // also gives each of the three tiers a distinct bordered column.
+        padding: '14px 16px 14px 18px',
         borderRadius: 12,
+        border: interactive ? '1px solid rgba(192,57,43,0.22)' : '1px solid transparent',
+        background: interactive ? 'rgba(192,57,43,0.035)' : 'transparent',
         cursor: interactive ? 'pointer' : 'default',
-        transition: 'background 200ms ease, transform 200ms cubic-bezier(0.16,1,0.3,1), box-shadow 200ms ease',
+        transition: 'background 180ms ease, transform 180ms cubic-bezier(0.16,1,0.3,1), box-shadow 180ms ease, border-color 180ms ease',
       }}
       onMouseEnter={interactive ? (e) => {
-        e.currentTarget.style.background = 'rgba(192,57,43,0.05)';
-        e.currentTarget.style.transform   = 'translateY(-1px)';
-        e.currentTarget.style.boxShadow   = '0 6px 18px -8px rgba(192,57,43,0.25)';
+        e.currentTarget.style.background  = 'rgba(192,57,43,0.09)';
+        e.currentTarget.style.borderColor = 'rgba(192,57,43,0.45)';
+        e.currentTarget.style.transform   = 'translateY(-2px)';
+        e.currentTarget.style.boxShadow   = '0 10px 24px -10px rgba(192,57,43,0.35)';
       } : undefined}
       onMouseLeave={interactive ? (e) => {
-        e.currentTarget.style.background = 'transparent';
+        e.currentTarget.style.background  = 'rgba(192,57,43,0.035)';
+        e.currentTarget.style.borderColor = 'rgba(192,57,43,0.22)';
         e.currentTarget.style.transform   = 'translateY(0)';
         e.currentTarget.style.boxShadow   = 'none';
       } : undefined}
       title={interactive ? `Show top ${n} stores that hold ${pct}% of stock` : undefined}
     >
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 6 }}>
+      {/* Persistent "clickable" badge — chevron in a tinted chip, top-right */}
+      {interactive && (
+        <span style={{
+          position: 'absolute', top: 10, right: 10,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: 22, height: 22, borderRadius: 7,
+          background: 'rgba(192,57,43,0.12)', color: colors.label,
+        }}>
+          <ChevronRight size={14} strokeWidth={2.75} />
+        </span>
+      )}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 6, paddingRight: interactive ? 26 : 0 }}>
         <span style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.025em', fontFeatureSettings: '"tnum" 1' }}>
           {n}
         </span>
@@ -409,6 +428,14 @@ function ParetoSlice({ n, of, pct, label, tone, onClick }) {
           transition: 'width 800ms cubic-bezier(0.16,1,0.3,1)',
         }} />
       </div>
+      {/* Tiny persistent hint so the action is unambiguous */}
+      {interactive && (
+        <div style={{ marginTop: 7, fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
+          textTransform: 'uppercase', color: colors.label, opacity: 0.85,
+          display: 'flex', alignItems: 'center', gap: 3 }}>
+          Click to filter <ChevronRight size={11} strokeWidth={3} />
+        </div>
+      )}
     </button>
   );
 }
@@ -507,45 +534,6 @@ function TopList({ title, icon: Icon, rows, loading, renderLeft, renderRight, em
   );
 }
 
-// ─── ChannelMix — horizontal bar list (SOR vs Outright at a glance) ──────────
-function ChannelMix({ channels, loading }) {
-  const total = useMemo(() => channels.reduce((s, c) => s + Number(c.value || 0), 0), [channels]);
-  return (
-    <div className="sx-card" style={{ padding: '18px 20px 16px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-        <Layers size={13} strokeWidth={2.2} style={{ color: 'var(--text-muted)' }} />
-        <span className="sx-eyebrow">Channels</span>
-      </div>
-      {loading && <div className="sx-shimmer" style={{ height: 100, borderRadius: 10 }} />}
-      {!loading && channels.length === 0 && (
-        <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>No channels match</div>
-      )}
-      {!loading && channels.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {channels.map((c, i) => {
-            const pct = total ? (Number(c.value || 0) / total) * 100 : 0;
-            const color = c.billing_model === 'OUTRIGHT' ? '#0284C7' : '#7C3AED';
-            return (
-              <div key={i}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{c.channel}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{fmtRs(c.value)} · {pct.toFixed(0)}%</span>
-                </div>
-                <div style={{ height: 6, background: 'var(--bg-elevated)', borderRadius: 999, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 999, transition: 'width 700ms cubic-bezier(0.16,1,0.3,1)' }} />
-                </div>
-                <div style={{ fontSize: 10, color: 'var(--text-disabled)', marginTop: 3, fontWeight: 600 }}>
-                  {fmtNum(c.stores)} {c.stores === 1 ? 'store' : 'stores'} · {c.billing_model}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── ActionPanel — OOS + Dead Stock summarised as 2 minimal KPI cards ─────
 // Replaces the chunky callout cards with the same .sx-card hero treatment
 // used for the rest of the Network Pulse strip. One number per card; the
@@ -553,7 +541,8 @@ function ChannelMix({ channels, loading }) {
 // align with the rest of the dashboard.
 function ActionPanel({ actions, loading }) {
   const oos = actions?.oos_active || { count: 0, value: 0 };
-  const ds  = actions?.dead_stock || { count: 0, units: 0, value: 0 };
+  // Dead Stock figures intentionally not consumed — the card shows an
+  // "available soon" placeholder until warehouse data is integrated.
 
   return (
     <div className="sx-mobile-card-grid network-action-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
@@ -566,16 +555,28 @@ function ActionPanel({ actions, loading }) {
         loading={loading}
         context="Open for trade · zero inventory · reorder priority"
       />
-      <PremiumKpi
-        label="Dead Stock — 180+ days"
-        icon={Target}
-        accent="violet"
-        value={Number(ds.value || 0)}
-        format="indian"
-        prefix="₹"
-        loading={loading}
-        context={`${fmtNum(ds.count)} SKU-store lines · ${fmtL(ds.units)} units · clearance candidate`}
-      />
+      {/* Dead Stock — placeholder until warehouse data is integrated.
+          The previous "no sale in 180 days at that store" proxy overstated
+          dead stock ~14× (it counted the normal apparel size/colour long-tail
+          as dead, ₹145 Cr / 72% of inventory). We can only compute TRUE
+          180+ day aged stock once warehouse + receipt feeds are live, so we
+          show an honest "coming soon" instead of a misleading number. */}
+      <div className="sx-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: 138, padding: '18px 20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <div style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(139,92,246,0.12)', color: '#8B5CF6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Target size={16} strokeWidth={2.2} />
+          </div>
+          <span style={{ fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+            Dead Stock — 180+ days
+          </span>
+        </div>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 5 }}>
+          Available soon
+        </div>
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          Warehouse data integration is in progress — accurate 180+ day aged-stock figures will appear here once the warehouse &amp; receipt feeds are live.
+        </div>
+      </div>
     </div>
   );
 }

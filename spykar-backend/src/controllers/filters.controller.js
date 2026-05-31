@@ -35,7 +35,7 @@ function cacheKey(prefix, f) {
     if (v === undefined || v === '' || v === null) return;
     norm[k] = Array.isArray(v) ? [...v].sort().join(',') : String(v);
   });
-  return `${prefix}:v1:${JSON.stringify(norm)}`;
+  return `${prefix}:v2:${JSON.stringify(norm)}`;
 }
 
 /**
@@ -63,6 +63,30 @@ async function fetchOptions(dimension, table, sourceCol, filters) {
 
     // Only join locations if a location filter is active (avoids 200M-row scan)
     const joinLoc = locationConditions.length > 0;
+
+    // ── Colour & Size: cap the dropdown to the TOP 50 by stock volume ──────
+    // The colour/size CHARTS are already capped to top 50; the filter dropdown
+    // must match, otherwise it lists all ~1,200 distinct colours (unusable and
+    // inconsistent). Rank by SUM(qty_on_hand) so the 50 most significant
+    // values surface (not an alphabetical slice). Always joins
+    // inventory_snapshot for the ranking — cached 4h, so the cost is paid once
+    // per filter combo.
+    if (dimension === 'color' || dimension === 'size') {
+      const rankedSql = `
+        SELECT ${sourceCol} AS v
+          FROM skus s
+          JOIN inventory_snapshot i ON i.sku_id = s.id
+          ${joinLoc ? `JOIN locations l ON l.id = i.location_id` : ''}
+         WHERE ${conds.join(' AND ')}
+          ${joinLoc && locationConditions.length ? ' AND ' + locationConditions.join(' AND ') : ''}
+         GROUP BY ${sourceCol}
+         ORDER BY SUM(i.qty_on_hand) DESC NULLS LAST
+         LIMIT 50
+      `;
+      const rr = await query(rankedSql, params);
+      return rr.rows.map(x => x.v).filter(Boolean);
+    }
+
     const sql = `
       SELECT DISTINCT ${sourceCol} AS v
         FROM skus s

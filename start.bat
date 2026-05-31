@@ -56,16 +56,40 @@ if not exist "%FRONTEND%\node_modules" (
     popd
 )
 
-REM ---- Launch backend in its own window ----
+REM ============================================================
+REM  PRODUCTION MODE
+REM  The frontend is built once (optimized + minified) and served via
+REM  `next start` instead of `next dev`. This removes Next.js's on-demand
+REM  per-page compilation and ships minified bundles, so the dashboard
+REM  loads 3-10x faster. The backend runs with plain `npm start` (node,
+REM  no nodemon) for a stable production server.
+REM ============================================================
+
+REM ---- Build the frontend for production (runs in THIS window so you see
+REM      progress; servers launch only after a successful build) ----
+echo [BUILD] Building frontend for production (~30-60s)...
+pushd "%FRONTEND%"
+call npm run build
+if errorlevel 1 (
+    echo.
+    echo [ERROR] Frontend production build FAILED. Fix the error above, then
+    echo         run start.bat again. Servers were NOT launched.
+    popd
+    pause
+    exit /b 1
+)
+popd
+
+REM ---- Launch backend in its own window (production: node, no nodemon) ----
 echo [START] Launching backend API (http://localhost:4000)...
-start "Spykar Backend" cmd /k "cd /d "%BACKEND%" && npm run dev"
+start "Spykar Backend" cmd /k "cd /d "%BACKEND%" && npm start"
 
-REM ---- Launch frontend in its own window ----
+REM ---- Launch frontend in its own window (production: next start) ----
 echo [START] Launching frontend dashboard (http://localhost:3000)...
-start "Spykar Frontend" cmd /k "cd /d "%FRONTEND%" && npm run dev"
+start "Spykar Frontend" cmd /k "cd /d "%FRONTEND%" && npm start"
 
-REM ---- Give servers a moment, then open the dashboard ----
-timeout /t 6 /nobreak >nul
+REM ---- Give the production servers a moment to boot, then open the dashboard ----
+timeout /t 8 /nobreak >nul
 start "" "http://localhost:3000"
 
 echo.

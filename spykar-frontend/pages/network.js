@@ -100,8 +100,8 @@ function KpiCard({ icon: Icon, label, value, sub, sub2, accent = '#0B1220', load
         </div>
         <span style={{
           fontFamily: 'var(--font-body)',
-          fontSize: 10.5, fontWeight: 800, letterSpacing: '0.10em',
-          textTransform: 'uppercase', color: T.muted,
+          fontSize: 12.5, fontWeight: 800, letterSpacing: '0.08em',
+          textTransform: 'uppercase', color: T.secondary,
         }}>{label}</span>
       </div>
       {loading
@@ -109,8 +109,8 @@ function KpiCard({ icon: Icon, label, value, sub, sub2, accent = '#0B1220', load
         : <div className="sx-hero-num" title={rawTooltip}
             style={{ marginBottom: 8, fontSize: 32, cursor: 'help' }}>{value}</div>
       }
-      {sub  && <div style={{ fontSize: 11.5, fontWeight: 500, color: T.muted, letterSpacing: '0.005em', lineHeight: 1.45 }}>{sub}</div>}
-      {sub2 && <div style={{ fontSize: 11, fontWeight: 500, color: T.muted, marginTop: 2, letterSpacing: '0.005em' }}>{sub2}</div>}
+      {sub  && <div style={{ fontSize: 13, fontWeight: 600, color: T.secondary, letterSpacing: '0.005em', lineHeight: 1.45 }}>{sub}</div>}
+      {sub2 && <div style={{ fontSize: 12.5, fontWeight: 600, color: T.secondary, marginTop: 2, letterSpacing: '0.005em' }}>{sub2}</div>}
     </div>
   );
 }
@@ -267,44 +267,7 @@ function NetworkChartsSection({ groups, filteredGroups, locations, loading }) {
     };
   }, [groups]);
 
-  // Chart 2: Billing Model Donut — uses filteredGroups so it reflects table filters
-  const billingDonutChart = useMemo(() => {
-    const src = filteredGroups?.length ? filteredGroups : (groups || []);
-    const sor           = src.filter(g => g.billing_model !== 'OUTRIGHT').reduce((s, g) => s + Number(g.stock || 0), 0);
-    const outright      = src.filter(g => g.billing_model === 'OUTRIGHT').reduce((s, g) => s + Number(g.stock || 0), 0);
-    const sorCount      = src.filter(g => g.billing_model !== 'OUTRIGHT').reduce((s, g) => s + Number(g.count || 0), 0);
-    const outrightCount = src.filter(g => g.billing_model === 'OUTRIGHT').reduce((s, g) => s + Number(g.count || 0), 0);
-    return {
-      options: {
-        ...chartBase,
-        chart: { ...chartBase, type: 'donut' },
-        labels: [`SOR (${fmtNum(sorCount)} stores)`, `Outright (${fmtNum(outrightCount)} stores)`],
-        colors: ['#2563EB', '#F59E0B'],
-        plotOptions: {
-          pie: {
-            donut: {
-              size: '68%',
-              labels: {
-                show: true,
-                total: {
-                  show: true,
-                  label: 'Total Stock',
-                  fontSize: '12px', fontWeight: 800, color: T.muted,
-                  formatter: w => fmtL(w.globals.seriesTotals.reduce((a, b) => a + b, 0)),
-                },
-                value: { fontSize: '18px', fontWeight: 900, color: T.primary, formatter: v => fmtL(Number(v)) },
-              },
-            },
-          },
-        },
-        dataLabels: { enabled: false },
-        legend: { position: 'bottom', fontWeight: 700, fontSize: '12px', labels: { colors: T.primary } },
-        tooltip: { y: { formatter: v => fmtNum(v) + ' units' }, style: { fontSize: '12px', fontWeight: 700 } },
-        stroke: { width: 2, colors: ['#111827'] },
-      },
-      series: [sor, outright],
-    };
-  }, [filteredGroups, groups]);
+  // (Billing Model donut removed — chart deleted from the Network page.)
 
   // Chart 3: Top 10 Stores by Stock — vertical bar
   const topStoresChart = useMemo(() => {
@@ -361,8 +324,9 @@ function NetworkChartsSection({ groups, filteredGroups, locations, loading }) {
 
   return (
     <>
-      {/* Chart 1: Stock by Channel — full width horizontal bar */}
-      <div style={{ marginBottom: 24 }}>
+      {/* Charts row: Stock by Channel + Top 10 Stores side by side */}
+      <div className="sx-mobile-two-grid network-mobile-chart-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
+        {/* Chart 1: Stock by Channel */}
         <div className={chartCardClass} style={chartCardStyle}>
           <div style={chartHeaderStyle}>
             <BarChart2 size={13} color={T.primary} strokeWidth={2.2} />
@@ -375,25 +339,8 @@ function NetworkChartsSection({ groups, filteredGroups, locations, loading }) {
             }
           </div>
         </div>
-      </div>
 
-      {/* Charts Row: Billing model donut + Top stores bar */}
-      <div className="sx-mobile-two-grid network-mobile-chart-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 20, marginBottom: 24 }}>
-        {/* Chart 2: Billing Split Donut */}
-        <div className={chartCardClass} style={chartCardStyle}>
-          <div style={chartHeaderStyle}>
-            <PieChart size={13} color={T.primary} strokeWidth={2.5} />
-            <span style={chartTitleStyle}>Billing Model — SOR vs Outright</span>
-          </div>
-          <div style={{ padding: '16px 18px 8px', display: 'flex', justifyContent: 'center' }}>
-            {loading
-              ? <div style={{ height: 240, width: '100%', background: T.bg, borderRadius: 8 }} />
-              : <Chart options={billingDonutChart.options} series={billingDonutChart.series} type="donut" height={240} width="100%" />
-            }
-          </div>
-        </div>
-
-        {/* Chart 3: Top 10 Stores */}
+        {/* Chart 2: Top 10 Stores */}
         <div className={chartCardClass} style={chartCardStyle}>
           <div style={chartHeaderStyle}>
             <Activity size={13} color={T.primary} strokeWidth={2.5} />
@@ -401,8 +348,8 @@ function NetworkChartsSection({ groups, filteredGroups, locations, loading }) {
           </div>
           <div style={{ padding: '16px 18px 8px' }}>
             {loading
-              ? <div style={{ height: 240, background: T.bg, borderRadius: 8 }} />
-              : <Chart options={topStoresChart.options} series={topStoresChart.series} type="bar" height={240} />
+              ? <div style={{ height: 280, background: T.bg, borderRadius: 8 }} />
+              : <Chart options={topStoresChart.options} series={topStoresChart.series} type="bar" height={280} />
             }
           </div>
         </div>
@@ -600,7 +547,7 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
   const sizeH  = Math.max(180, (showSize  === 'All' ? sizeData.length  : Number(showSize))  * 32 + 40);
 
   return (
-    <div style={{ marginBottom: 24 }}>
+    <div style={{ marginBottom: 28 }}>
       {/* Common filter bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
         <span style={{
@@ -1249,8 +1196,10 @@ export default function NetworkPage() {
           One round-trip, all 13 v2 filters narrow every widget. ─────────────*/}
       <NetworkPulse filters={v2Filters} onParetoPick={handleParetoPick} />
 
-      {/* ── Legacy KPI mini-row (unfiltered, retained for back-compat) ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 28, opacity: 0 /* hidden — replaced by NetworkPulse above */, height: 0, overflow: 'hidden' }}>
+      {/* ── Legacy KPI mini-row (unfiltered, retained for back-compat) ──
+          Fully hidden AND zero-margin so it contributes no layout space (was
+          leaking a phantom 28px gap below NetworkPulse). */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, opacity: 0, height: 0, margin: 0, overflow: 'hidden' }}>
         <KpiCard icon={Globe}      label="Total Locations" value={fmtNum(totalLocations)} sub={`${totalStates} states covered`}                                                       accent="#0f172a" loading={summaryLoading} />
       </div>
 
@@ -1264,26 +1213,21 @@ export default function NetworkPage() {
       </div>
 
       {/* ── Channel Breakdown — always unfiltered ── */}
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 28 }}>
         <SectionTitle icon={PieChart} label="Channel Breakdown — All Groups" />
         <ChannelBreakdownSection groups={groupSummary} loading={summaryLoading} />
       </div>
 
-      {/* ── Network Charts ── */}
-      <div style={{ marginBottom: 8 }}>
-        <SectionTitle icon={BarChart2} label="Network Analytics — Stock Distribution" />
-      </div>
+      {/* ── Network Charts ── (title hugs its charts at the same 18px gap the
+          other section titles use — no extra wrapper margin) */}
+      <SectionTitle icon={BarChart2} label="Network Analytics — Stock Distribution" />
       <NetworkChartsSection groups={groupSummary} filteredGroups={filteredGroups} locations={locations} loading={summaryLoading} />
 
       {/* ── Colour & Size Stock Distribution — narrows with v2 filter bar ── */}
       <StockBreakdownSection stateOptions={stateOptions} v2Filters={v2Filters} />
 
-      {/* ── Stock Health · Out-of-Stock / Reorder / Low Stock ──
-          Uses the deduped useAlerts() hook (60s TTL, no extra request).
-          Filters client-side based on v2Filters so no new API call when the
-          user changes filters. Renders as 3 severity cards + critical drill
-          list, matching the dashboard's NeedsAttention pattern. ─────────────*/}
-      <NetworkStockHealth v2Filters={v2Filters} />
+      {/* Stock Health (Out-of-Stock / Reorder / Low) + Most Critical SKUs
+          section removed from the Network page. */}
 
       {/* ── All Locations Table ── */}
       {/* Anchor lives on a wrapping div so the smooth-scroll target is

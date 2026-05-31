@@ -188,9 +188,9 @@ export default function KpiHeroCard({
         )}
         <span style={{
           fontFamily: 'var(--v2-font-body)',
-          fontSize: 10.5, fontWeight: 800,
-          letterSpacing: '0.10em', textTransform: 'uppercase',
-          color: 'var(--v2-fg-tertiary)',
+          fontSize: 12, fontWeight: 800,
+          letterSpacing: '0.08em', textTransform: 'uppercase',
+          color: 'var(--v2-fg-secondary)',
           flex: 1,
         }}>
           {label}
@@ -222,7 +222,7 @@ export default function KpiHeroCard({
         <DeltaPill delta={delta} health={health} unit={deltaUnit} />
         {delta != null && (
           <span style={{
-            fontSize: 11, fontWeight: 600, color: 'var(--v2-fg-tertiary)',
+            fontSize: 12.5, fontWeight: 600, color: 'var(--v2-fg-secondary)',
             letterSpacing: '0.02em',
           }}>
             {compareLabel}
@@ -234,7 +234,7 @@ export default function KpiHeroCard({
       {footnote && (
         <div style={{
           marginTop: 6,
-          fontSize: 11.5, fontWeight: 500, lineHeight: 1.45,
+          fontSize: 13, fontWeight: 500, lineHeight: 1.45,
           color: 'var(--v2-fg-secondary)',
         }}>
           {footnote}
@@ -260,9 +260,9 @@ export function KpiHeroCardSkeleton({ label, icon: Icon }) {
           </div>
         )}
         <span style={{
-          fontSize: 10.5, fontWeight: 800,
-          letterSpacing: '0.10em', textTransform: 'uppercase',
-          color: 'var(--v2-fg-tertiary)',
+          fontSize: 12, fontWeight: 800,
+          letterSpacing: '0.08em', textTransform: 'uppercase',
+          color: 'var(--v2-fg-secondary)',
         }}>{label || 'Loading'}</span>
       </div>
       <div style={{

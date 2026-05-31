@@ -9,6 +9,7 @@
 // SQL upper-cases the column ("MAHARASHTRA").  We compare uppercased.
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/router';
 import dynamic from 'next/dynamic';
 import { formatINR, formatCompact } from '../../lib/v2/format';
 
@@ -55,8 +56,27 @@ const displayName = n => GEO_DISPLAY[(n || '').toLowerCase().trim()] || n;
 const norm = s => (s || '').toUpperCase().trim();
 const lookupKey = s => ALIASES[norm(s)] || norm(s).toLowerCase();
 
-export default function IndiaHeatmap({ data, loading }) {
+export default function IndiaHeatmap({ data, loading, preset, fromISO, toISO }) {
+  const router = useRouter();
   const [hovered, setHovered] = useState(null);
+
+  // Click a state → jump to the Sales page pre-filtered to that state AND on
+  // the SAME date window the dashboard is currently showing.
+  //   • state  : prefer the DB's canonical value (row.state_name) so it matches
+  //              the Sales filter exactly (ILIKE, case-insensitive).
+  //   • dates  : pass the dashboard's `preset` (Today/WTD/MTD/QTD/YTD) so the
+  //              Sales page reproduces the identical range via the same
+  //              useTimeRange hook; also pass explicit date_from/date_to so a
+  //              custom dashboard range carries over too.
+  const goToStateSales = (stateValue) => {
+    const s = String(stateValue || '').trim();
+    if (!s) return;
+    const params = new URLSearchParams({ state: s });
+    if (preset)  params.set('preset', preset);
+    if (fromISO) params.set('date_from', fromISO);
+    if (toISO)   params.set('date_to', toISO);
+    router.push(`/sales?${params.toString()}`);
+  };
 
   const indexed = useMemo(() => {
     const map = new Map();
@@ -132,9 +152,10 @@ export default function IndiaHeatmap({ data, loading }) {
                       geography={geo}
                       onMouseEnter={() => setHovered({ geoName, row })}
                       onMouseLeave={() => setHovered(null)}
+                      onClick={() => goToStateSales(row ? row.state_name : geoName)}
                       style={{
-                        default: { fill, stroke: '#FFFFFF', strokeWidth: 0.6, outline: 'none' },
-                        hover:   { fill: row ? '#0A0B0D' : '#D2D6DD', stroke: '#FFFFFF', strokeWidth: 0.8, outline: 'none', cursor: row ? 'pointer' : 'default' },
+                        default: { fill, stroke: '#FFFFFF', strokeWidth: 0.6, outline: 'none', cursor: 'pointer' },
+                        hover:   { fill: row ? '#0A0B0D' : '#D2D6DD', stroke: '#FFFFFF', strokeWidth: 0.8, outline: 'none', cursor: 'pointer' },
                         pressed: { fill: row ? '#0A0B0D' : '#D2D6DD', outline: 'none' },
                       }}
                     />

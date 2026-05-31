@@ -221,7 +221,7 @@ export default function Overview() {
                 className="v2-intelligence"
                 style={{ display: 'grid', gap: 16 }}
               >
-                <IndiaHeatmap   data={metrics?.stateHeatmap} loading={metricsLoading} />
+                <IndiaHeatmap   data={metrics?.stateHeatmap} loading={metricsLoading} preset={preset} fromISO={fromISO} toISO={toISO} />
                 <AgingWaterfall data={metrics?.aging}        loading={metricsLoading} />
                 <TodayVsLY      data={metrics?.todayVsLy}    loading={metricsLoading} isDark={isDark} />
                 <CategoryMix    data={metrics?.channelMix}   loading={metricsLoading} isDark={isDark} />

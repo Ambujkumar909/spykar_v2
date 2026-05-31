@@ -304,7 +304,10 @@ const SNAPSHOT_SECONDARY_INDEXES = [
           INCLUDE (qty_on_hand, qty_available, qty_in_transit)`,
   },
   { name: 'idx_snapshot_date',       ddl: `CREATE INDEX idx_snapshot_date       ON inventory_snapshot(snapshot_date)` },
-  { name: 'idx_snapshot_loc_sku',    ddl: `CREATE INDEX idx_snapshot_loc_sku    ON inventory_snapshot(location_id, sku_id)` },
+  // idx_snapshot_loc_sku REMOVED — it was an exact duplicate of the
+  // uq_inventory_location_sku UNIQUE index (both btree(location_id, sku_id)).
+  // The planner uses the unique index for any (loc,sku) lookup, so this just
+  // wasted 23 MB and added a redundant index to rebuild on every sync.
   { name: 'idx_snapshot_location',   ddl: `CREATE INDEX idx_snapshot_location   ON inventory_snapshot(location_id)` },
   { name: 'idx_snapshot_low',        ddl: `CREATE INDEX idx_snapshot_low        ON inventory_snapshot(qty_on_hand) WHERE qty_on_hand <= safety_stock` },
   { name: 'idx_snapshot_qty',        ddl: `CREATE INDEX idx_snapshot_qty        ON inventory_snapshot(qty_on_hand)` },

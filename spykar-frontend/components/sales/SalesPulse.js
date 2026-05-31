@@ -114,8 +114,8 @@ function KpiHero({ label, value, format = 'indian', icon: Icon, accent, context,
         )}
         <span style={{
           fontFamily: 'var(--font-body)',
-          fontSize: 10.5, fontWeight: 800, letterSpacing: '0.10em',
-          textTransform: 'uppercase', color: 'var(--text-muted)',
+          fontSize: 12.5, fontWeight: 800, letterSpacing: '0.07em',
+          textTransform: 'uppercase', color: 'var(--text-secondary)',
         }}>{label}</span>
       </div>
       {showSkel ? (
@@ -129,7 +129,7 @@ function KpiHero({ label, value, format = 'indian', icon: Icon, accent, context,
       )}
       {context && (
         <div style={{
-          fontSize: 11.5, fontWeight: 500, color: 'var(--text-muted)',
+          fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)',
           letterSpacing: '0.005em', lineHeight: 1.45,
         }}>{context}</div>
       )}

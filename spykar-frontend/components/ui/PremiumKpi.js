@@ -185,10 +185,10 @@ export default function PremiumKpi({
         )}
         <span style={{
           fontFamily: 'var(--font-body)',
-          fontSize: 10, fontWeight: 800,
-          color: 'var(--text-muted)',
+          fontSize: 12, fontWeight: 800,
+          color: 'var(--text-secondary)',
           textTransform: 'uppercase',
-          letterSpacing: '0.10em',
+          letterSpacing: '0.07em',
           flex: 1,
         }}>{label}</span>
         {delta != null && !loading && (
@@ -252,8 +252,8 @@ export default function PremiumKpi({
                   border: `1px solid ${b.color ? `${b.color}28` : 'rgba(255,255,255,0.08)'}`,
                 }}>
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: b.color || '#475569', flexShrink: 0 }} />
-                <span style={{ fontFamily: 'var(--font-body)', fontSize: 10.5, fontWeight: 600, color: 'var(--text-muted)' }}>{b.label}</span>
-                <span style={{ fontFamily: 'var(--font-display)', fontSize: 11.5, fontWeight: 800, color: 'var(--text-secondary)', letterSpacing: '-0.01em' }}>
+                <span style={{ fontFamily: 'var(--font-body)', fontSize: 11.5, fontWeight: 600, color: 'var(--text-muted)' }}>{b.label}</span>
+                <span style={{ fontFamily: 'var(--font-display)', fontSize: 12.5, fontWeight: 800, color: 'var(--text-secondary)', letterSpacing: '-0.01em' }}>
                   {typeof b.value === 'number' ? fmtIndian(b.value) : (b.value ?? '—')}
                 </span>
                 {pct && (
@@ -268,8 +268,8 @@ export default function PremiumKpi({
       {/* Context line */}
       {context && (
         <div style={{
-          fontFamily: 'var(--font-body)', fontSize: 11, fontWeight: 500,
-          color: 'var(--text-disabled)', marginTop: 4,
+          fontFamily: 'var(--font-body)', fontSize: 12.5, fontWeight: 500,
+          color: 'var(--text-secondary)', marginTop: 4,
         }}>{context}</div>
       )}
     </div>

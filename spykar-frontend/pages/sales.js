@@ -9,7 +9,8 @@ import SkuPerformance from '../components/sales/SkuPerformance';
 import DistributionDonuts from '../components/sales/DistributionDonuts';
 import DrilldownDrawer from '../components/sales/DrilldownDrawer';
 import { useFilters } from '../lib/useFilters';
-import { useTimeRange } from '../lib/v2/useTimeRange';
+import { useRouter } from 'next/router';
+import { useTimeRange, PRESETS } from '../lib/v2/useTimeRange';
 import TimeRangeControl from '../components/dashboard-v2/TimeRangeControl';
 import { analyticsService, syncService } from '../lib/services';
 import { getCached, setCached, isFresh, clearCached } from '../lib/dashboardCache';
@@ -182,7 +183,7 @@ function KpiCard({ icon: Icon, label, value, sub, sub2, accent = 'var(--text-pri
         }}>
           <Icon size={14} color={accent} strokeWidth={2.5} />
         </div>
-        <span style={{ fontSize: 11, fontWeight: 800, color: T.muted, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.secondary, letterSpacing: '0.07em', textTransform: 'uppercase' }}>
           {label}
         </span>
       </div>
@@ -192,8 +193,8 @@ function KpiCard({ icon: Icon, label, value, sub, sub2, accent = 'var(--text-pri
             {value}
           </div>
       }
-      {sub && <div style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>{sub}</div>}
-      {sub2 && <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, marginTop: -4 }}>{sub2}</div>}
+      {sub && <div style={{ fontSize: 13, fontWeight: 600, color: T.secondary }}>{sub}</div>}
+      {sub2 && <div style={{ fontSize: 12.5, fontWeight: 600, color: T.secondary, marginTop: -4 }}>{sub2}</div>}
     </div>
   );
 }
@@ -801,6 +802,26 @@ export default function SalesAnalyticsPage() {
   // a date input — matches the Overview behaviour exactly.
   const setDateFrom = useCallback((v) => setCustom(v, toISO), [setCustom, toISO]);
   const setDateTo   = useCallback((v) => setCustom(fromISO, v), [setCustom, fromISO]);
+
+  // ── Carry the date range over from the Dashboard ──────────────────────────
+  // When the user clicks a state on the dashboard's India map, we route here
+  // with ?state=...&preset=...&date_from=...&date_to=... so the Sales page
+  // opens on the SAME window the dashboard was showing (not the default MTD).
+  // Both pages share useTimeRange, so applying the same preset reproduces the
+  // identical range; for a custom dashboard range we apply the explicit dates.
+  // Runs once after the router is ready (router.query is empty on first SSR pass).
+  const salesRouter = useRouter();
+  const dateInitRef = useRef(false);
+  useEffect(() => {
+    if (dateInitRef.current || !salesRouter.isReady) return;
+    dateInitRef.current = true;
+    const { preset: qPreset, date_from: qFrom, date_to: qTo } = salesRouter.query;
+    if (qPreset && qPreset !== 'custom' && PRESETS.includes(String(qPreset))) {
+      setPreset(String(qPreset));
+    } else if (qFrom && qTo) {
+      setCustom(String(qFrom), String(qTo));
+    }
+  }, [salesRouter.isReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Legacy local filters retained for back-compat with the in-page filter
   // toolbar (color/size/store dropdowns). v2 multi-select takes precedence

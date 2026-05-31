@@ -102,7 +102,7 @@ async function getSizeDistribution(req, res, next) {
     const skuColors  = multi(color),       skuSizes  = multi(sizeMulti);
 
     const catKey = canonicalizeCategory(category);
-    const cacheKey = `analytics:size-dist:v5:${location_type||'all'}:${zone_id||'all'}:${states.join('|')}:${cities.join('|')}:${groups.join('|')}:${storeCodes.join('|')}:${catKey||''}:g${skuGenders.join('|')}:sp${skuSubProds.join('|')}:pr${skuProducts.join('|')}:st${skuStyles.join('|')}:sh${skuShades.join('|')}:cl${skuColors.join('|')}:sz${skuSizes.join('|')}:sn${skuSeasons.join('|')}:m${mode}`;
+    const cacheKey = `analytics:size-dist:v6:${location_type||'all'}:${zone_id||'all'}:${states.join('|')}:${cities.join('|')}:${groups.join('|')}:${storeCodes.join('|')}:${catKey||''}:g${skuGenders.join('|')}:sp${skuSubProds.join('|')}:pr${skuProducts.join('|')}:st${skuStyles.join('|')}:sh${skuShades.join('|')}:cl${skuColors.join('|')}:sz${skuSizes.join('|')}:sn${skuSeasons.join('|')}:m${mode}`;
 
     const data = await getOrSet(cacheKey, async () => {
       const conditions = ['l.is_active = true', 's.is_active = true'];
@@ -152,6 +152,9 @@ async function getSizeDistribution(req, res, next) {
         WHERE ${conditions.join(' AND ')}
         GROUP BY s.size
         ORDER BY total_stock DESC
+        -- Top 50 by stock. pct_of_total uses a window over the full set
+        -- (evaluated before LIMIT) so percentages stay accurate.
+        LIMIT 50
       `, params);
       return result.rows;
     }, TTL.SKU_ANALYTICS);
@@ -181,7 +184,7 @@ async function getColorDistribution(req, res, next) {
     const skuColors  = multi(color),       skuSizes  = multi(sizeMulti);
 
     const catKey = canonicalizeCategory(category);
-    const cacheKey = `analytics:color-dist:v8:${location_type||'all'}:${states.join('|')}:${cities.join('|')}:${groups.join('|')}:${storeCodes.join('|')}:${catKey||''}:g${skuGenders.join('|')}:sp${skuSubProds.join('|')}:pr${skuProducts.join('|')}:st${skuStyles.join('|')}:sh${skuShades.join('|')}:cl${skuColors.join('|')}:sz${skuSizes.join('|')}:sn${skuSeasons.join('|')}:m${mode}`;
+    const cacheKey = `analytics:color-dist:v9:${location_type||'all'}:${states.join('|')}:${cities.join('|')}:${groups.join('|')}:${storeCodes.join('|')}:${catKey||''}:g${skuGenders.join('|')}:sp${skuSubProds.join('|')}:pr${skuProducts.join('|')}:st${skuStyles.join('|')}:sh${skuShades.join('|')}:cl${skuColors.join('|')}:sz${skuSizes.join('|')}:sn${skuSeasons.join('|')}:m${mode}`;
 
     const data = await getOrSet(cacheKey, async () => {
       const locConditions = ['l.is_active = true'];
@@ -236,6 +239,11 @@ async function getColorDistribution(req, res, next) {
           ROUND(total_stock * 100.0 / NULLIF(SUM(total_stock) OVER (), 0), 1) AS pct_of_total
         FROM color_stock
         ORDER BY total_stock DESC
+        -- Top 50 colours by stock. The window-function pct_of_total is computed
+        -- over the full color_stock set (before LIMIT), so percentages remain
+        -- accurate even though only the top 50 rows are shipped. Raw data has
+        -- ~800+ distinct colours — the long tail bloated this endpoint to 283KB.
+        LIMIT 50
       `, params);
       return result.rows;
     }, TTL.SKU_ANALYTICS);
@@ -352,7 +360,7 @@ async function getSalesAnalytics(req, res, next) {
 
     // Cache key — unique per filter combination (category canonicalized so
     // "Denim"/"denim"/"jeans" all hit the same cache slot)
-    const cacheKey = `analytics:sales:v18:${date_from||''}:${date_to||''}:${color_name||''}:${size||''}:${location_id||''}:${states.join('|')}:${cities.join('|')}:${groups.join('|')}:${storeCodes.join('|')}:${catKey||''}:g${skuGenders.join('|')}:sp${skuSubProds.join('|')}:pr${skuProducts.join('|')}:st${skuStyles.join('|')}:sh${skuShades.join('|')}:cl${skuColors.join('|')}:sz${skuSizes.join('|')}:sn${skuSeasons.join('|')}:m${mode}`;
+    const cacheKey = `analytics:sales:v19:${date_from||''}:${date_to||''}:${color_name||''}:${size||''}:${location_id||''}:${states.join('|')}:${cities.join('|')}:${groups.join('|')}:${storeCodes.join('|')}:${catKey||''}:g${skuGenders.join('|')}:sp${skuSubProds.join('|')}:pr${skuProducts.join('|')}:st${skuStyles.join('|')}:sh${skuShades.join('|')}:cl${skuColors.join('|')}:sz${skuSizes.join('|')}:sn${skuSeasons.join('|')}:m${mode}`;
 
     const data = await getOrSet(cacheKey, async () => {
     const conditions = [];
@@ -583,6 +591,12 @@ async function getSalesAnalytics(req, res, next) {
             ROUND(COALESCE(SUM(val) FILTER (WHERE movement_type='SALE'),0)
               / NULLIF(SUM(qty) FILTER (WHERE movement_type='SALE'),0),0)::int AS avg_price
           FROM mov GROUP BY color_name
+          -- Cap to the top 50 colours by units sold. The raw data has ~825
+          -- distinct colour_name values (most with a handful of units); shipping
+          -- all of them bloated the payload and the client had to parse+render
+          -- an 825-row table nobody reads. Top 50 covers virtually all volume.
+          ORDER BY units_sold DESC NULLS LAST
+          LIMIT 50
         ) c) AS by_color,
 
         -- ④ By size — same shape as by_color + lens columns on both sides.
@@ -603,6 +617,9 @@ async function getSalesAnalytics(req, res, next) {
             ROUND(COALESCE(SUM(val) FILTER (WHERE movement_type='SALE'),0)
               / NULLIF(SUM(qty) FILTER (WHERE movement_type='SALE'),0)::numeric,0)::int AS avg_price
           FROM mov GROUP BY size
+          -- Cap to the top 50 sizes by units sold (same rationale as by_color).
+          ORDER BY units_sold DESC NULLS LAST
+          LIMIT 50
         ) sz) AS by_size,
 
         -- ⑤ Top stores (sale + return aggregates so the Top Stores widget
