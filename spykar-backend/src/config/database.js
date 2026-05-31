@@ -6,7 +6,11 @@ let _pool = null;
 function getPool() {
   if (!_pool) {
     _pool = new Pool({
-      host:     process.env.PG_HOST     || 'localhost',
+      // 127.0.0.1 (NOT 'localhost') — on Windows, 'localhost' resolves to
+      // IPv6 ::1 first; if Postgres listens IPv4-only the connect attempt
+      // wastes ~200ms failing IPv6 before falling back. Measured: localhost
+      // connect = 211ms vs 127.0.0.1 = 1.3ms.
+      host:     process.env.PG_HOST     || '127.0.0.1',
       port:     parseInt(process.env.PG_PORT) || 5432,
       database: process.env.PG_DATABASE || 'spykar_inventory',
       user:     process.env.PG_USER     || 'spykar_app',
@@ -15,6 +19,12 @@ function getPool() {
       idleTimeoutMillis:    30000,                                // close idle connections after 30s
       connectionTimeoutMillis: 5000,                              // fail if can't connect in 5s
       maxUses:  7500,                                             // recycle connections after 7500 uses
+      // Kill transactions left IDLE (BEGIN with no follow-up) after 60s so a
+      // crashed request can't pin a connection + hold locks forever. This is
+      // SAFE for the ETL sync: its COPY/merge statements are ACTIVE (not idle),
+      // so multi-minute merges are never affected — only genuinely stuck,
+      // idle-in-transaction sessions get reaped.
+      idle_in_transaction_session_timeout: 60000,
       ssl: process.env.PG_SSL === 'true' ? { rejectUnauthorized: false } : false,
     });
     _pool.on('connect', () => logger.debug('New DB client connected'));

@@ -131,6 +131,38 @@ export function getCached(key) {
   return null;
 }
 
+// ─── Data version (sync-aware cache invalidation) ─────────────────────────────
+// The 10-min wall-clock freshness window is NOT enough: when the ETL sync runs,
+// the underlying data changes but a cached entry younger than 10 min would still
+// be treated as "fresh" and the page would NOT refetch — so the user keeps
+// seeing yesterday's numbers after a sync. The fix: stamp a monotonically
+// increasing "data version" = the epoch ms of the latest successful sync's
+// completed_at. Any cached entry created BEFORE that version is stale by
+// definition, regardless of how recently it was fetched.
+//
+// Header.js (mounted globally via DashboardLayout) polls /sync/status and feeds
+// completed_at here, so every page's isFresh() automatically returns false after
+// a sync → triggers the stale-while-revalidate refetch → fresh data appears.
+let DATA_VERSION = 0;
+try {
+  if (typeof window !== 'undefined') {
+    DATA_VERSION = Number(window.localStorage.getItem('dashcache:__dataVersion')) || 0;
+  }
+} catch { /* ignore */ }
+
+export function setDataVersion(ts) {
+  const n = Number(ts) || 0;
+  if (n > DATA_VERSION) {
+    DATA_VERSION = n;
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('dashcache:__dataVersion', String(n));
+      }
+    } catch { /* ignore */ }
+  }
+}
+export function getDataVersion() { return DATA_VERSION; }
+
 export function isFresh(key) {
   let entry = CACHE.get(key);
   if (!entry) {
@@ -138,6 +170,9 @@ export function isFresh(key) {
     if (persisted) { touch(key, persisted); entry = persisted; }
   }
   if (!entry) return false;
+  // Stale if the entry was cached before the latest sync — forces a refetch
+  // of fresh post-sync data even within the 10-min wall-clock window.
+  if (entry.ts < DATA_VERSION) return false;
   return Date.now() - entry.ts < FRESH_TTL_MS;
 }
 

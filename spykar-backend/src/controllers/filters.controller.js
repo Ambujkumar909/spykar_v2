@@ -20,7 +20,7 @@
  */
 
 const { query }              = require('../config/database');
-const { getOrSet, TTL }      = require('../config/redis');
+const { getOrSet, TTL }      = require('../config/cache');
 const { buildFilters }       = require('../utils/filterBuilder');
 
 // Default 5-min TTL for option lists. Override via TTL.FILTER_OPTIONS if defined.

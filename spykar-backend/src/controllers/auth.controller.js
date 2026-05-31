@@ -2,7 +2,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { query, transaction } = require('../config/database');
-const { set, del, TTL } = require('../config/redis');
+const { set, del, TTL } = require('../config/cache');
 const logger = require('../config/logger');
 const { AppError } = require('../middleware/errorHandler');
 

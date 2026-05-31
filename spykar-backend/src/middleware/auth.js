@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
-const { get } = require('../config/redis');
+const { get } = require('../config/cache');
 const logger = require('../config/logger');
 const { AppError } = require('./errorHandler');
 

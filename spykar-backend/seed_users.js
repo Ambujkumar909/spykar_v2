@@ -1,11 +1,9 @@
 require('dotenv').config();
 const { connectDatabase, pool } = require('./src/config/database');
-const { connectRedis } = require('./src/config/redis');
 const bcrypt = require('bcrypt');
 
 async function seedUsersOnly() {
   await connectDatabase();
-  await connectRedis();
 
   console.log('👤 Seeding users only...');
 

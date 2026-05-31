@@ -11,8 +11,8 @@ import DrilldownDrawer from '../components/sales/DrilldownDrawer';
 import { useFilters } from '../lib/useFilters';
 import { useTimeRange } from '../lib/v2/useTimeRange';
 import TimeRangeControl from '../components/dashboard-v2/TimeRangeControl';
-import { analyticsService } from '../lib/services';
-import { getCached, setCached, isFresh } from '../lib/dashboardCache';
+import { analyticsService, syncService } from '../lib/services';
+import { getCached, setCached, isFresh, clearCached } from '../lib/dashboardCache';
 import toast from 'react-hot-toast';
 import { notifyApiError } from '../lib/notifyApiError';
 import {

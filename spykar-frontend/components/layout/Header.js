@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { RefreshCw, Bell, Clock, Sun, Moon } from 'lucide-react';
 import { syncService } from '../../lib/services';
 import { useAlerts } from '../../lib/useAlerts';
+import { setDataVersion } from '../../lib/dashboardCache';
 import { timeAgo } from '../../lib/utils';
 import { useAuth } from '../../lib/auth-context';
 import { useTheme } from '../../lib/useTheme';
@@ -24,10 +25,30 @@ export default function Header({ title, subtitle, headerSlot }) {
     [alerts]
   );
 
-  useEffect(() => {
-    if (isAdmin) {
-      syncService.getStatus().then(r => setSyncStatus(r.data.data)).catch(() => {});
+  // Apply a sync-status payload AND propagate the data version. When a sync
+  // SUCCEEDS, completed_at advances the global DATA_VERSION, which makes every
+  // page's cached dashboard data stale-on-next-mount (see dashboardCache.js).
+  // This is what makes "after sync, fresh data appears" actually work — without
+  // it, the client keeps serving its <10-min localStorage copy and never
+  // refetches the freshly-synced numbers.
+  const applySyncStatus = (s) => {
+    setSyncStatus(s);
+    if (s && s.status === 'SUCCESS' && s.completed_at) {
+      setDataVersion(new Date(s.completed_at).getTime());
     }
+  };
+
+  // Poll sync status on mount AND every 60s, so an open tab notices a
+  // background (scheduled or detached) sync completing and refreshes data.
+  useEffect(() => {
+    if (!isAdmin) return;
+    let alive = true;
+    const poll = () => syncService.getStatus()
+      .then(r => { if (alive) applySyncStatus(r.data.data); })
+      .catch(() => {});
+    poll();
+    const t = setInterval(poll, 60000);
+    return () => { alive = false; clearInterval(t); };
   }, [isAdmin]);
 
   // Live clock
@@ -41,7 +62,7 @@ export default function Header({ title, subtitle, headerSlot }) {
     try {
       await syncService.trigger();
       setTimeout(() => {
-        syncService.getStatus().then(r => setSyncStatus(r.data.data));
+        syncService.getStatus().then(r => applySyncStatus(r.data.data));
         setSyncing(false);
       }, 2000);
     } catch { setSyncing(false); }

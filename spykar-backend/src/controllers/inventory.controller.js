@@ -1,5 +1,5 @@
 const { query, transaction } = require('../config/database');
-const { getOrSet, getOrSetRawJson, invalidatePattern, TTL } = require('../config/redis');
+const { getOrSet, getOrSetRawJson, invalidatePattern, TTL } = require('../config/cache');
 const { AppError } = require('../middleware/errorHandler');
 const logger = require('../config/logger');
 

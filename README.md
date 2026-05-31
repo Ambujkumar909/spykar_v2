@@ -63,7 +63,7 @@ The centrepiece is an **AI-powered natural language chatbot** that allows busine
 ├────────────────────┬────────────────────┬───────────────────────┤
 │   FRONTEND         │   BACKEND API      │   DATA LAYER          │
 │   Next.js 14       │   Node.js/Express  │   PostgreSQL 16       │
-│   React 18         │   REST API         │   Redis (cache)       │
+│   React 18         │   REST API         │   In-memory cache     │
 │   White+Red Theme  │   JWT Auth         │   MS SQL (source ERP) │
 │   AI Chatbot UI    │   Gemini AI        │   ETL Scheduler       │
 │   Drag-to-resize   │   Rate limiting    │   Nightly sync        │
@@ -138,7 +138,7 @@ The centrepiece is an **AI-powered natural language chatbot** that allows busine
 | Backend Framework | Express.js | 4.x |
 | Runtime | Node.js | 20.x |
 | Primary Database | PostgreSQL | 16.x |
-| Cache | Redis | 7.x |
+| Cache | In-process (Node heap) | — |
 | Source ERP DB | Microsoft SQL Server | 2019 |
 | AI Model | Google Gemini 2.5 Flash | Latest |
 | Authentication | JWT (jsonwebtoken) | — |
@@ -147,7 +147,6 @@ The centrepiece is an **AI-powered natural language chatbot** that allows busine
 | Scheduling | node-cron | — |
 | Logging | Winston | — |
 | Icons | Lucide React | — |
-| Containerisation | Docker + Docker Compose | — |
 
 ---
 
@@ -161,6 +160,7 @@ spykar-project/
 │   │   ├── server.js                # HTTP server entry point
 │   │   ├── config/
 │   │   │   ├── database.js          # PostgreSQL connection pool
+│   │   │   ├── cache.js             # In-process TTL cache (replaces Redis)
 │   │   │   └── logger.js            # Winston logger config
 │   │   ├── controllers/
 │   │   │   ├── ai.controller.js     # 🤖 AI chatbot — Gemini, SQL gen, breakdown
@@ -177,12 +177,11 @@ spykar-project/
 │   │   │   ├── auth.routes.js       # /api/auth/* endpoints
 │   │   │   └── ...
 │   │   ├── jobs/
-│   │   │   └── etlSync.js           # Nightly MS SQL → PostgreSQL ETL job
-│   │   └── scripts/                 # DB migration scripts
+│   │   │   ├── syncScheduler.js     # Nightly MS SQL → PostgreSQL ETL (detached)
+│   │   │   └── cacheInvalidator.js  # Flushes/re-warms cache after each sync
+│   │   └── scripts/                 # DB migration + sync runner scripts
 │   ├── .env                         # ⚠️ NOT committed — see .env.example
-│   ├── package.json
-│   ├── Dockerfile
-│   └── docker-compose.yml
+│   └── package.json
 │
 ├── spykar-frontend/                 # Next.js frontend
 │   ├── pages/
@@ -220,11 +219,13 @@ spykar-project/
 Before you begin, ensure you have the following installed:
 
 - **Node.js** v20.x or higher — [nodejs.org](https://nodejs.org)
-- **PostgreSQL** v16.x — [postgresql.org](https://www.postgresql.org)
-- **Redis** v7.x — [redis.io](https://redis.io)
+- **PostgreSQL** v16.x (local or managed/remote) — [postgresql.org](https://www.postgresql.org)
 - **Git** — [git-scm.com](https://git-scm.com)
 - A **Google Gemini API key** — [aistudio.google.com](https://aistudio.google.com/app/apikey)
-- *(Optional)* **Docker** + **Docker Compose** for containerised deployment
+
+> **No Redis or Docker required.** Caching is handled in-process by the API
+> (`config/cache.js`), and PostgreSQL can be any local or managed instance you
+> point `.env` at.
 
 ---
 
@@ -310,10 +311,6 @@ PG_PASSWORD=your_pg_password
 PG_POOL_MAX=20
 PG_SSL=false                          # Set true in production
 
-# ── Redis ──────────────────────────────────────────────────────────
-REDIS_URL=redis://localhost:6379
-REDIS_PASSWORD=                       # Leave blank if no auth
-
 # ── JWT Authentication ─────────────────────────────────────────────
 # Generate with: openssl rand -hex 64
 JWT_SECRET=generate_a_64_byte_hex_secret_here
@@ -347,6 +344,14 @@ NEXT_PUBLIC_API_URL=http://localhost:4001/api
 
 ## Running the Application
 
+### One-Click (Windows)
+
+From the project root, double-click **`start.bat`** (or run it from a terminal).
+It checks Node, installs dependencies on first run, launches the backend and
+frontend in separate windows, and opens the dashboard. Use **`stop.bat`** to
+shut both servers down. The backend connects to whatever PostgreSQL you've
+configured in `spykar-backend/.env`.
+
 ### Development Mode
 
 **Terminal 1 — Backend:**
@@ -376,14 +381,11 @@ npm run build
 npm start
 ```
 
-### Docker Compose (Recommended for Production)
-
-```bash
-cd spykar-backend
-docker-compose up -d
-```
-
-This starts PostgreSQL, Redis, and the API server in containers.
+> **Caching note:** the API keeps a fast in-process cache (`config/cache.js`)
+> warmed on startup. Because the ETL sync runs in a separate process, a small
+> watcher (`jobs/cacheInvalidator.js`) polls `sync_logs` and flushes + re-warms
+> the cache within ~60s of each completed sync, so the dashboard always reflects
+> fresh data — no shared cache server needed.
 
 ---
 
@@ -619,7 +621,6 @@ curl -X POST http://localhost:4001/api/sync/trigger \
 - [ ] Set `PG_SSL=true` and configure SSL certificates
 - [ ] Use strong random `JWT_SECRET` (`openssl rand -hex 64`)
 - [ ] Restrict `ALLOWED_ORIGINS` to production domain only
-- [ ] Enable Redis password authentication
 - [ ] Set up PostgreSQL connection pooling (PgBouncer recommended)
 - [ ] Configure reverse proxy (Nginx) with HTTPS
 - [ ] Set up log rotation and monitoring (PM2 / systemd)

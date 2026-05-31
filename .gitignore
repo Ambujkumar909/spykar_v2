@@ -46,10 +46,6 @@ generate_pdf.py
 *.pdf
 /src/
 
-# ── Docker volumes ─────────────────────────────────────────────────
-postgres_data/
-redis_data/
-
 # ── Certificates ───────────────────────────────────────────────────
 *.pem
 *.key

@@ -23,6 +23,21 @@ const filterRoutes = require('./routes/filters.routes');
 
 const app = express();
 
+// ─── Request timeout ──────────────────────────────────────────────────────────
+// Bound every HTTP request at 45s so a pathological query can never leave a
+// browser tab hanging forever. This is an HTTP-socket timeout — it does NOT
+// set a Postgres statement_timeout, so the long-running ETL sync (COPY merges
+// that legitimately run for minutes) is completely unaffected. After the
+// analytics rollup work lands, no legitimate API request comes close to 45s.
+app.use((req, res, next) => {
+  res.setTimeout(45000, () => {
+    if (!res.headersSent) {
+      res.status(503).json({ success: false, message: 'Request timed out. Please narrow your filters and retry.' });
+    }
+  });
+  next();
+});
+
 // ─── Security & Performance Middleware ────────────────────────────────────────
 app.use(helmet());
 app.use(compression());
@@ -92,21 +107,22 @@ app.get('/health', (req, res) => {
 
 app.get('/health/deep', async (req, res) => {
   const { checkDatabase } = require('./config/database');
-  const { checkRedis } = require('./config/redis');
+  const { checkCache } = require('./config/cache');
 
-  const [dbStatus, redisStatus] = await Promise.allSettled([
+  const [dbStatus, cacheStatus] = await Promise.allSettled([
     checkDatabase(),
-    checkRedis(),
+    checkCache(),
   ]);
 
   const status = {
     success: true,
     database: dbStatus.status === 'fulfilled' ? 'connected' : 'error',
-    redis: redisStatus.status === 'fulfilled' ? 'connected' : 'error',
+    cache: cacheStatus.status === 'fulfilled' ? 'in-memory' : 'error',
     timestamp: new Date().toISOString(),
   };
 
-  const httpStatus = (status.database === 'connected' && status.redis === 'connected') ? 200 : 503;
+  // Cache is in-process and always available; DB is the only hard dependency.
+  const httpStatus = status.database === 'connected' ? 200 : 503;
   res.status(httpStatus).json(status);
 });
 

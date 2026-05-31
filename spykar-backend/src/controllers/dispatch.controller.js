@@ -1,5 +1,5 @@
 const { query, transaction } = require('../config/database');
-const { invalidatePattern } = require('../config/redis');
+const { invalidatePattern } = require('../config/cache');
 const { AppError } = require('../middleware/errorHandler');
 
 async function list(req, res, next) {
@@ -77,7 +77,7 @@ async function list(req, res, next) {
 
 async function getInTransit(req, res, next) {
   try {
-    const { getOrSet } = require('../config/redis');
+    const { getOrSet } = require('../config/cache');
     const data = await getOrSet('dispatch:in-transit', async () => {
       const result = await query(`
         SELECT

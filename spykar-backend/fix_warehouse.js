@@ -1,11 +1,9 @@
 require('dotenv').config();
 const { connectDatabase, query } = require('./src/config/database');
-const { connectRedis } = require('./src/config/redis');
 const sql = require('mssql');
 
 async function fix() {
   await connectDatabase();
-  await connectRedis();
 
   const locs = await query(`SELECT id, external_id FROM locations WHERE type = 'WAREHOUSE'`);
   console.log('Warehouses found:', locs.rows.length);

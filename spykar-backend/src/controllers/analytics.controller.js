@@ -1,5 +1,5 @@
 const { query } = require('../config/database');
-const { getOrSet, TTL } = require('../config/redis');
+const { getOrSet, TTL } = require('../config/cache');
 const { canonicalizeCategory, applyCategoryFilter } = require('../utils/categoryFilter');
 
 // Today as 'YYYY-MM-DD' (server local time). Used as the default upper bound

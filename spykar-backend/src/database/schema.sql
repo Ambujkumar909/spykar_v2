@@ -24,7 +24,7 @@ CREATE TYPE movement_type AS ENUM ('SALE', 'DISPATCH', 'RECEIPT', 'RETURN', 'TRA
 
 -- Users & Auth
 CREATE TABLE users (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name            VARCHAR(100) NOT NULL,
   email           VARCHAR(150) UNIQUE NOT NULL,
   password_hash   VARCHAR(255) NOT NULL,
@@ -39,7 +39,7 @@ CREATE INDEX idx_users_email ON users(email);
 
 -- Refresh tokens for JWT rotation
 CREATE TABLE refresh_tokens (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   token_hash  VARCHAR(255) NOT NULL,
   expires_at  TIMESTAMPTZ NOT NULL,
@@ -60,7 +60,7 @@ CREATE TABLE zones (
 
 -- Locations master (warehouses, distributors, stores)
 CREATE TABLE locations (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code            VARCHAR(50) UNIQUE NOT NULL,       -- e.g. WH-MUM-01, DIST-DEL-042
   name            VARCHAR(200) NOT NULL,
   type            location_type NOT NULL,
@@ -87,7 +87,7 @@ CREATE INDEX idx_locations_external ON locations(external_id);
 
 -- SKU Master (Product × Color × Size)
 CREATE TABLE skus (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sku_code        VARCHAR(100) UNIQUE NOT NULL,      -- e.g. SPY-JN-BLU-32
   product_name    VARCHAR(200) NOT NULL,
   category        VARCHAR(100) DEFAULT 'Jeans',
@@ -120,7 +120,7 @@ CREATE INDEX idx_skus_search ON skus USING gin(product_name gin_trgm_ops);
 -- Current inventory snapshot per location per SKU
 -- This is the "live" inventory state — updated on every delta sync
 CREATE TABLE inventory_snapshot (
-  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   location_id       UUID NOT NULL REFERENCES locations(id),
   sku_id            UUID NOT NULL REFERENCES skus(id),
   qty_on_hand       INTEGER NOT NULL DEFAULT 0,       -- physically present
@@ -146,7 +146,7 @@ CREATE INDEX idx_snapshot_low ON inventory_snapshot(qty_on_hand) WHERE qty_on_ha
 
 -- Inventory movement ledger (every delta change logged here)
 CREATE TABLE inventory_movements (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   location_id     UUID NOT NULL REFERENCES locations(id),
   sku_id          UUID NOT NULL REFERENCES skus(id),
   movement_type   movement_type NOT NULL,
@@ -169,7 +169,7 @@ CREATE INDEX idx_movements_ref ON inventory_movements(reference_id);
 
 -- Stock ageing — tracks how long each unit has been sitting
 CREATE TABLE stock_ageing (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   location_id     UUID NOT NULL REFERENCES locations(id),
   sku_id          UUID NOT NULL REFERENCES skus(id),
   qty_0_30        INTEGER DEFAULT 0,    -- units aged 0-30 days
@@ -192,7 +192,7 @@ CREATE INDEX idx_ageing_dead ON stock_ageing(qty_180_plus) WHERE qty_180_plus > 
 
 -- Dispatch orders (outbound from warehouse to location)
 CREATE TABLE dispatch_orders (
-  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   dispatch_no       VARCHAR(50) UNIQUE NOT NULL,      -- e.g. DISP-2025-000123
   from_location_id  UUID NOT NULL REFERENCES locations(id),
   to_location_id    UUID NOT NULL REFERENCES locations(id),
@@ -220,7 +220,7 @@ CREATE INDEX idx_dispatch_external ON dispatch_orders(external_id);
 
 -- Line items for each dispatch
 CREATE TABLE dispatch_line_items (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   dispatch_id     UUID NOT NULL REFERENCES dispatch_orders(id) ON DELETE CASCADE,
   sku_id          UUID NOT NULL REFERENCES skus(id),
   qty_ordered     INTEGER NOT NULL,
@@ -239,7 +239,7 @@ CREATE INDEX idx_dispatch_items_sku ON dispatch_line_items(sku_id);
 
 -- Tracks every sync run from SQL Server
 CREATE TABLE sync_logs (
-  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sync_type         VARCHAR(50) NOT NULL,             -- 'FULL', 'DELTA', 'MANUAL'
   status            sync_status NOT NULL DEFAULT 'PENDING',
   source            VARCHAR(50) DEFAULT 'SQL_SERVER',

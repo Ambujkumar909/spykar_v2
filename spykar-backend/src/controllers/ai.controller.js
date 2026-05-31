@@ -38,8 +38,8 @@ try {
 }
 
 // ─── Optional Redis ──────────────────────────────────────────────────────────
-let redisMod = null;
-try { redisMod = require('../config/redis'); } catch (_) { /* optional */ }
+let cacheMod = null;
+try { cacheMod = require('../config/cache'); } catch (_) { /* optional */ }
 
 // ─── Provider switch (default: Gemini; flip to 'anthropic' when key is live) ─
 const AI_PROVIDER = (process.env.AI_PROVIDER || 'gemini').toLowerCase();
@@ -84,26 +84,25 @@ function rateLimit(userId) {
   return bucket.count <= 30;
 }
 
-// ─── Redis safe wrappers ─────────────────────────────────────────────────────
+// ─── Cache safe wrappers ─────────────────────────────────────────────────────
+// Back the AI response cache with the in-process cache (config/cache.js).
+// Values stored here are plain strings; get() returns the string or null.
 async function rGet(key) {
   try {
-    const c = redisMod?.redisClient;
-    if (!c?.isReady) return null;
-    return await c.get(key);
+    if (!cacheMod) return null;
+    return await cacheMod.get(key);
   } catch { return null; }
 }
 async function rSet(key, val, ttl) {
   try {
-    const c = redisMod?.redisClient;
-    if (!c?.isReady) return;
-    await c.setEx(key, ttl, val);
+    if (!cacheMod) return;
+    await cacheMod.set(key, val, ttl);
   } catch { /* ignore */ }
 }
 async function rDel(key) {
   try {
-    const c = redisMod?.redisClient;
-    if (!c?.isReady) return;
-    await c.del(key);
+    if (!cacheMod) return;
+    await cacheMod.del(key);
   } catch { /* ignore */ }
 }
 

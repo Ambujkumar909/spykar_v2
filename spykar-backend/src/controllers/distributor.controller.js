@@ -1,5 +1,5 @@
 const { query } = require('../config/database');
-const { getOrSet, TTL } = require('../config/redis');
+const { getOrSet, TTL } = require('../config/cache');
 const { AppError } = require('../middleware/errorHandler');
 
 async function list(req, res, next) {

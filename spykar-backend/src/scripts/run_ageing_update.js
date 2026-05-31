@@ -9,7 +9,7 @@
 
 require('dotenv').config();
 const { query }             = require('../config/database');
-const { invalidatePattern } = require('../config/redis');
+const { invalidatePattern } = require('../config/cache');
 const logger                = require('../config/logger');
 
 async function main() {

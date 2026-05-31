@@ -28,7 +28,7 @@
  */
 
 const { query }              = require('../config/database');
-const { getOrSet, TTL }      = require('../config/redis');
+const { getOrSet, TTL }      = require('../config/cache');
 const { canonicalizeCategory, applyCategoryFilter } = require('../utils/categoryFilter');
 
 // Multi-value parser â€” CSV/array, trimmed, empty filtered. Same contract as
@@ -145,7 +145,11 @@ async function getNetworkPulse(req, res, next) {
       // Serialised, the whole thing finishes in ~600 ms (cached <50 ms).
       // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       // â‘  Hero KPI summary â€” total/active/closed split for stock + â‚¹ value
-      const summary = await query(`
+      // PARALLELIZED: the 7 aggregations below are deferred (no await) and
+      // run concurrently via Promise.all (see destructure after actionLists).
+      // All are read-only over the same pre-built `params`. Cold latency was
+      // ~12.8s serial; concurrent ≈ max(slowest) once the snapshot is hot.
+      const summary__p = query(`
           WITH src AS (
             SELECT l.id, l.shop_closed, l.state, i.qty_on_hand,
                    COALESCE(s.mrp, 0)::numeric AS mrp, i.sku_id
@@ -169,7 +173,7 @@ async function getNetworkPulse(req, res, next) {
         `, params);
 
       // â‘¡ Top 10 stores by stock value
-      const topStores = await query(`
+      const topStores__p = query(`
           SELECT l.id, l.code, l.name, l.city, l.state,
                  COALESCE(l.group_name, l.type::text) AS channel,
                  l.shop_closed,
@@ -185,7 +189,7 @@ async function getNetworkPulse(req, res, next) {
         `, params);
 
       // â‘¢ Top 10 states by stock value
-      const topStates = await query(`
+      const topStates__p = query(`
           SELECT l.state,
                  COUNT(DISTINCT l.id)::int                                  AS stores,
                  COUNT(DISTINCT l.id) FILTER (WHERE l.shop_closed=false)::int AS active_stores,
@@ -210,7 +214,7 @@ async function getNetworkPulse(req, res, next) {
       const channelHaving = (hasSkuFilter || catKey)
         ? `HAVING COALESCE(SUM(i.qty_on_hand * COALESCE(s.mrp,0)), 0) > 0`
         : '';
-      const channels = await query(`
+      const channels__p = query(`
           SELECT
             COALESCE(l.group_name, l.type::text) AS channel,
             COUNT(DISTINCT l.id)::int            AS stores,
@@ -230,7 +234,7 @@ async function getNetworkPulse(req, res, next) {
         `, params);
 
       // â‘¤ Pareto: how many stores hold what % of stock
-      const paretoBucket = await query(`
+      const paretoBucket__p = query(`
           WITH per_store AS (
             SELECT l.id,
                    COALESCE(SUM(i.qty_on_hand * COALESCE(s.mrp,0)), 0)::bigint AS value
@@ -261,7 +265,7 @@ async function getNetworkPulse(req, res, next) {
         `, params);
 
       // â‘¥ Stock ageing â€” based on last_movement_at on inventory_snapshot
-      const ageing = await query(`
+      const ageing__p = query(`
           SELECT
             COUNT(*) FILTER (WHERE i.last_movement_at >= NOW() - INTERVAL '30 days')::int    AS fresh_30,
             COUNT(*) FILTER (WHERE i.last_movement_at >= NOW() - INTERVAL '60 days' AND i.last_movement_at < NOW() - INTERVAL '30 days')::int AS d31_60,
@@ -290,7 +294,7 @@ async function getNetworkPulse(req, res, next) {
       // Pre-aggregate "(loc, sku) pairs that have a SALE in the last 180 days"
       // into a CTE so the dead-stock anti-join is a single hash join, not a
       // correlated 574K × 2.8M subquery (which OOMs Postgres).
-      const actionLists = await query(`
+      const actionLists__p = query(`
           WITH recently_sold AS (
             SELECT DISTINCT m.location_id, m.sku_id
             FROM inventory_movements m
@@ -339,6 +343,11 @@ async function getNetworkPulse(req, res, next) {
               ${where}
             ) AS dead_capital_lines
         `, params);
+
+      // Await all 7 aggregations concurrently. Total wall-time ≈ slowest
+      // single query instead of the sum of all 7 (was ~12.8s cold serial).
+      const [summary, topStores, topStates, channels, paretoBucket, ageing, actionLists] =
+        await Promise.all([summary__p, topStores__p, topStates__p, channels__p, paretoBucket__p, ageing__p, actionLists__p]);
 
       const sum = summary.rows[0] || {};
       const par = paretoBucket.rows[0] || {};
