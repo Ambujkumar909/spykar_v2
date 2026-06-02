@@ -5,6 +5,10 @@
  */
 'use strict';
 require('dotenv').config();
+// Force the per-query cap OFF for the sync process — multi-minute COPY/merges
+// must never be killed by PG_STATEMENT_TIMEOUT. Set before syncEngine creates
+// the pool. (See config/database.js + run-sync.js for the full rationale.)
+process.env.PG_STATEMENT_TIMEOUT = '0';
 const { runDeltaSync } = require('../services/syncEngine');
 
 console.log('Starting FULL sync pipeline...\n');

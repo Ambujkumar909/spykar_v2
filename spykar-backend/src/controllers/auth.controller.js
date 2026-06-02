@@ -335,6 +335,45 @@ async function toggleUser(req, res, next) {
   }
 }
 
+// PATCH /api/v1/auth/users/:id/password
+// Admin resets ANOTHER user's password (no current-password needed — that's
+// the whole point of an admin reset). Authorisation (SUPER_ADMIN/ADMIN) is
+// enforced on the route. We also invalidate the target's refresh tokens so any
+// old session can't silently keep working after the reset.
+async function resetUserPassword(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { newPassword } = req.body;
+
+    const target = await query('SELECT id, email, role FROM users WHERE id = $1', [id]);
+    if (!target.rows.length) {
+      throw new AppError('User not found.', 404);
+    }
+    const targetUser = target.rows[0];
+
+    // Privilege guard: only a SUPER_ADMIN may reset another SUPER_ADMIN's
+    // password — stops a regular ADMIN from hijacking a super-admin account.
+    if (targetUser.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      throw new AppError("Only a SUPER_ADMIN can reset a SUPER_ADMIN's password.", 403);
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 12);
+    await transaction(async (client) => {
+      await client.query(
+        'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2',
+        [newHash, id]
+      );
+      // Force re-login everywhere: drop all refresh tokens for this user.
+      await client.query('DELETE FROM refresh_tokens WHERE user_id = $1', [id]);
+    });
+
+    logger.info(`Password reset for ${targetUser.email} by ${req.user.email}`);
+    res.json({ success: true, message: `Password reset for ${targetUser.email}.` });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   login,
   refresh,
@@ -345,4 +384,5 @@ module.exports = {
   createUser,
   updateUser,
   toggleUser,
+  resetUserPassword,
 };

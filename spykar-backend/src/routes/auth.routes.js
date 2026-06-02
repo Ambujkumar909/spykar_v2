@@ -1,5 +1,5 @@
 const express = require('express');
-const { body } = require('express-validator');
+const { body, param } = require('express-validator');
 const router = express.Router();
 const userRouter = express.Router();
 const authController = require('../controllers/auth.controller');
@@ -75,6 +75,19 @@ userRouter.patch('/:id/toggle',
   authenticate,
   authorize('SUPER_ADMIN'),
   authController.toggleUser
+);
+
+// Admin resets another user's password (no current-password required).
+userRouter.patch('/:id/password',
+  authenticate,
+  authorize('SUPER_ADMIN', 'ADMIN'),
+  [
+    param('id').isUUID().withMessage('Invalid user id'),
+    body('newPassword').isLength({ min: 8 }).matches(/^(?=.*[A-Z])(?=.*\d)/)
+      .withMessage('Password must be at least 8 characters with one uppercase letter and one number'),
+  ],
+  validate,
+  authController.resetUserPassword
 );
 
 module.exports = { authRouter: router, userRouter };

@@ -93,6 +93,7 @@ export default function Sidebar() {
           whiteSpace: 'nowrap',
         }}>
           <img
+            className="brand-logo-img"
             src="/spykar-logo.png"
             alt="Spykar"
             style={{ height: 26, width: 'auto', maxWidth: 120, objectFit: 'contain', objectPosition: 'left center', display: 'block' }}

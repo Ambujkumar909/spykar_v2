@@ -40,7 +40,6 @@ import IndiaHeatmap from '../components/dashboard-v2/IndiaHeatmap';
 import AgingWaterfall from '../components/dashboard-v2/AgingWaterfall';
 import TodayVsLY from '../components/dashboard-v2/TodayVsLY';
 import CategoryMix from '../components/dashboard-v2/CategoryMix';
-import NeedsAttentionPanel from '../components/dashboard-v2/NeedsAttentionPanel';
 import FilterDrawer from '../components/dashboard-v2/FilterDrawer';
 import Sidebar from '../components/layout/Sidebar';
 import AiChatbot from '../components/AiChatbot';
@@ -222,17 +221,13 @@ export default function Overview() {
                 style={{ display: 'grid', gap: 16 }}
               >
                 <IndiaHeatmap   data={metrics?.stateHeatmap} loading={metricsLoading} preset={preset} fromISO={fromISO} toISO={toISO} />
-                <AgingWaterfall data={metrics?.aging}        loading={metricsLoading} />
+                <AgingWaterfall loading={metricsLoading} />
                 <TodayVsLY      data={metrics?.todayVsLy}    loading={metricsLoading} isDark={isDark} />
                 <CategoryMix    data={metrics?.channelMix}   loading={metricsLoading} isDark={isDark} />
               </div>
             </main>
 
-            {/* Zone E — Right rail */}
-            <NeedsAttentionPanel
-              items={metrics?.needsAttention}
-              loading={metricsLoading}
-            />
+            {/* Zone E — "Needs Attention" right rail removed (disabled per request) */}
           </div>
 
           {/* Slide-in filter drawer */}

@@ -36,7 +36,16 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // A 401 from the auth endpoints themselves is NOT an expired session — it's
+    // "wrong credentials" (login) or "bad refresh token" (refresh). Those must
+    // pass straight through to the caller so the login page can show the error.
+    // Without this guard, a wrong-password 401 hit the refresh/clearAuth path
+    // below → clearAuth() did window.location.href='/login' (a full reload),
+    // which wiped the error toast before the user ever saw it.
+    const reqUrl = originalRequest?.url || '';
+    const isAuthEndpoint = reqUrl.includes('/auth/login') || reqUrl.includes('/auth/refresh');
+
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });

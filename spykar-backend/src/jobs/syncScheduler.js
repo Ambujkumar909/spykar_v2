@@ -28,7 +28,10 @@ const SYNC_CHILD_LOG = path.join(process.cwd(), 'logs', 'sync-child.log');
 // is the only honest signal.
 
 function startScheduler() {
-  cron.schedule(process.env.SYNC_CRON || '0 23 * * *', async () => {
+  // 4 delta syncs/day at 10:00, 13:00, 18:00, 23:00 IST. The 23:00 run is the
+  // post-store-close pass; the daytime runs surface intraday sales.
+  // Override the whole schedule via SYNC_CRON (single cron expr, IST).
+  cron.schedule(process.env.SYNC_CRON || '0 10,13,18,23 * * *', async () => {
     try {
       // Cross-process concurrency guard. If a manual sync (or yesterday's
       // wedged scheduled sync) is still in flight inside the 30-min
@@ -73,7 +76,7 @@ function startScheduler() {
     }
   }, { timezone: 'Asia/Kolkata' });
 
-  logger.info('📅 Sync scheduler initialized (runs 11:00 PM IST daily, detached child)');
+  logger.info(`📅 Sync scheduler initialized (cron "${process.env.SYNC_CRON || '0 10,13,18,23 * * *'}" IST — 4 delta syncs/day at 10:00, 13:00, 18:00, 23:00, detached child)`);
 }
 
 module.exports = { startScheduler };

@@ -1,29 +1,18 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/router';
-import { RefreshCw, Bell, Clock, Sun, Moon } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { RefreshCw, Clock, Sun, Moon } from 'lucide-react';
 import { syncService } from '../../lib/services';
-import { useAlerts } from '../../lib/useAlerts';
 import { setDataVersion } from '../../lib/dashboardCache';
 import { timeAgo } from '../../lib/utils';
 import { useAuth } from '../../lib/auth-context';
 import { useTheme } from '../../lib/useTheme';
 
 export default function Header({ title, subtitle, headerSlot }) {
-  const router = useRouter();
   const { user } = useAuth();
   const { isDark, toggle: toggleTheme } = useTheme();
   const isAdmin = user && ['SUPER_ADMIN', 'ADMIN'].includes(user.role);
   const [syncStatus, setSyncStatus]           = useState(null);
   const [syncing, setSyncing]                 = useState(false);
   const [now, setNow]                          = useState(new Date());
-
-  // Shared fetch — ExceptionAlertStrip uses the same hook, so the network
-  // request fires once per page load (was 2× before, plus dev StrictMode).
-  const { alerts } = useAlerts();
-  const criticalAlertCount = useMemo(
-    () => alerts.filter(a => a.alert_level === 'OUT_OF_STOCK').length,
-    [alerts]
-  );
 
   // Apply a sync-status payload AND propagate the data version. When a sync
   // SUCCEEDS, completed_at advances the global DATA_VERSION, which makes every
@@ -248,49 +237,7 @@ export default function Header({ title, subtitle, headerSlot }) {
         {isDark ? <Sun size={14} /> : <Moon size={14} />}
       </button>
 
-      {/* Notifications */}
-      <button
-        onClick={() => router.push('/')}
-        title="View stock alerts"
-        style={{
-          width: 36, height: 36,
-          border: '1px solid var(--border-default)',
-          borderRadius: '50%',
-          background: 'transparent',
-          cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: 'var(--text-muted)',
-          position: 'relative',
-          transition: 'all 0.15s',
-        }}
-        onMouseEnter={e => {
-          e.currentTarget.style.borderColor = 'rgba(239,68,68,0.40)';
-          e.currentTarget.style.color = 'var(--accent-primary)';
-          e.currentTarget.style.background = 'rgba(239,68,68,0.10)';
-        }}
-        onMouseLeave={e => {
-          e.currentTarget.style.borderColor = 'var(--border-default)';
-          e.currentTarget.style.color = 'var(--text-muted)';
-          e.currentTarget.style.background = 'transparent';
-        }}
-      >
-        <Bell size={14} />
-        {criticalAlertCount > 0 && (
-          <span style={{
-            position: 'absolute', top: -3, right: -3,
-            minWidth: 16, height: 16,
-            padding: '0 4px',
-            background: '#EF4444',
-            borderRadius: 999,
-            border: `2px solid ${isDark ? '#070C18' : '#FFFFFF'}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff',
-            fontSize: 9, fontWeight: 800,
-            fontFamily: 'var(--font-body)',
-            boxShadow: '0 0 8px rgba(239,68,68,0.50)',
-          }}>{criticalAlertCount}</span>
-        )}
-      </button>
+      {/* Notification bell removed per request */}
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

@@ -29,6 +29,13 @@
 
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
 
+// CRITICAL: force the per-query cap OFF for the sync process. The pool in
+// config/database.js honours PG_STATEMENT_TIMEOUT; the sync runs multi-minute
+// COPY/merge statements that MUST NOT be killed. Set to 0 BEFORE requiring
+// syncEngine (which lazily creates the pool), defending even against an
+// accidental PG_STATEMENT_TIMEOUT in .env.
+process.env.PG_STATEMENT_TIMEOUT = '0';
+
 const logger = require('../config/logger');
 const { runDeltaSync } = require('../services/syncEngine');
 

@@ -871,7 +871,10 @@ export default function SalesAnalyticsPage() {
   // direct `s.category_norm` match. Old cache slots held "all-data" responses
   // for those categories — bumping the version forces a refetch under the
   // new (correctly filtered) backend.
-  const cacheKey = `sales:v8:${dateFrom}|${dateTo}|${colorName}|${size}|${locationId}|${v2Slug}`;
+  // v9: bumped with the backend rollup-reader off-by-one fix (the final day of
+  // every window — i.e. "today" — was dropped, so the Today preset showed zero).
+  // Old v8 slots cached those zero responses; bump forces a clean refetch.
+  const cacheKey = `sales:v9:${dateFrom}|${dateTo}|${colorName}|${size}|${locationId}|${v2Slug}`;
 
   // ── State model — IDENTICAL to network's StockBreakdownSection ──────────
   //   data        — the rendered payload. Hydrated synchronously from the
@@ -886,6 +889,12 @@ export default function SalesAnalyticsPage() {
   const [data, setData]             = useState(() => getCached(cacheKey) ?? null);
   const [loading, setLoading]       = useState(() => !getCached(cacheKey));
   const [refreshing, setRefreshing] = useState(false);
+  // Mirror `data` into a ref so `fetch` can read it WITHOUT listing `data` as a
+  // dependency. Listing `data` made `fetch` change identity on every data
+  // update → re-ran the trigger effect → restarted the in-flight request. That
+  // abort/restart cascade was the "earthquake" buffering (and prolonged loads).
+  const dataRef = useRef(data);
+  dataRef.current = data;
   const activeKeyRef = useRef(cacheKey);
   useEffect(() => { activeKeyRef.current = cacheKey; }, [cacheKey]);
   const inFlightRef = useRef(null);
@@ -893,7 +902,7 @@ export default function SalesAnalyticsPage() {
   const fetch = useCallback(async () => {
     const issuedFor = cacheKey;
     setRefreshing(true);
-    if (!data && !getCached(issuedFor)) setLoading(true);
+    if (!dataRef.current && !getCached(issuedFor)) setLoading(true);
 
     if (inFlightRef.current) inFlightRef.current.abort();
     const ac = new AbortController();
@@ -998,7 +1007,7 @@ export default function SalesAnalyticsPage() {
     } finally {
       if (activeKeyRef.current === issuedFor) setRefreshing(false);
     }
-  }, [dateFrom, dateTo, colorName, size, locationId, v2Slug, cacheKey, data]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo, colorName, size, locationId, v2Slug, cacheKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Filter-change effect — mirrors network's pattern exactly:
   //   1. Cache HIT + fresh → paint synchronously, NO fetch, no dim.

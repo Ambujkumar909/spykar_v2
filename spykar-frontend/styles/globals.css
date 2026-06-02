@@ -123,6 +123,12 @@
    Applied when <html> carries class `theme-light` (managed by lib/useTheme).
    Only the surfaces, borders, text and shadow tokens flip — brand and
    semantic accent colours stay consistent across modes for recognition. */
+/* ── Brand logo visibility across themes ──────────────────────────────────────
+   The /spykar-logo.png artwork is dark, so on the dark sidebar it disappears.
+   Dark mode (default) → invert it to crisp white. Light mode → original. */
+.brand-logo-img { filter: brightness(0) invert(1); }
+html.theme-light .brand-logo-img { filter: none; }
+
 html.theme-light {
   --bg-canvas:      #F7F8FB;
   --bg-surface:     #FFFFFF;
@@ -1800,7 +1806,7 @@ html.theme-light .sx-page {
    Laptop  ≤1280px:  KPIs wrap to 3 cols, right rail collapses to top strip
    Tablet  ≤960px:   KPIs go 2 cols, intelligence stacks to 1 col
    Mobile  ≤640px:   single column everywhere, nav collapses */
-.v2-app .v2-page-grid       { grid-template-columns: minmax(0, 1fr) 320px; }
+.v2-app .v2-page-grid       { grid-template-columns: minmax(0, 1fr); } /* Needs-Attention right rail removed — single column */
 .v2-app .v2-kpi-row         { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .v2-app .v2-intelligence    { grid-template-columns: 1.15fr 1fr; }
 

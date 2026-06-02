@@ -1,4 +1,15 @@
 require('dotenv').config();
+// API-process-only per-query cap. Set BEFORE config/database creates the pool
+// (lazy, on first connect at connectDatabase below). 40 s sits just under the
+// 45 s HTTP timeout in app.js so a pathological query is killed at the DB —
+// returning a clean error and freeing its pool connection — rather than the
+// socket abandoning a query that keeps running and pinning the connection.
+// The detached sync (run-sync.js / run_full_sync.js) forces this to 0, so its
+// multi-minute COPY/merges are never affected. Measured-safe: export = 705 ms,
+// 1-yr sales ≈ 18 s; only full multi-year ranges (already >45 s) get capped.
+if (process.env.PG_STATEMENT_TIMEOUT === undefined) {
+  process.env.PG_STATEMENT_TIMEOUT = '40000';
+}
 const app = require('./app');
 const logger = require('./config/logger');
 const { connectDatabase } = require('./config/database');

@@ -31,6 +31,7 @@ const sql               = require('mssql');
 const copyFrom          = require('pg-copy-streams').from;
 const { query, pool: pgPool } = require('../config/database');
 const { invalidatePattern } = require('../config/cache');
+const { rebuildAll: rebuildSalesRollups, refreshRange: refreshSalesRollups } = require('./salesRollup');
 const logger            = require('../config/logger');
 
 // ─── CSV-safe encoder for COPY FROM STDIN (FORMAT csv) ────────────────────────
@@ -603,13 +604,18 @@ async function syncStockSnapshot(erpPool, lookupMaps, asOfDate, stats, options =
               qty:   pick(row, 'qty', 'QTY', 'Qty'),
             };
           }
-          const qty = Math.max(0, parseInt(row[K.qty] || 0));
-          // NOTE: zero-qty rows are intentionally NOT skipped here (per request:
-          // fetch the FULL AIGetStock result into stg_stock first). The merge
+          // Preserve the REAL signed quantity — do NOT clamp negatives to 0.
+          // The ERP can emit a negative on-hand (e.g. a -1 stock correction).
+          // The old Math.max(0, …) floored it to 0, which silently DROPPED that
+          // subtraction and overstated stock. Keeping it signed lets the
+          // GROUP BY SUM(qty) below do normal arithmetic per (loc,sku) — bins
+          // [5, -1] correctly net to 4, not 5.
+          // NOTE: zero/negative-qty rows are intentionally NOT skipped here —
+          // the full AIGetStock result streams into stg_stock first. The merge
           // still applies HAVING SUM(qty) > 0, so inventory_snapshot stays
-          // positive-only — but stg_stock retains every fetched row for
-          // inspection/verification. Re-enable the `if (qty <= 0) return;`
-          // skip later to make the COPY + merge ~10× lighter.
+          // positive-only: a (loc,sku) that NETS to <= 0 is simply absent (we
+          // never store negative on-hand — there is no such sellable stock).
+          const qty = parseInt(row[K.qty], 10) || 0;
 
           const storeCode    = String(row[K.store] || '').trim().toUpperCase();
           const barcode      = String(row[K.bar]   || '').trim().toUpperCase();
@@ -726,19 +732,47 @@ async function syncStockSnapshot(erpPool, lookupMaps, asOfDate, stats, options =
 
       // POSITIVE-STOCK INVARIANT (see bulkReplaceInventorySnapshot): the
       // HAVING SUM(qty) > 0 above means a (loc,sku) that the ERP now reports
-      // at zero is NOT upserted, so its existing row keeps its old updated_at
-      // and is swept by the phantom-purge below (updated_at < syncStartedAt).
-      // Net effect: positions that went to zero are DELETED, not kept at 0.
-      // Without the HAVING, ~80% of AIGetStock's zero rows bloated the table
-      // 10× (5.0M vs ~484K) and dragged the merge to 20-60 min.
+      // at zero is NOT upserted, so its existing row keeps its old updated_at.
+      // AIGetStock is a FULL current snapshot of qty>0 positions, so a row that
+      // is absent from today's feed has genuinely gone to zero. The rest of the
+      // platform relies on "a snapshot row exists ⇒ positive stock is present"
+      // (NetworkPulse empty-store detection, OUT_OF_STOCK alerts, ageing), so
+      // those sold-out rows must be cleared — keeping them shows phantom stock.
 
-      // ── 4. Purge phantom rows — same semantics as the legacy path ──────────
-      const del = await pgClient.query(
-        `DELETE FROM inventory_snapshot WHERE updated_at < $1`,
-        [syncStartedAt]
-      );
-      if (del.rowCount > 0) {
-        logger.info(`[STOCK] Removed ${del.rowCount} stale snapshot rows (not in today's ERP snapshot)`);
+      // ── 4. Reconcile sold-out positions — GUARDED so a master-data gap can
+      //       NEVER delete real stock ─────────────────────────────────────────
+      // A row that failed the locations/skus lookup also didn't get upserted, so
+      // a blanket "delete everything not touched this run" would wipe REAL stock
+      // whenever the master is transiently out of sync with the ERP. So we only
+      // reconcile when the feed resolved cleanly: if the miss ratio is abnormally
+      // high (suspected master gap) we SKIP the delete entirely and keep every
+      // existing row — no stock is ever lost to a master problem. The handful of
+      // permanently-unmappable rows (~tens out of ~485k) stays far below the
+      // ceiling, so a normal run still clears genuine sell-outs. Set
+      // SYNC_STOCK_PURGE_STALE=false to disable reconciliation completely (pure
+      // additive snapshot — sold-out positions then retain their last-known qty).
+      const totalSeen     = streamedRows + lookupMiss;
+      const missRatio     = totalSeen > 0 ? lookupMiss / totalSeen : 0;
+      const purgeEnabled  = process.env.SYNC_STOCK_PURGE_STALE !== 'false';
+      const missRatioCeil = parseFloat(process.env.SYNC_STOCK_PURGE_MISS_CEIL) || 0.02;
+
+      if (!purgeEnabled) {
+        logger.info('[STOCK] Sold-out reconcile DISABLED (SYNC_STOCK_PURGE_STALE=false) — snapshot is additive; sold-out positions retain last-known qty');
+      } else if (missRatio > missRatioCeil) {
+        logger.warn(
+          `[STOCK] Skipping sold-out reconcile — ${lookupMiss.toLocaleString()} master misses ` +
+          `(${(missRatio * 100).toFixed(1)}% > ${(missRatioCeil * 100).toFixed(0)}% ceiling): ` +
+          `suspected master-data gap, NOT deleting any existing stock. ` +
+          `Run load_party_master + load_item_master, then re-sync.`
+        );
+      } else {
+        const del = await pgClient.query(
+          `DELETE FROM inventory_snapshot WHERE updated_at < $1`,
+          [syncStartedAt]
+        );
+        if (del.rowCount > 0) {
+          logger.info(`[STOCK] Reconciled ${del.rowCount} sold-out positions (qty>0 last sync, absent from today's AIGetStock feed)`);
+        }
       }
     }
 
@@ -1284,6 +1318,32 @@ async function runDeltaSync(syncType = 'DELTA') {
         if (fullRebuild) {
           await rebuildMovementsSecondaryIndexes();
           await query('ANALYZE inventory_movements');
+        }
+
+        // STAGE 3.5: refresh the Phase-1 sales rollups (srd_store / srd_sku) so
+        // the /analytics/sales fast path serves fresh data. FULL → full rebuild;
+        // DELTA → refresh only the synced date window (small, fast). Wrapped in
+        // its own transaction (atomic swap) and non-fatal: a rollup failure must
+        // never fail the whole sync — the live mega-CTE path still works and the
+        // next sync retries. Sync process pool has no statement_timeout, so the
+        // multi-second rebuild is never capped.
+        try {
+          const isoDate = (d) => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`; };
+          const rc = await pgPool.connect();
+          try {
+            await rc.query('BEGIN');
+            if (fullRebuild) {
+              const r = await rebuildSalesRollups(rc);
+              logger.info(`[ROLLUP] full rebuild: srd_store=${r.srd_store} srd_sku=${r.srd_sku} (${r.ms}ms)`);
+            } else {
+              const r = await refreshSalesRollups(rc, isoDate(salesFrom), isoDate(salesTo));
+              logger.info(`[ROLLUP] delta refresh ${r.window[0]}..${r.window[1]} (${r.ms}ms)`);
+            }
+            await rc.query('COMMIT');
+          } catch (e) { await rc.query('ROLLBACK'); throw e; }
+          finally { rc.release(); }
+        } catch (rollupErr) {
+          logger.error(`[ROLLUP] refresh failed (non-fatal — live path still serves, retries next sync): ${rollupErr.message}`);
         }
 
       } finally {

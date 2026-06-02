@@ -1,6 +1,7 @@
 const { query } = require('../config/database');
 const { getOrSet, TTL } = require('../config/cache');
 const { canonicalizeCategory, applyCategoryFilter } = require('../utils/categoryFilter');
+const { isRollupEligible, rollupsReady, aggregateFromRollup } = require('../services/salesRollupRead');
 
 // Today as 'YYYY-MM-DD' (server local time). Used as the default upper bound
 // for date filters so the data window tracks the wall clock — never hardcode.
@@ -360,7 +361,10 @@ async function getSalesAnalytics(req, res, next) {
 
     // Cache key — unique per filter combination (category canonicalized so
     // "Denim"/"denim"/"jeans" all hit the same cache slot)
-    const cacheKey = `analytics:sales:v19:${date_from||''}:${date_to||''}:${color_name||''}:${size||''}:${location_id||''}:${states.join('|')}:${cities.join('|')}:${groups.join('|')}:${storeCodes.join('|')}:${catKey||''}:g${skuGenders.join('|')}:sp${skuSubProds.join('|')}:pr${skuProducts.join('|')}:st${skuStyles.join('|')}:sh${skuShades.join('|')}:cl${skuColors.join('|')}:sz${skuSizes.join('|')}:sn${skuSeasons.join('|')}:m${mode}`;
+    // v20: bumped after fixing the rollup-reader off-by-one that excluded the
+    // final day of every window (made the "Today" preset return zero). Old v19
+    // slots hold those wrong zero/undercounted responses — bump forces a refetch.
+    const cacheKey = `analytics:sales:v20:${date_from||''}:${date_to||''}:${color_name||''}:${size||''}:${location_id||''}:${states.join('|')}:${cities.join('|')}:${groups.join('|')}:${storeCodes.join('|')}:${catKey||''}:g${skuGenders.join('|')}:sp${skuSubProds.join('|')}:pr${skuProducts.join('|')}:st${skuStyles.join('|')}:sh${skuShades.join('|')}:cl${skuColors.join('|')}:sz${skuSizes.join('|')}:sn${skuSeasons.join('|')}:m${mode}`;
 
     const data = await getOrSet(cacheKey, async () => {
     const conditions = [];
@@ -457,8 +461,21 @@ async function getSalesAnalytics(req, res, next) {
       , 1800).then(rows => ({ rows })),
     ]);
 
-    // Pass 2: single mega-CTE that scans inventory_movements ONCE and produces all aggregations
-    // This is the key optimisation — one table scan feeds summary + daily + color + size + store + monthly
+    // Pass 2: produce the `mega` aggregation object — either from the daily
+    // rollups (Phase 1 fast path, when ONLY date + mode is set) or the live
+    // mega-CTE (any deep filter). The rollup path is numerically identical
+    // (verified) but turns a 12–33 s full-table scan into a ~sub-second
+    // indexed range-sum over srd_store / srd_sku.
+    const rollupEligible = isRollupEligible({
+      color_name, size, location_id, category,
+      states, cities, groups, storeCodes, skuGenders, skuSubProds, skuProducts,
+      skuStyles, skuShades, skuColors, skuSizes, skuSeasons,
+    }) && await rollupsReady();
+    let mega;
+    if (rollupEligible) {
+      mega = await aggregateFromRollup({ from, to, mode: _m });
+    } else {
+    // Live mega-CTE — single scan of inventory_movements feeding every aggregation.
     const megaRes = await query(`
       WITH mov AS (
         SELECT
@@ -730,6 +747,8 @@ async function getSalesAnalytics(req, res, next) {
 
         (SELECT COUNT(*)::int FROM sku_agg) AS sku_universe_count
     `, params);
+    mega = megaRes.rows[0];
+    } // end live mega-CTE branch
 
     // Pass 3: stock snapshot — anchored at the latest AIGetStock pull
     // (today, refreshed nightly) and now narrowed by the FULL v2 filter set so picking gender=
@@ -791,7 +810,7 @@ async function getSalesAnalytics(req, res, next) {
       WHERE ${stockConds.join(' AND ')}
     `, stockParams);
 
-    const mega = megaRes.rows[0];
+    // `mega` was set above by either the rollup fast path or the live mega-CTE.
     const sm   = mega.summary;
     const summaryRes  = { rows: [sm] };
     const dailyRes    = { rows: mega.daily      || [] };

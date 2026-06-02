@@ -8,6 +8,7 @@ import {
   Power,
   RefreshCw,
   UserPlus,
+  KeyRound,
 } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import KpiCard from '../components/ui/KpiCard';
@@ -50,6 +51,10 @@ export default function UsersPage() {
   const [editUser, setEditUser] = useState(null);
   const [editForm, setEditForm] = useState({ name: '', role: 'VIEWER', is_active: true });
   const [submitting, setSubmitting] = useState(false);
+  // Admin password reset
+  const [resetUser, setResetUser] = useState(null);   // the user whose password we're resetting
+  const [resetPw, setResetPw] = useState('');
+  const [resetting, setResetting] = useState(false);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -146,6 +151,31 @@ export default function UsersPage() {
     }
   }
 
+  function openResetModal(targetUser) {
+    setResetUser(targetUser);
+    setResetPw('');
+  }
+
+  async function handleResetPassword(event) {
+    event.preventDefault();
+    // Mirror the backend rule: min 8 chars, one uppercase, one number.
+    if (!/^(?=.*[A-Z])(?=.*\d).{8,}$/.test(resetPw)) {
+      toast.error('Password must be 8+ characters with one uppercase letter and one number');
+      return;
+    }
+    setResetting(true);
+    try {
+      await authService.resetUserPassword(resetUser.id, resetPw);
+      toast.success(`Password reset for ${resetUser.email}`);
+      setResetUser(null);
+      setResetPw('');
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to reset password');
+    } finally {
+      setResetting(false);
+    }
+  }
+
   return (
     <DashboardLayout
       title="User Management"
@@ -238,6 +268,10 @@ export default function UsersPage() {
                       <button type="button" className="btn btn-ghost" onClick={() => openEditModal(entry)}>
                         <Pencil size={14} />
                         Edit
+                      </button>
+                      <button type="button" className="btn btn-ghost" onClick={() => openResetModal(entry)} title="Set a new password for this user">
+                        <KeyRound size={14} />
+                        Reset PW
                       </button>
                       {user?.role === 'SUPER_ADMIN' && (
                         <button
@@ -369,6 +403,51 @@ export default function UsersPage() {
                 </div>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>
                   {submitting ? 'Saving...' : editUser ? 'Save Changes' : 'Create User'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Admin password-reset modal ── */}
+      {resetUser && (
+        <div style={{
+          position: 'fixed', inset: 0,
+          background: 'rgba(10, 10, 15, 0.76)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 24, zIndex: 220, backdropFilter: 'blur(10px)',
+        }}>
+          <div className="card" style={{ width: '100%', maxWidth: 460 }}>
+            <div className="card-header">
+              <span className="card-title">Reset Password</span>
+            </div>
+            <form onSubmit={handleResetPassword}>
+              <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                  Set a new password for <strong style={{ color: 'var(--text-primary)' }}>{resetUser.name}</strong> ({resetUser.email}).
+                  They’ll be signed out of all sessions and must log in with the new password.
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: 'var(--text-secondary)' }}>New password</label>
+                  <input
+                    className="input"
+                    type="text"
+                    autoFocus
+                    placeholder="Min 8 chars · 1 uppercase · 1 number"
+                    value={resetPw}
+                    onChange={(e) => setResetPw(e.target.value)}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </div>
+              <div className="card-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button type="button" className="btn btn-ghost" onClick={() => { setResetUser(null); setResetPw(''); }} disabled={resetting}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={resetting}>
+                  <KeyRound size={14} />
+                  {resetting ? 'Resetting…' : 'Reset Password'}
                 </button>
               </div>
             </form>

@@ -104,15 +104,16 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
       }).catch(() => null),
       inventoryService.getExecutiveSummary({ mode }),
       syncService.getStatus().catch(() => null),
-      inventoryService.getAgeing({ mode }).catch(() => null),
       // State heatmap is best-effort — endpoint added in Phase 3.7.
       analyticsService.getStateHeatmap?.({ date_from: fromISO, date_to: toISO, mode }).catch(() => null),
-      inventoryService.getAlertsSummary({ mode }).catch(() => null),
-      // Removed: skuService.getTopMoving / getSlowMoving — the SKU Pulse
-      // section was retired from /dashboard-v2.  Keeping the calls would
-      // burn ~700 ms cold per page load for data nothing renders.
+      // Removed: inventoryService.getAgeing + getAlertsSummary — these fed ONLY
+      // the (now-removed) "Needs Attention" rail and the already-paused Aging
+      // widget, so the dashboard no longer calls either endpoint. The endpoints
+      // themselves are untouched (other pages still use /inventory/alerts via
+      // useAlerts, and /inventory/ageing remains available).
+      // Removed earlier: skuService.getTopMoving / getSlowMoving (SKU Pulse retired).
     ])
-      .then(([cur, ly, inv, sync, ageing, heatmap, alertsSum]) => {
+      .then(([cur, ly, inv, sync, heatmap]) => {
         if (!alive) return;
         const c = cur?.data?.data?.summary || {};
         const lyS = ly?.data?.data?.summary || {};
@@ -184,22 +185,9 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
           },
         };
 
-        // Phase 3 — Intelligence Grid datasets
-        // Aging: aggregate per-location buckets into network-wide totals.
-        const ageRows = ageing?.data?.data || [];
-        const AGE_FIELDS = [
-          ['qty_0_30',    '0-30'],
-          ['qty_31_60',   '31-60'],
-          ['qty_61_90',   '61-90'],
-          ['qty_91_180',  '91-180'],
-          ['qty_180_plus','180+'],
-        ];
-        const aging = AGE_FIELDS.map(([field, bucket]) => ({
-          bucket,
-          units: ageRows.reduce((s, r) => s + Number(r[field] || 0), 0),
-        }));
-        const totalAging = aging.reduce((s, b) => s + b.units, 0);
-        aging.forEach(b => { b.pct = totalAging ? (b.units / totalAging) * 100 : 0; });
+        // Aging dataset removed — the Aging widget is paused and the only other
+        // consumer (Needs Attention) is disabled, so getAgeing is no longer
+        // fetched. AgingWaterfall renders its own "Available soon" placeholder.
 
         // Today vs LY: align by day index so one curve is "today's pace" and
         // the other is "same-day-LY pace".  Cumulative so the line is monotone.
@@ -223,126 +211,17 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
           stores:  Number(r.stores || 0),
         })).filter(r => r.value > 0);
 
-        // Phase 4 — Needs Attention list (the right-rail exceptions panel).
-        // Each item is one actionable signal.  Order = severity, surfaces
-        // critical things to executive eye first.  All values come from
-        // already-fetched data — no extra round-trips.
-        const needsAttention = [];
-        const alerts = alertsSum?.data?.summary || {};
-
-        if (alerts.out_of_stock > 0) {
-          needsAttention.push({
-            id: 'oos',
-            severity: 'bad',
-            icon: 'XCircle',
-            count: alerts.out_of_stock,
-            countLabel: 'SKUs',
-            title: 'out of stock now',
-            detail: 'Reorder triggered · review buying plan',
-            href: '/alerts',
-          });
-        }
-        if (alerts.reorder_now > 0) {
-          needsAttention.push({
-            id: 'reorder',
-            severity: 'warn',
-            icon: 'PackageMinus',
-            count: alerts.reorder_now,
-            countLabel: 'SKUs',
-            title: 'below reorder point',
-            detail: 'Approaching stockout — refill window opens now',
-            href: '/alerts',
-          });
-        }
-        if (alerts.low_stock > 0) {
-          needsAttention.push({
-            id: 'low',
-            severity: 'warn',
-            icon: 'AlertTriangle',
-            count: alerts.low_stock,
-            countLabel: 'SKUs',
-            title: 'low stock',
-            detail: 'Two-week buffer or less remaining',
-            href: '/alerts',
-          });
-        }
-
-        // Aged inventory — pull from the aging dataset we just built.
-        const aged91 = aging.find(b => b.bucket === '91-180')?.units || 0;
-        const aged180 = aging.find(b => b.bucket === '180+')?.units || 0;
-        if (aged91 + aged180 > 0) {
-          needsAttention.push({
-            id: 'aged',
-            severity: 'bad',
-            icon: 'Hourglass',
-            count: aged91 + aged180,
-            countLabel: 'units',
-            title: 'aged 91+ days',
-            detail: `${(aged180/1e5).toFixed(1)} L sitting 180+ days — liquidation candidate`,
-            href: '/dashboard-v2#aging',
-            valueIsCount: true,
-          });
-        }
-
-        // Sync freshness — flag if last sync > 24h.
-        const syncStatus = sync?.data?.data;
-        if (syncStatus?.completed_at) {
-          const ageH = (Date.now() - new Date(syncStatus.completed_at).getTime()) / 36e5;
-          if (ageH > 24) {
-            needsAttention.push({
-              id: 'sync',
-              severity: 'warn',
-              icon: 'RefreshCw',
-              count: Math.floor(ageH),
-              countLabel: 'h',
-              title: 'since last sync',
-              detail: `Data freshness slipping — last full sync ${syncStatus.records_fetched?.toLocaleString('en-IN') || ''} records`,
-              href: '/sync',
-            });
-          }
-        }
-
-        // Return rate spike — pull from current sales summary.
-        const rrCur = Number(c.return_rate_pct || 0);
-        if (rrCur > 5) {
-          needsAttention.push({
-            id: 'returns',
-            severity: rrCur > 8 ? 'bad' : 'warn',
-            icon: 'RotateCcw',
-            count: rrCur.toFixed(1),
-            countLabel: '%',
-            title: 'return rate elevated',
-            detail: 'Above 5% threshold — review fit / quality / fulfilment',
-            href: '/sales',
-            valueIsString: true,
-          });
-        }
-
-        // Silent stores — sold vs eligible from the sales summary.
-        const eligible = Number(c.eligible_store_count || 0);
-        const silent = Math.max(0, eligible - Number(c.stores_with_sales || 0));
-        if (silent > 0 && eligible > 0) {
-          const silentPct = (silent / eligible) * 100;
-          needsAttention.push({
-            id: 'silent',
-            severity: silentPct > 10 ? 'warn' : 'neutral',
-            icon: 'StoreOff',
-            count: silent,
-            countLabel: 'stores',
-            title: 'with no sales in window',
-            detail: `${silentPct.toFixed(1)}% of network — investigate or close`,
-            href: '/network',
-          });
-        }
+        // "Needs Attention" exception list removed (disabled per request). It
+        // was the only consumer of getAlertsSummary + getAgeing, so both calls
+        // are gone above. The shared /inventory/alerts endpoint (useAlerts) and
+        // /inventory/ageing remain available to other pages — untouched here.
 
         setData({
           asOf: new Date().toISOString(),
           kpis,
-          aging,
           todayVsLy,
           channelMix,
           stateHeatmap: heatmap?.data?.data   || null,
-          needsAttention,
           syncStatus: sync?.data?.data || null,
           raw: { current: c, ly: lyS, stock, totals },
         });

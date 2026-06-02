@@ -15,9 +15,30 @@ function getPool() {
       database: process.env.PG_DATABASE || 'spykar_inventory',
       user:     process.env.PG_USER     || 'spykar_app',
       password: process.env.PG_PASSWORD,
-      max:      parseInt(process.env.PG_POOL_MAX) || 20,         // max connections in pool
+      // Pool size. Measured ceiling on this box: each heavy analytics query
+      // peaks ~470 MB (209 MB sort + ~220 MB materialized CTE + 38 MB hash).
+      // worst-case RAM = max × 470 MB + shared_buffers (4 GB). On 23.7 GB:
+      //   20 → 13.4 GB | 30 → 18.1 GB (✅ ~5.6 GB headroom) | 40 → 22.8 GB (OOM).
+      // So 30 is the empirical sweet spot here; PROD with more RAM can raise
+      // PG_POOL_MAX (safe_max ≈ (RAM_GB − shared_buffers_GB − 2) / 0.5).
+      // Benchmarked: at max=20 a 30-request burst of 8 s queries drops 10 with
+      // "timeout exceeded when trying to connect"; at max=30, zero failures.
+      max:      parseInt(process.env.PG_POOL_MAX) || 30,         // max connections in pool
       idleTimeoutMillis:    30000,                                // close idle connections after 30s
       connectionTimeoutMillis: 5000,                              // fail if can't connect in 5s
+      // Per-query hard cap — kills a runaway/leaked query and RETURNS the
+      // connection to the pool healthy (benchmarked: killed at the cap, client
+      // reusable=true). This is the real defense against pool exhaustion from
+      // aborted-but-still-running queries (axios abort does NOT cancel the PG
+      // query server-side). DEFAULT 0 (off) so the DETACHED SYNC process — which
+      // imports this same pool and runs multi-minute COPY/merges — is NEVER
+      // capped. server.js opts the API process in to 40 s (just under the 45 s
+      // HTTP timeout, so the DB returns a clean error + frees the connection
+      // instead of the socket abandoning a still-running query). run-sync.js
+      // and run_full_sync.js force it back to 0.
+      ...(parseInt(process.env.PG_STATEMENT_TIMEOUT) > 0
+        ? { statement_timeout: parseInt(process.env.PG_STATEMENT_TIMEOUT) }
+        : {}),
       maxUses:  7500,                                             // recycle connections after 7500 uses
       // Kill transactions left IDLE (BEGIN with no follow-up) after 60s so a
       // crashed request can't pin a connection + hold locks forever. This is
