@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { RefreshCw, Clock, Sun, Moon } from 'lucide-react';
+import { RefreshCw, Clock, Sun, Moon, TrendingUp, Globe, Sparkles, UserCog, LayoutDashboard } from 'lucide-react';
 import { syncService } from '../../lib/services';
 import { setDataVersion } from '../../lib/dashboardCache';
 import { timeAgo } from '../../lib/utils';
@@ -60,6 +60,49 @@ export default function Header({ title, subtitle, headerSlot, hideSync }) {
   const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
   const dateStr = now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
+  const lowerTitle = (title || '').toLowerCase();
+  let PageIcon = LayoutDashboard;
+  let themeColor = '#EF4444'; // default to spykar red
+  let glowColor = 'rgba(239, 68, 68, 0.15)';
+  let iconBorderColor = 'rgba(239, 68, 68, 0.3)';
+  let isSales = false;
+  let isNetwork = false;
+  let isAi = false;
+  let isSync = false;
+  let isUser = false;
+
+  if (lowerTitle.includes('sales') || lowerTitle.includes('return')) {
+    isSales = true;
+    PageIcon = TrendingUp;
+    themeColor = '#EF4444'; // Spykar Red
+    glowColor = 'rgba(239, 68, 68, 0.15)';
+    iconBorderColor = 'rgba(239, 68, 68, 0.3)';
+  } else if (lowerTitle.includes('network')) {
+    isNetwork = true;
+    PageIcon = Globe;
+    themeColor = '#3B82F6';
+    glowColor = 'rgba(59, 130, 246, 0.15)';
+    iconBorderColor = 'rgba(59, 130, 246, 0.3)';
+  } else if (lowerTitle.includes('ai') || lowerTitle.includes('query')) {
+    isAi = true;
+    PageIcon = Sparkles;
+    themeColor = '#A855F7';
+    glowColor = 'rgba(168, 85, 247, 0.15)';
+    iconBorderColor = 'rgba(168, 85, 247, 0.3)';
+  } else if (lowerTitle.includes('sync')) {
+    isSync = true;
+    PageIcon = RefreshCw;
+    themeColor = '#F59E0B';
+    glowColor = 'rgba(245, 158, 11, 0.15)';
+    iconBorderColor = 'rgba(245, 158, 11, 0.3)';
+  } else if (lowerTitle.includes('user') || lowerTitle.includes('manage')) {
+    isUser = true;
+    PageIcon = UserCog;
+    themeColor = '#8B5CF6';
+    glowColor = 'rgba(139, 92, 246, 0.15)';
+    iconBorderColor = 'rgba(139, 92, 246, 0.3)';
+  }
+
   return (
     <header className="app-header" style={{
       position: 'fixed',
@@ -71,42 +114,157 @@ export default function Header({ title, subtitle, headerSlot, hideSync }) {
       backdropFilter: 'blur(20px)',
       WebkitBackdropFilter: 'blur(20px)',
       borderBottom: '1px solid var(--border-subtle)',
-      display: 'flex',
-      alignItems: 'center',
-      padding: '0 28px',
       zIndex: 90,
-      gap: 14,
       boxShadow: isDark
         ? '0 1px 0 rgba(255,255,255,0.04)'
         : '0 1px 0 rgba(15,23,42,0.04)',
+      transition: 'left 280ms cubic-bezier(0.16, 1, 0.3, 1), background-color var(--transition-fast), border-color var(--transition-fast)',
     }}>
+      {/* Inner content runs at the global --ui-scale density so the header
+          matches the zoomed page body. The fixed <header> frame itself stays
+          at 1:1 — zooming it would distort its sidebar-offset (left/right)
+          viewport anchoring. */}
+      <div className="app-header__inner" style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        padding: '0 28px',
+        width: '100%',
+        height: '100%',
+        boxSizing: 'border-box',
+        zoom: 'var(--ui-scale)',
+      }}>
 
-      {/* Page title */}
-      <div className="app-header__title" style={{ flex: 1, minWidth: 0 }}>
-        {title && (
-          <div style={{
-            fontFamily: 'var(--font-display)',
-            fontWeight: 800,
-            fontSize: 17,
-            letterSpacing: '-0.03em',
-            color: 'var(--text-primary)',
-            lineHeight: 1.2,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}>{title}</div>
-        )}
-        {subtitle && (
-          <div style={{
-            fontSize: 11,
-            color: 'var(--text-muted)',
-            marginTop: 1,
-            fontFamily: 'var(--font-body)',
-            fontWeight: 500,
-            lineHeight: 1.4,
-          }}>{subtitle}</div>
-        )}
-      </div>
+      {/* Page title container - styled beyond madness */}
+      {title && (
+        <div className="app-header__title-container" style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          flexShrink: 0,
+          marginRight: 28,
+          padding: '5px 14px 5px 8px',
+          borderRadius: '12px',
+          background: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+          border: '1px solid var(--border-subtle)',
+          boxShadow: isDark 
+            ? '0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.02)' 
+            : '0 2px 6px rgba(15,23,42,0.02)',
+          transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.background = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.04)';
+          e.currentTarget.style.borderColor = 'var(--border-default)';
+          e.currentTarget.style.boxShadow = isDark 
+            ? `0 8px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 15px ${glowColor}` 
+            : '0 8px 18px rgba(15,23,42,0.06)';
+          const iconCard = e.currentTarget.querySelector('.app-header__title-icon-card');
+          if (iconCard) {
+            iconCard.style.transform = 'scale(1.06) rotate(-3deg)';
+            iconCard.style.boxShadow = `0 0 20px ${glowColor}`;
+          }
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.background = isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)';
+          e.currentTarget.style.borderColor = 'var(--border-subtle)';
+          e.currentTarget.style.boxShadow = isDark 
+            ? '0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.02)' 
+            : '0 2px 6px rgba(15,23,42,0.02)';
+          const iconCard = e.currentTarget.querySelector('.app-header__title-icon-card');
+          if (iconCard) {
+            iconCard.style.transform = 'scale(1) rotate(0deg)';
+            iconCard.style.boxShadow = `0 0 12px ${glowColor}`;
+          }
+        }}
+        >
+          {/* Glowing Icon Card */}
+          <div className="app-header__title-icon-card" style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 34,
+            height: 34,
+            borderRadius: '9px',
+            background: isDark ? `rgba(255,255,255,0.03)` : `rgba(15,23,42,0.03)`,
+            border: `1px solid ${iconBorderColor}`,
+            boxShadow: `0 0 12px ${glowColor}`,
+            position: 'relative',
+            transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+          }}>
+            {/* Pulsating Indicator */}
+            <span style={{
+              position: 'absolute',
+              top: -1,
+              right: -1,
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              backgroundColor: themeColor,
+              boxShadow: `0 0 8px ${themeColor}`,
+              animation: 'pulse-dot 2.5s infinite',
+            }} />
+            <PageIcon size={16} style={{ color: themeColor, filter: `drop-shadow(0 2px 4px ${glowColor})` }} />
+          </div>
+
+          {/* Text Stack */}
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{
+                fontFamily: 'var(--font-display)',
+                fontWeight: 900,
+                fontSize: 16,
+                letterSpacing: '-0.02em',
+                backgroundImage: 'linear-gradient(135deg, var(--text-primary) 40%, var(--text-secondary) 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                lineHeight: 1.1,
+                whiteSpace: 'nowrap',
+              }}>
+                {title}
+              </div>
+
+              {isAi && (
+                <span style={{
+                  background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.15) 0%, rgba(236, 72, 153, 0.15) 100%)',
+                  border: '1px solid rgba(168, 85, 247, 0.35)',
+                  color: '#C084FC',
+                  borderRadius: 6,
+                  padding: '1px 6px',
+                  fontSize: 9,
+                  fontWeight: 800,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  boxShadow: '0 0 12px rgba(168, 85, 247, 0.2)',
+                  fontFamily: 'var(--font-display)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3,
+                }}>
+                  <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#C084FC', boxShadow: '0 0 6px #C084FC' }} />
+                  Gemini
+                </span>
+              )}
+            </div>
+            {/* Subtitle is suppressed on control-dense pages (those that inject
+                a headerSlot, e.g. /sales) so the title block stays compact and
+                the slot controls have room to fit on one line. */}
+            {subtitle && !headerSlot && (
+              <div style={{
+                fontSize: '10px',
+                color: 'var(--text-muted)',
+                marginTop: 2,
+                fontFamily: 'var(--font-body)',
+                fontWeight: 500,
+                lineHeight: 1.2,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: 380,
+              }}>{subtitle}</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Page-supplied slot — sits between title and date/time so each page
           can inject a control (e.g. TimeRangeControl on /sales) directly into
@@ -118,41 +276,35 @@ export default function Header({ title, subtitle, headerSlot, hideSync }) {
         </div>
       )}
 
-      {/* Date / time */}
-      <div className="app-header__clock" style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        color: 'var(--text-muted)',
-        fontFamily: 'var(--font-body)',
-        fontSize: 12, fontWeight: 600,
-        letterSpacing: '0.02em',
-      }}>
-        <Clock size={12} />
-        <span>{dateStr}</span>
-        <span style={{ opacity: 0.5 }}>·</span>
-        <span style={{ fontVariantNumeric: 'tabular-nums' }}>{timeStr}</span>
-      </div>
+      {/* Spacer to push controls to the right */}
+      <div style={{ flex: 1 }} />
 
-      {/* Divider */}
-      <div className="app-header__divider" style={{ width: 1, height: 20, background: 'var(--border-default)' }} />
+      {/* Date / time — single line, never wraps. Hidden on control-dense pages
+          (headerSlot present) so the slot controls never get crowded off. */}
+      {!headerSlot && (
+        <>
+          <div className="app-header__clock" style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            color: 'var(--text-muted)',
+            fontFamily: 'var(--font-body)',
+            fontSize: 12, fontWeight: 600,
+            letterSpacing: '0.02em',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+          }}>
+            <Clock size={12} style={{ flexShrink: 0 }} />
+            <span style={{ whiteSpace: 'nowrap' }}>{dateStr} · <span style={{ fontVariantNumeric: 'tabular-nums' }}>{timeStr}</span></span>
+          </div>
 
-      {/* Live indicator */}
-      <div className="app-header__live" style={{
-        display: 'flex', alignItems: 'center', gap: 7,
-        fontSize: 11, color: '#10B981',
-        background: 'rgba(16,185,129,0.10)',
-        border: '1px solid rgba(16,185,129,0.20)',
-        padding: '5px 12px', borderRadius: 100,
-        fontFamily: 'var(--font-body)',
-        fontWeight: 800,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
-      }}>
-        <div className="live-dot" />
-        <span>Live</span>
-      </div>
+          {/* Divider */}
+          <div className="app-header__divider" style={{ width: 1, height: 20, background: 'var(--border-default)' }} />
+        </>
+      )}
+
+
 
       {/* Last sync */}
-      {syncStatus && (
+      {syncStatus && !hideSync && (
         <div className="app-header__sync" style={{
           display: 'flex', alignItems: 'center', gap: 7,
           fontSize: 12, color: '#64748B',
@@ -204,6 +356,8 @@ export default function Header({ title, subtitle, headerSlot, hideSync }) {
         </button>
       )}
 
+
+
       {/* Divider */}
       <div className="app-header__divider" style={{ width: 1, height: 20, background: 'var(--border-default)' }} />
 
@@ -238,9 +392,15 @@ export default function Header({ title, subtitle, headerSlot, hideSync }) {
       </button>
 
       {/* Notification bell removed per request */}
+      </div>
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pulse-dot {
+          0% { opacity: 0.4; transform: scale(0.85); }
+          50% { opacity: 1; transform: scale(1.15); }
+          100% { opacity: 0.4; transform: scale(0.85); }
+        }
       `}</style>
     </header>
   );

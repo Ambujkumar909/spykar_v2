@@ -7,9 +7,63 @@
 // Keep it horizontally tight — execs will resent vertical real-estate stolen.
 
 import { useEffect, useState } from 'react';
-import { Sun, Moon, SlidersHorizontal } from 'lucide-react';
+import { Sun, Moon, ChevronDown } from 'lucide-react';
 import TimeRangeControl from './TimeRangeControl';
-import SavedViews from './SavedViews';
+
+// Inline header filters — same model as the /sales header (a labelled capsule
+// with a borderless select). Replaces the old Saved-Views dropdown + Filters
+// drawer button so the dashboard's filters live right in the bar.
+const MODE_OPTIONS = [
+  { key: 'active',   label: 'Active Stores'   },
+  { key: 'inactive', label: 'Inactive Stores' },
+  { key: 'all',      label: 'All Stores'      },
+];
+const VALUATION_OPTIONS = [
+  { key: 'gross',    label: 'Gross (with GST)' },
+  { key: 'ex_gst',   label: 'Ex-GST (revenue)' },
+  { key: 'gst',      label: 'GST collected'    },
+  { key: 'mrp',      label: 'At MRP'           },
+  { key: 'discount', label: 'Discount given'   },
+];
+
+function FieldSelect({ label, value, onChange, options, minWidth = 120, title }) {
+  return (
+    <label
+      title={title}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 8, height: 34,
+        padding: '0 6px 0 12px', borderRadius: 10,
+        background: 'var(--v2-bg-card)', border: '1px solid var(--v2-border)',
+        cursor: 'pointer', transition: 'border-color 160ms var(--v2-ease)',
+      }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--v2-border-strong)'; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--v2-border)'; }}
+    >
+      <span style={{
+        fontSize: 9.5, fontWeight: 800, letterSpacing: '0.08em',
+        textTransform: 'uppercase', color: 'var(--v2-fg-tertiary)',
+        whiteSpace: 'nowrap', fontFamily: 'var(--v2-font-body)',
+      }}>{label}</span>
+      <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+        <select
+          value={value}
+          onChange={e => onChange?.(e.target.value)}
+          style={{
+            height: 28, padding: '0 22px 0 4px',
+            background: 'transparent', border: 'none',
+            fontFamily: 'var(--v2-font-body)', fontSize: 12, fontWeight: 700,
+            color: 'var(--v2-fg-primary)', cursor: 'pointer',
+            appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none',
+            outline: 'none', minWidth,
+          }}
+        >
+          {options.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
+        <ChevronDown size={13} style={{ position: 'absolute', right: 5, pointerEvents: 'none', color: 'var(--v2-fg-tertiary)' }} />
+      </div>
+    </label>
+  );
+}
 
 function IconButton({ children, onClick, title, ariaLabel }) {
   return (
@@ -51,11 +105,11 @@ export default function TopBar({
   onCustomRangeChange,
   isDark,
   onToggleTheme,
-  onOpenFilters,
-  currentViewId,
-  onApplyView,
+  mode,
+  onModeChange,
+  valuation,
+  onValuationChange,
   user,
-  activeFilterCount = 0,
 }) {
   const showCustomPickers = preset === 'custom';
   return (
@@ -116,49 +170,25 @@ export default function TopBar({
         <TimeRangeControl preset={preset} onChange={onPresetChange} />
       </div>
 
-      {/* Right — controls */}
+      {/* Right — controls. Inline filters (same pattern as /sales): a Status
+          and a Valuation capsule, no drawer/button, no saved-views. */}
       <div className="v2-topbar__actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-        <SavedViews currentViewId={currentViewId} onApply={onApplyView} />
-
-        {/* Filter — F to toggle */}
-        <button
-          type="button"
-          onClick={onOpenFilters}
-          title="Open filter drawer (F)"
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            height: 34, padding: '0 12px',
-            background: activeFilterCount > 0 ? 'var(--v2-brand-500)' : 'var(--v2-bg-card)',
-            border: `1px solid ${activeFilterCount > 0 ? 'var(--v2-brand-500)' : 'var(--v2-border)'}`,
-            borderRadius: 10,
-            fontFamily: 'var(--v2-font-body)',
-            fontSize: 12, fontWeight: 600,
-            color: activeFilterCount > 0 ? '#fff' : 'var(--v2-fg-primary)',
-            cursor: 'pointer',
-            transition: 'all 160ms',
-          }}
-        >
-          <SlidersHorizontal size={13} />
-          Filters
-          {activeFilterCount > 0 ? (
-            <span style={{
-              minWidth: 18, height: 18, padding: '0 5px',
-              background: 'rgba(255,255,255,0.25)',
-              borderRadius: 999,
-              fontSize: 10, fontWeight: 700,
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            }}>{activeFilterCount}</span>
-          ) : (
-            <kbd style={{
-              padding: '1px 5px', borderRadius: 4,
-              background: 'var(--v2-bg-elevated)',
-              border: '1px solid var(--v2-border)',
-              fontSize: 10, fontWeight: 700,
-              color: 'var(--v2-fg-tertiary)',
-              fontFamily: 'monospace',
-            }}>F</kbd>
-          )}
-        </button>
+        <FieldSelect
+          label="Status"
+          value={mode}
+          onChange={onModeChange}
+          options={MODE_OPTIONS}
+          minWidth={96}
+          title="Which subset of the network to count"
+        />
+        <FieldSelect
+          label="Valuation"
+          value={valuation}
+          onChange={onValuationChange}
+          options={VALUATION_OPTIONS}
+          minWidth={130}
+          title="What ₹ basis each money figure reports"
+        />
 
         <IconButton
           onClick={onToggleTheme}

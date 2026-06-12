@@ -24,25 +24,23 @@ export default function ModePill({ mode, onChange }) {
       onChange={(e) => onChange?.(e.target.value)}
       style={{
         height: 32,
-        padding: '0 30px 0 14px',
+        padding: '7px 30px 7px 12px',
         background: 'var(--bg-elevated)',
         backgroundImage: CHEVRON,
         backgroundRepeat: 'no-repeat',
         backgroundPosition: 'right 11px center',
         border: '1px solid var(--border-default)',
-        borderRadius: 999,
+        borderRadius: 9,
         fontFamily: 'var(--font-body)',
-        fontSize: 11,
-        fontWeight: 700,
-        letterSpacing: '0.06em',
-        textTransform: 'uppercase',
+        fontSize: 12,
+        fontWeight: 600,
         color: 'var(--text-primary)',
         cursor: 'pointer',
         appearance: 'none',
         WebkitAppearance: 'none',
         MozAppearance: 'none',
         outline: 'none',
-        transition: 'border-color 180ms cubic-bezier(0.4,0,0.2,1)',
+        transition: 'border-color 200ms ease',
       }}
       onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--accent-border)'; }}
       onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; }}

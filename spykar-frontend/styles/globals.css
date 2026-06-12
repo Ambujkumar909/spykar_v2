@@ -97,6 +97,11 @@
   --sidebar-width-open:  240px;
   --header-height:       64px;
   --alert-strip-height:  40px;
+  /* Global UI density — one knob that scales every standard page body via
+     zoom (see .page-content). 0.90 = a calm "Comfortable" 10%-down that makes
+     the dense, heavy-weight type eye-friendly on normal-pixel laptops without
+     touching any per-component px. Lower = more compact. */
+  --ui-scale:            0.90;
   --radius-sm:     8px;
   --radius-md:     12px;
   --radius-lg:     16px;
@@ -200,7 +205,9 @@ body {
   font-family: var(--font-body);
   background: var(--bg-canvas);
   color: var(--text-primary);
-  line-height: 1.65;
+  /* 1.5 (was 1.65) — a touch tighter for a data-dense dashboard; 1.65 read as
+     airy/bulky next to the heavy weights. */
+  line-height: 1.5;
   min-height: 100vh;
   overflow-x: hidden;
 }
@@ -279,7 +286,14 @@ h1, h2, h3, h4, h5, h6 {
 .page-content {
   flex: 1;
   padding: 28px 32px;
-  margin-top: calc(var(--header-height) + var(--alert-strip-height));
+  /* Global density — render every standard page body at --ui-scale. zoom
+     (not transform:scale) so children still reflow to fill the width at the
+     smaller scale. The fixed Header is a sibling OUTSIDE this element, so it
+     stays at 1:1 (controls remain crisp/readable). margin-top is divided by
+     the scale so that, once zoomed, it still equals one full header height of
+     physical clearance — otherwise the body would tuck under the header. */
+  zoom: var(--ui-scale);
+  margin-top: calc(var(--header-height) / var(--ui-scale));
   animation: pageEnter 0.40s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -1336,6 +1350,10 @@ html.theme-light .sx-page {
   :root {
     --mobile-header-height: 58px;
     --mobile-tabbar-height: 76px;
+    /* Disable the global density zoom on phones — the mobile layer below is
+       already hand-tuned at 1:1 (single column, its own paddings/font sizes);
+       a further 10% shrink would undercut it. */
+    --ui-scale: 1;
   }
 
   html,
@@ -1376,6 +1394,12 @@ html.theme-light .sx-page {
     left: 0 !important;
     min-height: var(--mobile-header-height) !important;
     height: auto !important;
+    /* The mobile header is its own flex/wrap container and reorders its
+       children via order:* — so on phones we collapse the desktop
+       .app-header__inner wrapper (display:contents) and let the header itself
+       lay the children out, exactly as before the wrapper was added. */
+    display: flex !important;
+    align-items: center !important;
     padding: 8px 12px !important;
     gap: 8px !important;
     flex-wrap: wrap !important;
@@ -1383,6 +1407,7 @@ html.theme-light .sx-page {
     background: color-mix(in srgb, var(--bg-canvas) 88%, transparent) !important;
     box-shadow: 0 10px 28px rgba(0,0,0,0.18) !important;
   }
+  .app-header__inner { display: contents !important; }
 
   .app-header:has(.app-header__slot) {
     min-height: 98px !important;
@@ -1751,7 +1776,13 @@ html.theme-light .sx-page {
   color: var(--v2-fg-primary);
   font-family: var(--v2-font-body);
   font-feature-settings: "tnum", "ss01";
-  min-height: 100vh;
+  /* Global density — the dashboard runs at --ui-scale like every other page
+     (it was reading too large at 1:1). zoom scales the whole v2 surface
+     (sticky topbar + grid) uniformly; min-height is divided by the scale so
+     the zoomed box still fills the viewport with no bottom gap. On phones
+     --ui-scale resets to 1, so this is a no-op there. */
+  zoom: var(--ui-scale);
+  min-height: calc(100vh / var(--ui-scale));
 }
 
 /* Boardroom mode — swap token values for dark */
@@ -1800,6 +1831,24 @@ html.theme-light .sx-page {
   0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
   70%      { box-shadow: 0 0 0 6px transparent;  opacity: 0.6; }
 }
+
+/* ── Type calm-down — restrained weights for a world-class, eye-friendly feel
+   The dashboard leaned on 800/900 "black" weights pervasively, which reads
+   loud and optically large — when everything is bold, nothing stands out and
+   it all feels heavy. Damp anything heavier than 700 down to 700 so hierarchy
+   comes from size + colour, not sheer boldness. Most weight in this codebase
+   is set inline (style="font-weight: 900"), which only an attribute selector
+   + !important can override; the class-based offenders are mapped too. Scoped
+   to .main-content so it covers the header + every page body (Overview too).
+   This pairs with the --ui-scale density: scale makes it smaller, calmer
+   weight makes it refined. */
+.main-content [style*="font-weight: 900"],
+.main-content [style*="font-weight:900"],
+.main-content [style*="font-weight: 800"],
+.main-content [style*="font-weight:800"] { font-weight: 700 !important; }
+
+.kpi-value,
+.page-title { font-weight: 700; }
 
 /* Responsive layout — Phase 5 polish.
    Desktop:    main 1fr | right rail 320px,  KPI row 5 cols, intelligence 2 cols

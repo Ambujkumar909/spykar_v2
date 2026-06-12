@@ -702,7 +702,7 @@ export default function SalesPulse({ data, loading, lensMode = 'net', valuation 
           where the metric makes sense; static for what doesn't depend on
           Sale/Return/Net (Returns Rate, Active Days, Best Day, Stock). ── */}
       <div className="sx-mobile-card-grid sales-pulse-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(208px, 1fr))',
-        gap: 16, marginBottom: 28 }}>
+        gap: 16, marginBottom: 14 }}>
         <KpiHero
           label={`${lensLabel} — Units`}
           icon={ShoppingBag} accent={lensColor}
@@ -748,30 +748,6 @@ export default function SalesPulse({ data, loading, lensMode = 'net', valuation 
           icon={RotateCcw} accent={Number(s.return_rate_pct) >= 5 ? '#DC2626' : '#D97706'}
           value={Number(s.return_rate_pct || 0)} format="indian" suffix="%" loading={loading}
           context={`${fmtNum(s.return_units)} returns · ${fmtRs(s.return_value)}`}
-        />
-        <KpiHero
-          label="Active Days"
-          icon={Calendar} accent="#0284C7"
-          value={Number(s.active_days || 0)} loading={loading}
-          context={`${fmtNum(s.stores_with_sales)} stores recorded sales`}
-        />
-        <KpiHero
-          label="Best Day"
-          icon={Zap} accent="#D97706"
-          value={(() => {
-            const rows = data?.daily || [];
-            if (!rows.length) return '—';
-            const best = [...rows].sort((a,b) => Number(b.sales_value)-Number(a.sales_value))[0];
-            return best ? new Date(best.date).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'2-digit' }) : '—';
-          })()}
-          format="string"
-          loading={loading}
-          context={(() => {
-            const rows = data?.daily || [];
-            if (!rows.length) return '';
-            const best = [...rows].sort((a,b) => Number(b.sales_value)-Number(a.sales_value))[0];
-            return best ? `Peak: ${fmtRs(best.sales_value)} (${fmtNum(best.sales_qty)} units)` : '';
-          })()}
         />
         <KpiHero
           label={`Stock as of ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`}

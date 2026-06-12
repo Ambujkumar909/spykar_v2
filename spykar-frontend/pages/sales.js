@@ -114,49 +114,62 @@ const chartBase = {
   animations: { enabled: true, speed: 600 },
 };
 
-// ── 3-segment Sale/Return/Net lens pill (matches FilterBar mode-pill UX) ───
-function SaleModePill({ mode, onChange }) {
-  const OPTS = [
-    { key: 'sale',   label: 'Sale',   color: '#2563EB', title: 'Gross sales only (no returns deducted)' },
-    { key: 'return', label: 'Return', color: '#F43F5E', title: 'Returns only — quality & fit feedback' },
-    { key: 'net',    label: 'Net',    color: '#059669', title: 'Sales minus returns — the truer revenue figure' },
-  ];
-  const idx = Math.max(0, OPTS.findIndex(o => o.key === mode));
-  const seg = 100 / OPTS.length;
+// ── Header field — ONE clean capsule: inline eyebrow label + seamless select ─
+// Replaces the old "pill-inside-a-pill" header controls (a rounded 999 capsule
+// wrapping a separately-bordered <select>) that read as cluttered. Here the
+// label and the borderless select share a single hairline border, so the whole
+// header bar speaks one visual language.
+const SALE_MODE_OPTIONS = [
+  { value: 'sale',   label: 'Gross Sale' },
+  { value: 'return', label: 'Returns'    },
+  { value: 'net',    label: 'Net Sales'  },
+];
+const VALUATION_OPTIONS = [
+  { value: 'gross',    label: 'Gross (with GST)'  },
+  { value: 'ex_gst',   label: 'Ex-GST (revenue)'  },
+  { value: 'gst',      label: 'GST collected'     },
+  { value: 'mrp',      label: 'At MRP'            },
+  { value: 'discount', label: 'Discount given'    },
+];
+
+function HeaderField({ label, value, onChange, options, minWidth = 110, title }) {
   return (
-    <div style={{
-      display: 'inline-flex', position: 'relative',
-      background: 'var(--bg-elevated)',
-      border: '1px solid var(--border-default)',
-      borderRadius: 999, padding: 3, height: 32,
-    }}>
+    <label
+      title={title}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 9, height: 34,
+        padding: '0 6px 0 12px', borderRadius: 10,
+        background: 'var(--bg-elevated)',
+        border: '1px solid var(--border-subtle)',
+        cursor: 'pointer',
+        transition: 'border-color 180ms ease, background 180ms ease',
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; }}
+    >
       <span style={{
-        position: 'absolute', top: 3, bottom: 3,
-        left: `calc(${idx * seg}% + 3px)`,
-        width: `calc(${seg}% - 6px)`,
-        background: 'rgba(255,255,255,0.14)',
-        borderRadius: 999,
-        boxShadow: '0 1px 4px rgba(0,0,0,0.30), 0 0 0 1px rgba(255,255,255,0.12)',
-        transition: 'left 220ms cubic-bezier(0.16,1,0.3,1), width 220ms',
-      }} />
-      {OPTS.map(opt => (
-        <button
-          key={opt.key}
-          type="button"
-          title={opt.title}
-          onClick={() => onChange(opt.key)}
+        fontSize: 9.5, fontWeight: 800, letterSpacing: '0.10em',
+        textTransform: 'uppercase', color: 'var(--text-muted)',
+        fontFamily: 'var(--font-display)', whiteSpace: 'nowrap',
+      }}>{label}</span>
+      <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+        <select
+          value={value}
+          onChange={(e) => onChange?.(e.target.value)}
           style={{
-            position: 'relative', zIndex: 1,
-            background: 'transparent', border: 'none', cursor: 'pointer',
-            padding: '0 14px',
-            fontFamily: 'Inter, system-ui, sans-serif',
-            fontSize: 12, fontWeight: 700, letterSpacing: '0.02em',
-            color: mode === opt.key ? opt.color : '#64748b',
-            transition: 'color 200ms',
+            height: 28, padding: '0 24px 0 6px',
+            background: 'transparent', border: 'none',
+            fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 700,
+            color: 'var(--text-primary)', cursor: 'pointer',
+            appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none',
+            outline: 'none', minWidth,
           }}
-        >{opt.label}</button>
-      ))}
-    </div>
+        >
+          {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <ChevronIcon />
+      </div>
+    </label>
   );
 }
 
@@ -1351,7 +1364,32 @@ export default function SalesAnalyticsPage() {
     <DashboardLayout
       title="Sales & Returns Analytics"
       subtitle="Day-basis sales intelligence — units, revenue, colour, size, store"
-      headerSlot={<TimeRangeControl preset={preset} onChange={(p) => startTransition(() => setPreset(p))} />}
+      headerSlot={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Time range */}
+          <TimeRangeControl preset={preset} onChange={(p) => startTransition(() => setPreset(p))} />
+
+          <div style={{ width: 1, height: 18, background: 'var(--border-subtle)' }} />
+
+          {/* Lens + valuation — unified single-border fields */}
+          <HeaderField
+            label="Show"
+            value={v2Filters.sale_mode || 'net'}
+            onChange={(m) => setV2('sale_mode', m)}
+            options={SALE_MODE_OPTIONS}
+            minWidth={92}
+            title="Sale / Return / Net lens applied to every figure on the page"
+          />
+          <HeaderField
+            label="Valuation"
+            value={v2Filters.valuation || 'gross'}
+            onChange={(v) => setV2('valuation', v)}
+            options={VALUATION_OPTIONS}
+            minWidth={138}
+            title="Pick the ₹ basis for every revenue figure on the page"
+          />
+        </div>
+      }
       hideSync={true}
     >
       {/* Premium skin layer — activates the .sx-* design tokens defined in
@@ -1359,67 +1397,14 @@ export default function SalesAnalyticsPage() {
           chips, and numbers all share the refined visual language. */}
       <div className="sx-page sx-fade">
 
-      {/* ── Top control row ───────────────────────────────────────────────
-          A single right-aligned row anchored to the underside of the
-          DashboardLayout header. Holds the Sale/Return/Net lens AND the
-          Active/Inactive/All ModePill on the SAME visual line, exactly
-          where the user requested. The lens sits on the LEFT of the row
-          (with its "Show" + "Valuation" labels), ModePill hugs the
-          far-right edge under the Sync chip above. */}
-      <div className="sx-mobile-control-row sales-mobile-control-row" style={{
-        display: 'flex', alignItems: 'center',
-        // Generous gap between cluster groups + a row gap so the controls
-        // don't crowd each other when the page wraps. The user flagged the
-        // chips were sitting too tight — bumping `gap` from 12 → 18 and
-        // adding column-level breathing space inside each cluster gives the
-        // row the same comfortable rhythm as the dashboard's filter band.
-        columnGap: 18, rowGap: 10,
-        padding: '8px 24px 6px',
-        flexWrap: 'wrap',
-      }}>
-        <span className="sx-eyebrow">Show</span>
-        <SaleModePill
-          mode={v2Filters.sale_mode || 'net'}
-          onChange={(m) => setV2('sale_mode', m)}
-        />
-        <span className="sx-eyebrow" style={{ marginLeft: 8 }}>Valuation</span>
-        <div style={{ position: 'relative' }}>
-          <select
-            value={v2Filters.valuation || 'gross'}
-            onChange={e => setV2('valuation', e.target.value)}
-            title="Pick the ₹ basis for every revenue figure on the page"
-            style={{ ...filterSelect, minWidth: 178 }}
-          >
-            <option value="gross">Gross (with GST)</option>
-            <option value="ex_gst">Ex-GST (revenue)</option>
-            <option value="gst">GST collected</option>
-            <option value="mrp">At MRP</option>
-            <option value="discount">Discount given</option>
-          </select>
-          <ChevronIcon />
-        </div>
-
-        {/* Custom-window strip — ALWAYS rendered, toggled via CSS so:
-              • Native <input type="date"> widgets are instantiated once at
-                page mount (off the critical path), not on every Custom click
-              • backdrop-filter blur removed (was the biggest GPU cost on
-                mount); a flat semi-transparent bg looks the same and costs 0
-              • opacity + max-width transitions on the compositor → smooth
-                slide-in/out, runs on the GPU, never blocks the main thread.
-        */}
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 10,
-          padding: preset === 'custom' ? '6px 12px' : '0',
-          background: preset === 'custom' ? 'rgba(255,255,255,0.06)' : 'transparent',
-          border: `1px solid ${preset === 'custom' ? 'rgba(255,255,255,0.10)' : 'transparent'}`,
-          borderRadius: 999,
-          marginLeft: preset === 'custom' ? 8 : 0,
-          opacity: preset === 'custom' ? 1 : 0,
-          pointerEvents: preset === 'custom' ? 'auto' : 'none',
-          maxWidth: preset === 'custom' ? 640 : 0,
-          overflow: 'hidden',
-          whiteSpace: 'nowrap',
-          transition: 'opacity 180ms ease, max-width 240ms cubic-bezier(0.16, 1, 0.3, 1), padding 180ms ease, margin-left 180ms ease, background 180ms ease, border-color 180ms ease',
+      {preset === 'custom' && (
+        <div className="sx-mobile-control-row sales-mobile-control-row" style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '8px 24px',
+          background: 'rgba(255, 255, 255, 0.02)',
+          borderBottom: '1px solid var(--border-subtle)',
+          flexWrap: 'wrap',
+          marginBottom: 12,
         }}>
           <Calendar size={14} color={T.muted} strokeWidth={2.2} />
           <input type="date" value={dateFrom}
@@ -1444,78 +1429,44 @@ export default function SalesAnalyticsPage() {
             <RefreshCw size={12} color={T.primary} strokeWidth={2.2} />
             <span style={{ fontSize: 11, fontWeight: 700 }}>Refresh</span>
           </button>
+
+          <style jsx>{`
+            :global(.sales-date-input::-webkit-calendar-picker-indicator) {
+              opacity: 1;
+              cursor: pointer;
+              width: 16px;
+              height: 16px;
+              background-position: center;
+              background-repeat: no-repeat;
+              background-size: 14px 14px;
+              background-image: url("data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27%23E2E8F0%27%20stroke-width%3D%272.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Crect%20x%3D%273%27%20y%3D%274%27%20width%3D%2718%27%20height%3D%2718%27%20rx%3D%272%27%2F%3E%3Cline%20x1%3D%2716%27%20y1%3D%272%27%20x2%3D%2716%27%20y2%3D%276%27%2F%3E%3Cline%20x1%3D%278%27%20y1%3D%272%27%20x2%3D%278%27%20y2%3D%276%27%2F%3E%3Cline%20x1%3D%273%27%20y1%3D%2710%27%20x2%3D%2721%27%20y2%3D%2710%27%2F%3E%3C%2Fsvg%3E");
+            }
+            :global(html.theme-light .sales-date-input::-webkit-calendar-picker-indicator) {
+              background-image: url("data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27%23334155%27%20stroke-width%3D%272.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Crect%20x%3D%273%27%20y%3D%274%27%20width%3D%2718%27%20height%3D%2718%27%20rx%3D%272%27%2F%3E%3Cline%20x1%3D%2716%27%20y1%3D%272%27%20x2%3D%2716%27%20y2%3D%276%27%2F%3E%3Cline%20x1%3D%278%27%20y1%3D%272%27%20x2%3D%278%27%20y2%3D%276%27%2F%3E%3Cline%20x1%3D%273%27%20y1%3D%2710%27%20x2%3D%2721%27%20y2%3D%2710%27%2F%3E%3C%2Fsvg%3E");
+            }
+            :global(.sales-date-input::-webkit-calendar-picker-indicator:hover) {
+              background-color: rgba(255,255,255,0.08);
+              border-radius: 4px;
+            }
+          `}</style>
         </div>
+      )}
 
-        <div style={{ flex: 1 }} />
-        <ModePill
-          mode={v2Filters.mode || 'active'}
-          onChange={(m) => setV2('mode', m)}
-        />
+      {v2Active > 0 && (
+        <div className="sx-mobile-chip-strip" style={{ marginTop: 0, marginBottom: 18 }}>
+          <FilterChips
+            filters={v2Filters}
+            setFilter={setV2}
+            clearAll={clearV2}
+          />
+        </div>
+      )}
 
-        {/* Calendar-icon visibility — explicit SVG background, NOT a filter.
-            The browser's default picker indicator is invisible on dark
-            backgrounds even with `filter: invert(1)` because Chrome/Edge
-            render the default icon at near-zero opacity when color-scheme
-            is dark. We replace it entirely with a custom SVG via
-            `background-image`, then swap the SVG's stroke colour per theme.
-            Guaranteed visible on every browser/theme combo. */}
-        <style jsx>{`
-          /* Reset the browser default + paint a guaranteed-visible icon */
-          :global(.sales-date-input::-webkit-calendar-picker-indicator) {
-            opacity: 1;
-            cursor: pointer;
-            width: 16px;
-            height: 16px;
-            background-position: center;
-            background-repeat: no-repeat;
-            background-size: 14px 14px;
-            /* Default = DARK theme → bright stroke */
-            background-image: url("data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27%23E2E8F0%27%20stroke-width%3D%272.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Crect%20x%3D%273%27%20y%3D%274%27%20width%3D%2718%27%20height%3D%2718%27%20rx%3D%272%27%2F%3E%3Cline%20x1%3D%2716%27%20y1%3D%272%27%20x2%3D%2716%27%20y2%3D%276%27%2F%3E%3Cline%20x1%3D%278%27%20y1%3D%272%27%20x2%3D%278%27%20y2%3D%276%27%2F%3E%3Cline%20x1%3D%273%27%20y1%3D%2710%27%20x2%3D%2721%27%20y2%3D%2710%27%2F%3E%3C%2Fsvg%3E");
-          }
-          /* Light theme override → dark stroke */
-          :global(html.theme-light .sales-date-input::-webkit-calendar-picker-indicator) {
-            background-image: url("data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27%23334155%27%20stroke-width%3D%272.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Crect%20x%3D%273%27%20y%3D%274%27%20width%3D%2718%27%20height%3D%2718%27%20rx%3D%272%27%2F%3E%3Cline%20x1%3D%2716%27%20y1%3D%272%27%20x2%3D%2716%27%20y2%3D%276%27%2F%3E%3Cline%20x1%3D%278%27%20y1%3D%272%27%20x2%3D%278%27%20y2%3D%276%27%2F%3E%3Cline%20x1%3D%273%27%20y1%3D%2710%27%20x2%3D%2721%27%20y2%3D%2710%27%2F%3E%3C%2Fsvg%3E");
-          }
-          :global(.sales-date-input::-webkit-calendar-picker-indicator:hover) {
-            background-color: rgba(255,255,255,0.08);
-            border-radius: 4px;
-          }
-        `}</style>
-      </div>
-
-      {/* Custom-range strip moved INTO the lens row above — no separate
-          strip is rendered here anymore. */}
-
-      {/* Generous vertical breathing room between the filter row above
-          and the "SHOWING …" chips strip — bumped from 14 → 28 so the
-          chips visually live in their own band instead of butting up
-          against the SaleModePill / Valuation / ModePill controls. */}
-      <div className="sx-mobile-chip-strip" style={{ marginTop: 28 }}>
-        <FilterChips
-          filters={v2Filters}
-          setFilter={setV2}
-          clearAll={clearV2}
-        />
-      </div>
-
-      {/* ── Refreshing scope ──────────────────────────────────────────────
-          Everything from the lens pill down through the charts/tables reads
-          from `data`. On mode toggle (Active/Inactive/All) the cacheKey
-          changes and a fresh fetch fires; prior data stays visible (SWR)
-          but without a visual cue the numbers feel like they "snap" when
-          the response lands. A single opacity dim across the whole data
-          zone — applied only on a refetch with prior data on screen —
-          makes the transition feel intentional and matches the polished
-          UX shipped on the network page. Cold loads (no data yet) are
-          handled by per-section skeletons inside each component.
-
-          `paddingTop: 18` puts a clear gap between the chips strip above
-          and the first KPI card below. */}
       <div style={{
         opacity: refreshing && data ? 0.55 : 1,
         transition: 'opacity 200ms ease',
         pointerEvents: refreshing && data ? 'none' : 'auto',
-        paddingTop: 18,
+        paddingTop: 0,
       }}>
       {/* Lens row (Sale/Return/Net + Valuation + Return-rate pill) was moved
           to the top control row above, on the same line as the ModePill. */}

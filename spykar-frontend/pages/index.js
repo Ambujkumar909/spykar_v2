@@ -25,7 +25,7 @@
 //   • Right rail — Needs Attention exception list (out-of-stock, reorder,
 //     aged inventory, sync freshness, return-rate spikes, silent stores).
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { IndianRupee, Package, Boxes, Percent, RotateCcw } from 'lucide-react';
 import { useAuth } from '../lib/auth-context';
@@ -40,7 +40,6 @@ import IndiaHeatmap from '../components/dashboard-v2/IndiaHeatmap';
 import AgingWaterfall from '../components/dashboard-v2/AgingWaterfall';
 import TodayVsLY from '../components/dashboard-v2/TodayVsLY';
 import CategoryMix from '../components/dashboard-v2/CategoryMix';
-import FilterDrawer from '../components/dashboard-v2/FilterDrawer';
 import Sidebar from '../components/layout/Sidebar';
 import AiChatbot from '../components/AiChatbot';
 
@@ -54,47 +53,17 @@ export default function Overview() {
   const { preset, setPreset, fromISO, toISO, setCustom } = useTimeRange('mtd');
   const [mode,      setMode]      = useState(DEFAULT_MODE);
   const [valuation, setValuation] = useState(DEFAULT_VALUATION);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [savedViewId, setSavedViewId] = useState('ceo');
 
   const { data: metrics, loading: metricsLoading } = useDashboardMetrics({
     fromISO, toISO, mode, valuation,
   });
 
-  // Filter count surfaced to TopBar — non-default values count as "active".
-  const activeFilterCount = useMemo(() => {
-    let n = 0;
-    if (mode      !== DEFAULT_MODE)      n++;
-    if (valuation !== DEFAULT_VALUATION) n++;
-    return n;
-  }, [mode, valuation]);
-
-  const onResetAll = () => {
-    setMode(DEFAULT_MODE);
-    setValuation(DEFAULT_VALUATION);
-    setPreset('mtd');
-  };
-
-  // T/M/Y for time presets, F to open filter drawer, D for dark mode.
-  // Ignored while focus is in an input — see useKeyboardShortcuts.
+  // T/M/Y for time presets, D for dark mode. (Filter drawer + its F shortcut
+  // were removed — filters now live inline in the TopBar.)
   useKeyboardShortcuts({
     setPreset,
     toggleTheme,
-    toggleDrawer: () => setDrawerOpen(o => !o),
   });
-
-  // Saved views — apply a recipe.
-  const onApplyView = (view) => {
-    setSavedViewId(view.id);
-    if (view.preset) setPreset(view.preset);
-    if (view.anchor) {
-      // Defer to next tick so React paints the new state before scrolling.
-      setTimeout(() => {
-        const el = document.querySelector(view.anchor);
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 80);
-    }
-  };
 
   // Same auth gate the rest of the app uses.
   useEffect(() => {
@@ -127,11 +96,11 @@ export default function Overview() {
             onCustomRangeChange={setCustom}
             isDark={isDark}
             onToggleTheme={toggleTheme}
-            onOpenFilters={() => setDrawerOpen(true)}
-            currentViewId={savedViewId}
-            onApplyView={onApplyView}
+            mode={mode}
+            onModeChange={setMode}
+            valuation={valuation}
+            onValuationChange={setValuation}
             user={user}
-            activeFilterCount={activeFilterCount}
           />
 
           <div
@@ -223,20 +192,6 @@ export default function Overview() {
 
             {/* Zone E — "Needs Attention" right rail removed (disabled per request) */}
           </div>
-
-          {/* Slide-in filter drawer */}
-          <FilterDrawer
-            open={drawerOpen}
-            onClose={() => setDrawerOpen(false)}
-            preset={preset}
-            onPresetChange={setPreset}
-            mode={mode}
-            onModeChange={setMode}
-            valuation={valuation}
-            onValuationChange={setValuation}
-            onResetAll={onResetAll}
-            activeFilterCount={activeFilterCount}
-          />
         </div>
       </div>
 

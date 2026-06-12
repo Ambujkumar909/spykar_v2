@@ -19,7 +19,7 @@ import {
   Users, Tag, Shirt, Layers,
   Ruler, Palette, Droplets, Brush,
   MapPin, Building2, Store,
-  CalendarRange, Briefcase,
+  CalendarRange, Briefcase, Activity
 } from 'lucide-react';
 import MultiSelect from '../filters/MultiSelect';
 import { filterService } from '../../lib/services';
@@ -67,6 +67,7 @@ const FILTER_GROUPS = [
     dims: [
       { key: 'season',     label: 'Season', apiKey: 'season',     Icon: CalendarRange },
       { key: 'group_name', label: 'Party',  apiKey: 'group_name', Icon: Briefcase     },
+      { key: 'mode',       label: 'Status', apiKey: 'mode',       Icon: Activity      },
     ],
   },
 ];
@@ -530,6 +531,9 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
   const [open, setOpen] = useState(true);
   const groupActive = group.dims.reduce((n, d) => {
     const v = filters[d.key];
+    if (d.key === 'mode') {
+      return n + ((v && v !== 'active') ? 1 : 0);
+    }
     return n + ((Array.isArray(v) ? v.length : (v ? 1 : 0)) > 0 ? 1 : 0);
   }, 0);
 
@@ -552,6 +556,63 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
         <div className="grp__body-inner">
           {group.dims.map((d, i) => {
             const value = filters[d.key];
+            if (d.key === 'mode') {
+              const currentValue = filters.mode || 'active';
+              const isModeActive = currentValue !== 'active';
+              const Icon = d.Icon;
+              return (
+                <div
+                  key={d.key}
+                  className={`pill${isModeActive ? ' is-active' : ''}`}
+                  style={{ '--stagger': `${i * 18}ms` }}
+                >
+                  <span className="pill__icon" aria-hidden>
+                    <Icon size={12} strokeWidth={2} />
+                  </span>
+                  <div className="pill__select-wrapper">
+                    <select
+                      value={currentValue}
+                      onChange={(e) => setFilter('mode', e.target.value)}
+                      className="pill__select-element"
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        padding: '0 30px 0 12px',
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-primary)',
+                        fontFamily: 'var(--font-body)',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        letterSpacing: '-0.005em',
+                        cursor: 'pointer',
+                        appearance: 'none',
+                        WebkitAppearance: 'none',
+                        MozAppearance: 'none',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="active">Active Stores</option>
+                      <option value="inactive">Inactive Stores</option>
+                      <option value="all">All Stores</option>
+                    </select>
+                    {/* Chevron icon at the right */}
+                    <span style={{
+                      position: 'absolute',
+                      right: 12,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      pointerEvents: 'none',
+                      color: 'var(--text-muted)',
+                      display: 'inline-flex',
+                    }}>
+                      <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 4l3 3 3-3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    </span>
+                  </div>
+                </div>
+              );
+            }
+
             const hasValue = Array.isArray(value) ? value.length > 0 : Boolean(value);
             const Icon = d.Icon;
             return (
@@ -816,6 +877,78 @@ function FilterGroup({ group, filters, setFilter, optionsByDim, loading }) {
             0 6px 18px rgba(225,29,46,0.26),
             0 0 0 1px rgba(225,29,46,0.22),
             0 0 28px rgba(225,29,46,0.18) !important;
+        }
+
+        .pill__select-wrapper {
+          flex: 1;
+          height: 38px;
+          border-radius: 11px;
+          background: linear-gradient(
+            180deg,
+            rgba(255,255,255,0.05) 0%,
+            rgba(255,255,255,0.01) 60%,
+            rgba(0,0,0,0.10) 100%);
+          border: 1px solid rgba(255,255,255,0.07);
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.06),
+            0 1px 2px rgba(0,0,0,0.30);
+          display: flex;
+          align-items: center;
+          position: relative;
+          transition:
+            transform 220ms cubic-bezier(0.16,1,0.3,1),
+            border-color 220ms cubic-bezier(0.4,0,0.2,1),
+            box-shadow 220ms cubic-bezier(0.4,0,0.2,1);
+        }
+        .pill__select-wrapper:hover {
+          transform: translateY(-1px);
+          border-color: rgba(225,29,46,0.36);
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.10),
+            inset 0 -1px 0 rgba(0,0,0,0.16),
+            0 6px 18px rgba(0,0,0,0.46),
+            0 0 0 1px rgba(225,29,46,0.14),
+            0 0 24px rgba(225,29,46,0.08);
+        }
+        .pill.is-active .pill__select-wrapper {
+          background: linear-gradient(
+            180deg,
+            rgba(225,29,46,0.14) 0%,
+            rgba(225,29,46,0.04) 70%,
+            rgba(0,0,0,0.10) 100%);
+          border-color: rgba(225,29,46,0.32);
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.08),
+            0 1px 2px rgba(0,0,0,0.30),
+            0 0 0 1px rgba(225,29,46,0.14);
+        }
+        .pill.is-active .pill__select-wrapper:hover {
+          border-color: rgba(225,29,46,0.50);
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.10),
+            inset 0 -1px 0 rgba(0,0,0,0.16),
+            0 6px 18px rgba(225,29,46,0.26),
+            0 0 0 1px rgba(225,29,46,0.22),
+            0 0 28px rgba(225,29,46,0.18);
+        }
+
+        :global(html.theme-light) .pill__select-wrapper {
+          background: #FCFAF5;
+          border: 1px solid rgba(28,25,23,0.14);
+          box-shadow: none;
+          height: 40px;
+          border-radius: 6px;
+        }
+        :global(html.theme-light) .pill__select-wrapper:hover {
+          border-color: rgba(28,25,23,0.36);
+          background: #FFFFFF;
+          box-shadow: none;
+          transform: none;
+        }
+        :global(html.theme-light) .pill.is-active .pill__select-wrapper {
+          background: #FFFFFF;
+          border-color: rgba(28,25,23,0.36);
+          box-shadow: none;
         }
 
         /* ─── Light-mode pills — flat bone, single hairline, no gradients

@@ -43,6 +43,17 @@ export default function App({ Component, pageProps }) {
     <AuthProvider>
       <Head>
         <title>Spykar IQ — Inventory Intelligence</title>
+        {/* Viewport — THE switch that turns the mobile layout on. Without it
+            phones use a ~980px layout viewport and shrink-to-fit the desktop
+            UI, so the @media(max-width:768px) mobile layer (bottom tab bar,
+            single-column grids) never activates and the sidebar renders tiny.
+            viewport-fit=cover lets env(safe-area-inset-*) resolve so the
+            floating bottom tabs clear the iPhone home indicator / notch.
+            User scaling left enabled for accessibility. */}
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1, viewport-fit=cover"
+        />
       </Head>
       {/* Theme-paint script — beforeInteractive runs before page hydration
           so the html.theme-light class is applied before any styles render,

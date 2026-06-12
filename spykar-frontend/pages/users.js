@@ -17,7 +17,7 @@ import { useAuth } from '../lib/auth-context';
 import { formatDateTime, formatNumber } from '../lib/utils';
 import toast from 'react-hot-toast';
 
-const ROLE_OPTIONS = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'VIEWER'];
+const ROLE_OPTIONS = ['ADMIN', 'MANAGER', 'VIEWER'];
 
 const ROLE_BADGES = {
   SUPER_ADMIN: 'badge-violet',
@@ -64,7 +64,7 @@ export default function UsersPage() {
         role: roleFilter || undefined,
         limit: 100,
       });
-      setUsers(res.data.data || []);
+      setUsers((res.data.data || []).filter((entry) => entry.role !== 'SUPER_ADMIN'));
     } catch (err) {
       toast.error(err?.response?.data?.message || 'Failed to load users');
     } finally {
@@ -181,6 +181,7 @@ export default function UsersPage() {
       title="User Management"
       subtitle="Provision, govern and monitor access across the Spykar IQ control plane"
       allowedRoles={['SUPER_ADMIN', 'ADMIN']}
+      hideSync={true}
     >
       <div className="grid-4" style={{ marginBottom: 24 }}>
         <KpiCard label="Total Users" value={metrics.total} icon={UserCog} colorKey="violet" loading={loading} />

@@ -212,6 +212,7 @@ export default function PremiumKpi({
             <div className="sx-shimmer" style={{ height: heroSize, width: 120, marginBottom: 8, borderRadius: 6 }} />
           ) : (
             <div
+              className="pk-num"
               title={rawTooltip}
               style={{
                 fontFamily: 'var(--font-display)',

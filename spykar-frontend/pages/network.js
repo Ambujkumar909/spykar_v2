@@ -1163,32 +1163,25 @@ export default function NetworkPage() {
 
   return (
     <FiltersProvider value={v2FilterApi}>
-    <DashboardLayout title="Network" subtitle="Retail network — inventory positions across all locations and channels" hideSync={true}>
+    <DashboardLayout
+      title="Network"
+      subtitle="Retail network — inventory positions across all locations and channels"
+      hideSync={true}
+    >
       {/* Premium skin layer — same .sx-page tokens as the Sales page so
           both pages share one visual language. Cards, tables, chips, and
           numbers all inherit the refined hairlines + Plus Jakarta numbers. */}
       <div className="sx-page sx-fade">
 
-      {/* Mode + chips strip — dimensional filters live in the sidebar
-          (LENS cluster).  Mode (Active/Inactive/All) stays on-page so it's
-          one click away regardless of sidebar state. */}
-      <div className="sx-mobile-control-row network-mobile-control-row" style={{
-        display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12,
-        padding: '8px 24px 6px',
-      }}>
-        <div style={{ flex: 1 }} />
-        <ModePill
-          mode={v2Filters.mode || 'active'}
-          onChange={(m) => setV2('mode', m)}
-        />
-      </div>
-      <div className="sx-mobile-chip-strip" style={{ marginTop: 28 }}>
-        <FilterChips
-          filters={v2Filters}
-          setFilter={setV2}
-          clearAll={clearV2}
-        />
-      </div>
+      {v2Active > 0 && (
+        <div className="sx-mobile-chip-strip" style={{ marginTop: 0, marginBottom: 18 }}>
+          <FilterChips
+            filters={v2Filters}
+            setFilter={setV2}
+            clearAll={clearV2}
+          />
+        </div>
+      )}
 
       {/* ── Network Pulse — god-tier hero section ──
           Hero KPI strip with current-status splits · Pareto reveal ·

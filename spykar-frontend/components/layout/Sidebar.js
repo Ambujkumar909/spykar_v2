@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
@@ -29,6 +29,10 @@ export default function Sidebar() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--sidebar-width', expanded ? '240px' : '64px');
+  }, [expanded]);
 
   const isActive = (href) => {
     if (href === '/') return router.pathname === '/';
