@@ -96,6 +96,9 @@ export function clearAuth() {
   Cookies.remove('refreshToken');
   Cookies.remove('user');
   if (typeof window !== 'undefined') {
+    // Purge the optimistic-paint profile (see auth-context) so the reload to
+    // /login can't briefly render the app shell for a now-logged-out user.
+    try { window.localStorage.removeItem('spykar-user'); } catch {}
     window.location.href = '/login';
   }
 }

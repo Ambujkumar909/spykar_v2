@@ -98,7 +98,7 @@ export default function SyncStatus() {
   };
 
   return (
-    <DashboardLayout title="Sync Status" subtitle="ETL pipeline monitoring — SQL Server → PostgreSQL delta sync" allowedRoles={['SUPER_ADMIN', 'ADMIN']}>
+    <DashboardLayout title="Sync Status" subtitle="ETL pipeline monitoring — SQL Server → PostgreSQL delta sync" allowedRoles={['SUPER_ADMIN']}>
 
       {/* Last sync status card */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 20, marginBottom: 24, alignItems: 'start' }}>

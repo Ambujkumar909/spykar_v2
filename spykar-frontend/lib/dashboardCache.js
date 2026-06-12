@@ -50,6 +50,7 @@ const PERSIST_TIERS = [
   { prefix: 'sales:',          tier: 'local'   },
   { prefix: 'sales:drill:',    tier: 'local'   },
   { prefix: 'net:pulse:',      tier: 'local'   },
+  { prefix: 'ov:metrics:',     tier: 'local'   },
   { prefix: 'flt:opts:',       tier: 'local'   },
   { prefix: 'ov:alerts',       tier: 'session' },
   { prefix: 'ov:alertSummary', tier: 'session' },

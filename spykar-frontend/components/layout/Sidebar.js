@@ -19,7 +19,7 @@ const NAV = [
   {
     section: 'System',
     items: [
-      { label: 'Sync Status',     href: '/sync',  icon: RefreshCw, color: '#F59E0B', glow: 'rgba(245,158,11,0.12)', roles: ['SUPER_ADMIN', 'ADMIN'] },
+      { label: 'Sync Status',     href: '/sync',  icon: RefreshCw, color: '#F59E0B', glow: 'rgba(245,158,11,0.12)', roles: ['SUPER_ADMIN'] },
       { label: 'User Management', href: '/users', icon: UserCog,   color: '#A855F7', glow: 'rgba(168,85,247,0.12)', roles: ['SUPER_ADMIN', 'ADMIN'] },
     ],
   },

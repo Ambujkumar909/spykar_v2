@@ -1701,7 +1701,12 @@ async function getStateHeatmap(req, res, next) {
         ORDER BY net_value DESC
       `, params);
       return result.rows;
-    }, 300);  // 5 min TTL
+    }, 86400);  // 24h — same daily-batch reality as every other dashboard query
+                // (SALES_ANALYTICS etc.). The ERP feed doesn't change between
+                // syncs, and the post-sync cacheInvalidator does a full
+                // cache.clear(), so this can never pin stale data. The old
+                // 5-min TTL just re-ran a full inventory_movements scan
+                // (2.8M rows) every 5 min and gated the whole dashboard paint.
 
     res.json({ success: true, data });
   } catch (err) { next(err); }

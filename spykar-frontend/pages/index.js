@@ -60,11 +60,6 @@ export default function Overview() {
   const { data: metrics, loading: metricsLoading } = useDashboardMetrics({
     fromISO, toISO, mode, valuation,
   });
-  const lastSyncAt = metrics?.syncStatus?.completed_at
-    || metrics?.syncStatus?.last_sync_at
-    || metrics?.syncStatus?.lastSyncAt
-    || metrics?.asOf
-    || null;
 
   // Filter count surfaced to TopBar — non-default values count as "active".
   const activeFilterCount = useMemo(() => {
@@ -130,7 +125,6 @@ export default function Overview() {
             fromISO={fromISO}
             toISO={toISO}
             onCustomRangeChange={setCustom}
-            lastSyncAt={lastSyncAt}
             isDark={isDark}
             onToggleTheme={toggleTheme}
             onOpenFilters={() => setDrawerOpen(true)}

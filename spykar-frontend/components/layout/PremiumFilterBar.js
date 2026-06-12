@@ -1025,6 +1025,21 @@ function LuxPopoverStyles() {
           inset 0 1px 0 rgba(255,255,255,1),
           0 1px 2px rgba(15,23,42,0.06) !important;
       }
+      /* Checked box in light mode — the rule above forces every box to solid
+         white, which hides MultiSelect's white tick (white-on-white). The
+         checked box is the only one that contains the tick <svg>, so :has(svg)
+         targets it precisely and restores the brand-red fill so the tick
+         reads. Dark mode is untouched — its base gradient already shows the
+         tick. */
+      html.theme-light .lux-pop [role="option"] > span:first-child:has(svg),
+      html.theme-light .lux-pop label > span:first-child:has(svg) {
+        background: linear-gradient(135deg, var(--accent-primary), #B91020) !important;
+        border-color: rgba(200,21,37,0.95) !important;
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,0.30),
+          0 0 0 2px rgba(200,21,37,0.18),
+          0 2px 6px rgba(200,21,37,0.35) !important;
+      }
 
       /* Option rows — gentle hover wash + selected accent tint */
       .lux-pop [role="option"]:hover,

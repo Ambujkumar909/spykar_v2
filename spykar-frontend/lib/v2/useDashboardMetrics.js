@@ -16,6 +16,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { analyticsService, inventoryService, syncService } from '../services';
+import { getCached, setCached, isFresh } from '../dashboardCache';
 import { pctDelta } from './format';
 
 function shiftYear(iso, years) {
@@ -81,18 +82,60 @@ function pickSalesField(valuation) {
 }
 
 export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation = 'gross' } = {}) {
-  const [data, setData]       = useState(null);
-  const [loading, setLoading] = useState(true);
+  // Instant-paint cache key — same mechanism /sales and /network use. Persisted
+  // to localStorage (see the 'ov:metrics:' entry in dashboardCache PERSIST_TIERS)
+  // so revisiting the dashboard — even after a full reload or browser restart —
+  // paints last-known numbers synchronously instead of flashing skeletons while
+  // a (50 ms) refetch runs. valuation is in the key because the computed KPI
+  // payload bakes in the valuation lens.
+  const cacheKey = `ov:metrics:${fromISO || ''}:${toISO || ''}:${mode}:${valuation}`;
+
+  const [data, setData]       = useState(() => getCached(cacheKey) ?? null);
+  const [loading, setLoading] = useState(() => !getCached(cacheKey));
   const [error, setError]     = useState(null);
 
   useEffect(() => {
     if (!fromISO || !toISO) return;
     let alive = true;
-    setLoading(true);
     setError(null);
+
+    // Paint cached data immediately; only show the skeleton when we truly have
+    // nothing for this key yet.
+    const cached = getCached(cacheKey);
+    if (cached) { setData(cached); setLoading(false); }
+    else        { setLoading(true); }
 
     const lyFrom = shiftYear(fromISO, 1);
     const lyTo   = shiftYear(toISO, 1);
+
+    // State heatmap is the heaviest dashboard query (full inventory_movements
+    // scan, grouped by state). It feeds ONLY the India map — no KPI card needs
+    // it — so we fetch it OUT-OF-BAND and merge it in when it lands, instead of
+    // gating the whole `loading` flag (and thus every KPI card + skeleton) on
+    // the slowest call. KPIs now paint as soon as sales + inventory resolve;
+    // the map fills in a beat later without holding the page hostage.
+    //
+    // `heatmapData` bridges the two async paths so the merge is order-independent:
+    //   • heatmap resolves first → setData is a no-op (data not built yet), but
+    //     the Promise.all below reads heatmapData when it constructs `data`.
+    //   • Promise.all resolves first → it seeds stateHeatmap:null, then this
+    //     handler patches the real value in.
+    let heatmapData = cached?.stateHeatmap ?? null;
+    analyticsService.getStateHeatmap?.({ date_from: fromISO, date_to: toISO, mode })
+      .then(heatmap => {
+        if (!alive) return;
+        heatmapData = heatmap?.data?.data || null;
+        setData(prev => (prev ? { ...prev, stateHeatmap: heatmapData } : prev));
+      })
+      .catch(() => { /* best-effort — map shows its empty state */ });
+
+    // Fresh cache (within TTL and newer than the last sync) → the numbers on
+    // screen are already current. Skip the KPI refetch entirely; flipping
+    // back to the dashboard costs zero network. isFresh() returns false after
+    // a sync (Header feeds setDataVersion), so post-sync we still refresh.
+    if (cached && isFresh(cacheKey)) {
+      return () => { alive = false; };
+    }
 
     Promise.all([
       // Slim endpoint — returns ONLY summary + daily + by_channel (the three
@@ -104,8 +147,6 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
       }).catch(() => null),
       inventoryService.getExecutiveSummary({ mode }),
       syncService.getStatus().catch(() => null),
-      // State heatmap is best-effort — endpoint added in Phase 3.7.
-      analyticsService.getStateHeatmap?.({ date_from: fromISO, date_to: toISO, mode }).catch(() => null),
       // Removed: inventoryService.getAgeing + getAlertsSummary — these fed ONLY
       // the (now-removed) "Needs Attention" rail and the already-paused Aging
       // widget, so the dashboard no longer calls either endpoint. The endpoints
@@ -113,7 +154,7 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
       // useAlerts, and /inventory/ageing remains available).
       // Removed earlier: skuService.getTopMoving / getSlowMoving (SKU Pulse retired).
     ])
-      .then(([cur, ly, inv, sync, heatmap]) => {
+      .then(([cur, ly, inv, sync]) => {
         if (!alive) return;
         const c = cur?.data?.data?.summary || {};
         const lyS = ly?.data?.data?.summary || {};
@@ -216,15 +257,21 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
         // are gone above. The shared /inventory/alerts endpoint (useAlerts) and
         // /inventory/ageing remain available to other pages — untouched here.
 
-        setData({
+        const built = {
           asOf: new Date().toISOString(),
           kpis,
           todayVsLy,
           channelMix,
-          stateHeatmap: heatmap?.data?.data   || null,
+          stateHeatmap: heatmapData,
           syncStatus: sync?.data?.data || null,
           raw: { current: c, ly: lyS, stock, totals },
-        });
+        };
+        // Persist for instant paint on the next mount/reload. The heatmap may
+        // still be arriving — its own handler patches setData + the cache entry
+        // is refreshed on the next full fetch; caching it now (possibly null)
+        // is fine because the cheap 3 ms heatmap call always re-runs on mount.
+        setCached(cacheKey, built);
+        setData(built);
         setLoading(false);
       })
       .catch(err => {
@@ -236,7 +283,7 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
       });
 
     return () => { alive = false; };
-  }, [fromISO, toISO, mode, valuation]);
+  }, [fromISO, toISO, mode, valuation, cacheKey]);
 
   return { data, loading, error };
 }

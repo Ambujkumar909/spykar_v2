@@ -11,65 +11,6 @@ import { Sun, Moon, SlidersHorizontal } from 'lucide-react';
 import TimeRangeControl from './TimeRangeControl';
 import SavedViews from './SavedViews';
 
-function formatAge(syncDate) {
-  if (!syncDate) return null;
-  const ms = Date.now() - new Date(syncDate).getTime();
-  const min = Math.floor(ms / 60000);
-  if (min < 1)  return 'just now';
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24)  return `${hr}h ago`;
-  const d = Math.floor(hr / 24);
-  return `${d}d ago`;
-}
-
-// One pill, one truth.  Color follows freshness, label states the actual age —
-// no separate "LIVE" badge that contradicts a 6h-old sync.
-function SyncPill({ lastSyncAt }) {
-  const ms = lastSyncAt ? Date.now() - new Date(lastSyncAt).getTime() : Infinity;
-  const status = ms < 5 * 60_000 ? 'live'
-               : ms < 60 * 60_000 ? 'recent'
-               : 'stale';
-
-  const cfg = {
-    live:   { color: 'var(--v2-ok-500)',   label: 'Live',     pulse: true  },
-    recent: { color: 'var(--v2-warn-500)', label: 'Synced',   pulse: false },
-    stale:  { color: 'var(--v2-bad-500)',  label: 'Stale',    pulse: false },
-  }[status];
-
-  const ageText = lastSyncAt ? formatAge(lastSyncAt) : '—';
-
-  return (
-    <div
-      title={lastSyncAt ? `Last sync: ${new Date(lastSyncAt).toLocaleString()}` : 'Sync status unknown'}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 8,
-        height: 34, padding: '0 12px',
-        background: 'var(--v2-bg-elevated)',
-        border: '1px solid var(--v2-border)',
-        borderRadius: 999,
-        fontFamily: 'var(--v2-font-body)',
-      }}
-    >
-      <span
-        style={{
-          width: 8, height: 8, borderRadius: '50%',
-          background: cfg.color,
-          color: cfg.color,
-          animation: cfg.pulse ? 'v2LivePulse 2s ease-in-out infinite' : 'none',
-        }}
-      />
-      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--v2-fg-primary)' }}>
-        {cfg.label}
-      </span>
-      <span style={{ fontSize: 12, color: 'var(--v2-fg-tertiary)' }}>·</span>
-      <span className="tabular-nums" style={{ fontSize: 12, color: 'var(--v2-fg-secondary)' }}>
-        {ageText}
-      </span>
-    </div>
-  );
-}
-
 function IconButton({ children, onClick, title, ariaLabel }) {
   return (
     <button
@@ -108,7 +49,6 @@ export default function TopBar({
   fromISO,
   toISO,
   onCustomRangeChange,
-  lastSyncAt,
   isDark,
   onToggleTheme,
   onOpenFilters,
@@ -178,8 +118,6 @@ export default function TopBar({
 
       {/* Right — controls */}
       <div className="v2-topbar__actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-        <SyncPill lastSyncAt={lastSyncAt} />
-
         <SavedViews currentViewId={currentViewId} onApply={onApplyView} />
 
         {/* Filter — F to toggle */}
