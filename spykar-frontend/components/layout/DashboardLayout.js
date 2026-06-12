@@ -7,7 +7,7 @@ import AiChatbot from '../AiChatbot';
 import CommandPalette from '../ui/CommandPalette';
 import { useAuth } from '../../lib/auth-context';
 
-export default function DashboardLayout({ children, title, subtitle, allowedRoles, headerSlot }) {
+export default function DashboardLayout({ children, title, subtitle, allowedRoles, headerSlot, hideSync }) {
   const { user, loading } = useAuth();
   const router = useRouter();
   const isAllowed = !allowedRoles?.length || (user && allowedRoles.includes(user.role));
@@ -50,7 +50,7 @@ export default function DashboardLayout({ children, title, subtitle, allowedRole
     <div className="app-shell">
       <Sidebar />
       <div className="main-content">
-        <Header title={title} subtitle={subtitle} headerSlot={headerSlot} />
+        <Header title={title} subtitle={subtitle} headerSlot={headerSlot} hideSync={hideSync} />
         {/* ExceptionAlertStrip removed — the "CRITICAL Unknown store" ribbon
             was firing on every page even when stores were missing labels in
             the data. Disabled by request. */}

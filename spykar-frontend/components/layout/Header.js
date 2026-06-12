@@ -6,7 +6,7 @@ import { timeAgo } from '../../lib/utils';
 import { useAuth } from '../../lib/auth-context';
 import { useTheme } from '../../lib/useTheme';
 
-export default function Header({ title, subtitle, headerSlot }) {
+export default function Header({ title, subtitle, headerSlot, hideSync }) {
   const { user } = useAuth();
   const { isDark, toggle: toggleTheme } = useTheme();
   const isAdmin = user && ['SUPER_ADMIN', 'ADMIN'].includes(user.role);
@@ -173,7 +173,7 @@ export default function Header({ title, subtitle, headerSlot }) {
       )}
 
       {/* Sync button */}
-      {isAdmin && (
+      {isAdmin && !hideSync && (
         <button
           onClick={handleSync}
           disabled={syncing}

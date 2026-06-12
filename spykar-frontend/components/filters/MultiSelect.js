@@ -321,9 +321,14 @@ function MultiSelectImpl({
         }}
       >
         {icon && <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--text-muted)' }}>{icon}</span>}
-        {label && (
+        {/* Show the dimension name (e.g. "GENDER") ONLY while nothing is
+            picked — it's a hint for an empty control. Once a value is selected
+            the trigger shows just the value ("Mens"), not "GENDER Mens": the
+            label is redundant (icon + grouping already identify the dimension)
+            and reads as if two things were written. */}
+        {label && !safeValue.length && (
           <span style={{
-            color: safeValue.length ? 'var(--text-muted)' : 'var(--text-disabled)',
+            color: 'var(--text-disabled)',
             fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase',
           }}>{label}</span>
         )}

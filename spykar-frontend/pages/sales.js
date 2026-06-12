@@ -1352,6 +1352,7 @@ export default function SalesAnalyticsPage() {
       title="Sales & Returns Analytics"
       subtitle="Day-basis sales intelligence — units, revenue, colour, size, store"
       headerSlot={<TimeRangeControl preset={preset} onChange={(p) => startTransition(() => setPreset(p))} />}
+      hideSync={true}
     >
       {/* Premium skin layer — activates the .sx-* design tokens defined in
           styles/globals.css. Wraps every child in the page so cards, tables,

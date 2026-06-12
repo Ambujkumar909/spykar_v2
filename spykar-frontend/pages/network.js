@@ -1163,7 +1163,7 @@ export default function NetworkPage() {
 
   return (
     <FiltersProvider value={v2FilterApi}>
-    <DashboardLayout title="Network" subtitle="Retail network — inventory positions across all locations and channels">
+    <DashboardLayout title="Network" subtitle="Retail network — inventory positions across all locations and channels" hideSync={true}>
       {/* Premium skin layer — same .sx-page tokens as the Sales page so
           both pages share one visual language. Cards, tables, chips, and
           numbers all inherit the refined hairlines + Plus Jakarta numbers. */}

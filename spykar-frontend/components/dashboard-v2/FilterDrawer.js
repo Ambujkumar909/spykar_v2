@@ -6,7 +6,7 @@
 // the existing useFilters/MultiSelect components.
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, RotateCcw, Check } from 'lucide-react';
+import { X, RotateCcw, Check, ChevronDown } from 'lucide-react';
 import { PRESETS } from '../../lib/v2/useTimeRange';
 
 const PRESET_LABELS = {
@@ -121,7 +121,7 @@ export default function FilterDrawer({
               </Section>
 
               <Section title="Store Mode" hint="Which subset of the network to count">
-                <RadioList
+                <Dropdown
                   options={MODE_OPTIONS}
                   value={mode}
                   onChange={onModeChange}
@@ -250,6 +250,46 @@ function Pillset({ options, value, onChange, labelFor }) {
           </button>
         );
       })}
+    </div>
+  );
+}
+
+// Clean native-select dropdown, styled to match the drawer. Native <select>
+// keeps keyboard + OS popup accessibility for free; we only restyle the closed
+// control and overlay our own chevron (appearance:none hides the default one).
+function Dropdown({ options, value, onChange }) {
+  return (
+    <div style={{ position: 'relative' }}>
+      <select
+        value={value}
+        onChange={e => onChange?.(e.target.value)}
+        style={{
+          width: '100%',
+          appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none',
+          height: 40, padding: '0 38px 0 12px',
+          background: 'var(--v2-bg-elevated)',
+          border: '1px solid var(--v2-border-strong)',
+          borderRadius: 10,
+          color: 'var(--v2-fg-primary)',
+          fontFamily: 'var(--v2-font-body)',
+          fontSize: 12.5, fontWeight: 700,
+          cursor: 'pointer', outline: 'none',
+          transition: 'border-color 140ms var(--v2-ease)',
+        }}
+        onFocus={e => { e.currentTarget.style.borderColor = 'var(--v2-brand-500)'; }}
+        onBlur={e => { e.currentTarget.style.borderColor = 'var(--v2-border-strong)'; }}
+      >
+        {options.map(o => (
+          <option key={o.key} value={o.key}>{o.label}</option>
+        ))}
+      </select>
+      <ChevronDown
+        size={16}
+        style={{
+          position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+          pointerEvents: 'none', color: 'var(--v2-fg-tertiary)',
+        }}
+      />
     </div>
   );
 }

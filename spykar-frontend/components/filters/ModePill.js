@@ -1,87 +1,55 @@
-// ─── ModePill — Active / Inactive / All sliding-pill segmented control ─────
-// Reusable across /network and /sales (and anywhere else mode lives on the
-// page).  Brand-red gradient indicator, spring-eased slide, no radio-button
-// chrome — just the elegant segmented pill the rest of the app already uses.
+// ─── ModePill — Active / Inactive / All store-status selector ───────────────
+// Rendered as a compact dropdown (was a sliding segmented pill). A native
+// <select> keeps keyboard + OS-popup accessibility for free; we hide the
+// default arrow (appearance:none) and paint our own chevron so it matches the
+// rest of the app's pill-shaped controls. Same `{ mode, onChange }` API as
+// before, so every caller (/network, /sales) works unchanged.
+
+const OPTS = [
+  { key: 'active',   label: 'Active' },
+  { key: 'inactive', label: 'Inactive' },
+  { key: 'all',      label: 'All' },
+];
+
+// Inline chevron (slate-500) as a background-image — same technique the sales
+// SelectChip / page filterSelect use, so the popup chrome themes correctly.
+const CHEVRON =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 4l3 3 3-3' stroke='%2364748b' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\")";
 
 export default function ModePill({ mode, onChange }) {
-  const OPTS = [
-    { key: 'active',   label: 'Active',   title: 'Currently-open stores only' },
-    { key: 'inactive', label: 'Inactive', title: 'Currently-closed stores only' },
-    { key: 'all',      label: 'All',      title: 'Every store regardless of status' },
-  ];
-  const idx = Math.max(0, OPTS.findIndex(o => o.key === mode));
-  const segPct = 100 / OPTS.length;
-
   return (
-    <div className="mode-pill" role="tablist" aria-label="Store status">
-      <span
-        className="mode-pill__indicator"
-        style={{
-          left:  `calc(${idx * segPct}% + 3px)`,
-          width: `calc(${segPct}% - 6px)`,
-        }}
-      />
-      {OPTS.map(opt => (
-        <button
-          key={opt.key}
-          type="button"
-          role="tab"
-          aria-selected={mode === opt.key}
-          onClick={() => onChange?.(opt.key)}
-          title={opt.title}
-          className={`mode-pill__btn${mode === opt.key ? ' is-active' : ''}`}
-        >
-          {opt.label}
-        </button>
+    <select
+      aria-label="Store status"
+      value={mode}
+      onChange={(e) => onChange?.(e.target.value)}
+      style={{
+        height: 32,
+        padding: '0 30px 0 14px',
+        background: 'var(--bg-elevated)',
+        backgroundImage: CHEVRON,
+        backgroundRepeat: 'no-repeat',
+        backgroundPosition: 'right 11px center',
+        border: '1px solid var(--border-default)',
+        borderRadius: 999,
+        fontFamily: 'var(--font-body)',
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: '0.06em',
+        textTransform: 'uppercase',
+        color: 'var(--text-primary)',
+        cursor: 'pointer',
+        appearance: 'none',
+        WebkitAppearance: 'none',
+        MozAppearance: 'none',
+        outline: 'none',
+        transition: 'border-color 180ms cubic-bezier(0.4,0,0.2,1)',
+      }}
+      onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--accent-border)'; }}
+      onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; }}
+    >
+      {OPTS.map((o) => (
+        <option key={o.key} value={o.key}>{o.label}</option>
       ))}
-
-      <style jsx>{`
-        .mode-pill {
-          position: relative;
-          display: inline-flex;
-          align-items: center;
-          height: 32px;
-          padding: 3px;
-          border-radius: 999px;
-          background: var(--bg-elevated);
-          border: 1px solid var(--border-default);
-          box-shadow: inset 0 1px 2px rgba(15,23,42,0.06);
-        }
-        .mode-pill__indicator {
-          position: absolute;
-          top: 3px;
-          bottom: 3px;
-          background: linear-gradient(135deg, var(--accent-primary) 0%, #B91020 100%);
-          border-radius: 999px;
-          box-shadow:
-            0 2px 6px rgba(225,29,46,0.32),
-            inset 0 1px 0 rgba(255,255,255,0.20);
-          transition:
-            left 320ms cubic-bezier(0.16,1,0.3,1),
-            width 320ms cubic-bezier(0.16,1,0.3,1);
-        }
-        .mode-pill__btn {
-          position: relative;
-          z-index: 1;
-          background: transparent;
-          border: none;
-          cursor: pointer;
-          height: 100%;
-          padding: 0 14px;
-          font-family: var(--font-body);
-          font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
-          color: var(--text-muted);
-          transition: color 240ms cubic-bezier(0.4,0,0.2,1);
-        }
-        .mode-pill__btn:hover { color: var(--text-primary); }
-        .mode-pill__btn.is-active {
-          color: #ffffff;
-          text-shadow: 0 1px 2px rgba(0,0,0,0.20);
-        }
-      `}</style>
-    </div>
+    </select>
   );
 }
