@@ -173,8 +173,8 @@ export default function NetworkPulse({ filters, onParetoPick }) {
       {/* ── HERO KPI STRIP — single-number cards, lens-aware ────────────── */}
       <div className="sx-mobile-card-grid network-pulse-kpis" style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(208px, 1fr))',
-        gap: 16, marginBottom: 28,
+        gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+        gap: 16, marginBottom: 14,
       }}>
         <PremiumKpi
           label="Total Stock"

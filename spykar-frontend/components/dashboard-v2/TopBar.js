@@ -173,29 +173,35 @@ export default function TopBar({
       {/* Right — controls. Inline filters (same pattern as /sales): a Status
           and a Valuation capsule, no drawer/button, no saved-views. */}
       <div className="v2-topbar__actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-        <FieldSelect
-          label="Status"
-          value={mode}
-          onChange={onModeChange}
-          options={MODE_OPTIONS}
-          minWidth={96}
-          title="Which subset of the network to count"
-        />
-        <FieldSelect
-          label="Valuation"
-          value={valuation}
-          onChange={onValuationChange}
-          options={VALUATION_OPTIONS}
-          minWidth={130}
-          title="What ₹ basis each money figure reports"
-        />
+        {/* Filters get their own wrapper so the mobile grid can break them
+            out into a full-width scrollable row below the time control. */}
+        <div className="v2-topbar__filters" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <FieldSelect
+            label="Status"
+            value={mode}
+            onChange={onModeChange}
+            options={MODE_OPTIONS}
+            minWidth={96}
+            title="Which subset of the network to count"
+          />
+          <FieldSelect
+            label="Valuation"
+            value={valuation}
+            onChange={onValuationChange}
+            options={VALUATION_OPTIONS}
+            minWidth={130}
+            title="What ₹ basis each money figure reports"
+          />
+        </div>
 
-        <IconButton
-          onClick={onToggleTheme}
-          title={`${isDark ? 'Switch to light mode' : 'Switch to boardroom (dark) mode'} (D)`}
-        >
-          {isDark ? <Sun size={15} /> : <Moon size={15} />}
-        </IconButton>
+        <div className="v2-topbar__theme" style={{ display: 'inline-flex' }}>
+          <IconButton
+            onClick={onToggleTheme}
+            title={`${isDark ? 'Switch to light mode' : 'Switch to boardroom (dark) mode'} (D)`}
+          >
+            {isDark ? <Sun size={15} /> : <Moon size={15} />}
+          </IconButton>
+        </div>
 
       </div>
 

@@ -245,10 +245,7 @@ export default function Header({ title, subtitle, headerSlot, hideSync }) {
                 </span>
               )}
             </div>
-            {/* Subtitle is suppressed on control-dense pages (those that inject
-                a headerSlot, e.g. /sales) so the title block stays compact and
-                the slot controls have room to fit on one line. */}
-            {subtitle && !headerSlot && (
+            {subtitle && (
               <div style={{
                 fontSize: '10px',
                 color: 'var(--text-muted)',
@@ -279,27 +276,22 @@ export default function Header({ title, subtitle, headerSlot, hideSync }) {
       {/* Spacer to push controls to the right */}
       <div style={{ flex: 1 }} />
 
-      {/* Date / time — single line, never wraps. Hidden on control-dense pages
-          (headerSlot present) so the slot controls never get crowded off. */}
-      {!headerSlot && (
-        <>
-          <div className="app-header__clock" style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            color: 'var(--text-muted)',
-            fontFamily: 'var(--font-body)',
-            fontSize: 12, fontWeight: 600,
-            letterSpacing: '0.02em',
-            whiteSpace: 'nowrap',
-            flexShrink: 0,
-          }}>
-            <Clock size={12} style={{ flexShrink: 0 }} />
-            <span style={{ whiteSpace: 'nowrap' }}>{dateStr} · <span style={{ fontVariantNumeric: 'tabular-nums' }}>{timeStr}</span></span>
-          </div>
+      {/* Date / time — single line, never wraps */}
+      <div className="app-header__clock" style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        color: 'var(--text-muted)',
+        fontFamily: 'var(--font-body)',
+        fontSize: 12, fontWeight: 600,
+        letterSpacing: '0.02em',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+      }}>
+        <Clock size={12} style={{ flexShrink: 0 }} />
+        <span style={{ whiteSpace: 'nowrap' }}>{dateStr} · <span style={{ fontVariantNumeric: 'tabular-nums' }}>{timeStr}</span></span>
+      </div>
 
-          {/* Divider */}
-          <div className="app-header__divider" style={{ width: 1, height: 20, background: 'var(--border-default)' }} />
-        </>
-      )}
+      {/* Divider */}
+      <div className="app-header__divider" style={{ width: 1, height: 20, background: 'var(--border-default)' }} />
 
 
 

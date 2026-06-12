@@ -701,7 +701,7 @@ export default function SalesPulse({ data, loading, lensMode = 'net', valuation 
           Single row with the 7 most decision-driving numbers. Lens-aware
           where the metric makes sense; static for what doesn't depend on
           Sale/Return/Net (Returns Rate, Active Days, Best Day, Stock). ── */}
-      <div className="sx-mobile-card-grid sales-pulse-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(208px, 1fr))',
+      <div className="sx-mobile-card-grid sales-pulse-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
         gap: 16, marginBottom: 14 }}>
         <KpiHero
           label={`${lensLabel} — Units`}
