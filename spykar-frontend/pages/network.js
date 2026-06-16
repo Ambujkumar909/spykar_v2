@@ -784,7 +784,7 @@ function AllLocationsTable({
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: 'var(--bg-card-hover)' }}>
-              {['#','Location Name','Channel / Group','Billing','State','City','Total Stock','Total Value'].map(h => (
+              {['#','Location Name','Store Code','Channel / Group','Billing','State','City','Total Stock','Total Value'].map(h => (
                 <th key={h} style={{ padding: '10px 14px', textAlign: ['Total Stock','Total Value','#'].includes(h) ? 'right' : 'left', fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.10em', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
@@ -792,7 +792,7 @@ function AllLocationsTable({
           <tbody>
             {loading && locations.length === 0
               ? Array.from({ length: 12 }).map((_, i) => (
-                  <tr key={i}><td colSpan={8} style={{ padding: '10px 14px' }}><div style={{ height: 14, background: T.bg, borderRadius: 4 }} /></td></tr>
+                  <tr key={i}><td colSpan={9} style={{ padding: '10px 14px' }}><div style={{ height: 14, background: T.bg, borderRadius: 4 }} /></td></tr>
                 ))
               : locations.map((r, i) => {
                   const globalIdx = globalOffset + i;
@@ -825,6 +825,7 @@ function AllLocationsTable({
                         {isTop3 ? ['🥇','🥈','🥉'][globalIdx] : globalIdx + 1}
                       </td>
                       <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, color: T.primary, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</td>
+                      <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 800, color: T.muted, whiteSpace: 'nowrap', fontFamily: 'var(--font-mono, monospace)', letterSpacing: '0.02em' }}>{r.code || '—'}</td>
                       <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: T.muted, whiteSpace: 'nowrap' }}>{r.group_name || r.type || '—'}</td>
                       <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
                         <span style={{ background: r.billing_model === 'OUTRIGHT' ? '#FEF3C7' : '#DBEAFE', color: r.billing_model === 'OUTRIGHT' ? '#92400E' : '#1D4ED8', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 800 }}>
@@ -840,7 +841,7 @@ function AllLocationsTable({
                 })
             }
             {!loading && locations.length === 0 && (
-              <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', fontSize: 13, fontWeight: 700, color: T.muted }}>No locations match your filters</td></tr>
+              <tr><td colSpan={9} style={{ padding: '40px', textAlign: 'center', fontSize: 13, fontWeight: 700, color: T.muted }}>No locations match your filters</td></tr>
             )}
           </tbody>
         </table>
