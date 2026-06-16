@@ -5,20 +5,23 @@
 // Colour / Size, drillable to a single store's stock-vs-sales.
 //
 // Built on the Network/Sales design system (DashboardLayout + headerSlot +
-// sx-card + react-apexcharts) for visual parity with those pages. The state
-// choropleth REUSES the dashboard-v2 IndiaHeatmap (wrapped in a scoped v2-app
-// so its --v2-* tokens resolve), with a backward-compatible onStateClick for
-// in-page drill.
+// sx-card + react-apexcharts) for visual parity with those pages.
 //
-// EXCLUSIONS (deliberate, matching the portal): no ageing / dead-stock, and no
+// PERF: summary + pivot are fetched independently of the measure toggle (the
+// backend returns units, gross AND cost in every row), so Units/Gross/Cost is
+// a zero-network client re-read. Each section (KPIs / trend / pivot) has its
+// own loader so it paints the moment its call lands. High-cardinality pivots
+// (Colour/Size) render only the top ROW_CAP members; CSV export keeps all.
+//
+// EXCLUSIONS (deliberate, matching the portal): no ageing / dead-stock; no
 // "region" dimension (locations.zone_id is NULL for every row — revisit once
-// the sync populates it).
+// the sync populates it); and no India choropleth (removed by request — it
+// pulled in react-simple-maps + a TopoJSON fetch and slowed the page).
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import TimeRangeControl from '../components/dashboard-v2/TimeRangeControl';
-import IndiaHeatmap from '../components/dashboard-v2/IndiaHeatmap';
 import { useTimeRange } from '../lib/v2/useTimeRange';
 import { useTheme } from '../lib/useTheme';
 import { stockAvailabilityService } from '../lib/services';
@@ -199,15 +202,21 @@ export default function StockAvailabilityPage() {
     return f;
   }, [drill]);
 
-  const baseParams = useMemo(() => ({
-    status: mode, measure, ...drillFilters,
-  }), [mode, measure, drillFilters]);
+  // Scope params WITHOUT measure — summary + pivot are measure-independent
+  // (the backend returns units, gross AND cost in every row), so flipping the
+  // Units/Gross/Cost toggle is a pure client-side re-read with zero network.
+  const scopeParams = useMemo(() => ({
+    status: mode, ...drillFilters,
+  }), [mode, drillFilters]);
+  const scopeKey = useMemo(() => JSON.stringify(scopeParams), [scopeParams]);
 
-  // ── Data state ──────────────────────────────────────────────────────────
+  // ── Data state (independent loaders so each section paints as it lands) ───
   const [summary, setSummary] = useState(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
   const [trend, setTrend]     = useState(null);
+  const [trendLoading, setTrendLoading] = useState(true);
   const [pivot, setPivot]     = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [pivotLoading, setPivotLoading] = useState(true);
   const [storeData, setStoreData] = useState(null);
   const [storeLoading, setStoreLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -218,26 +227,38 @@ export default function StockAvailabilityPage() {
     setViewBy(k); setDrill([]); setStoreSel(null);
   }, []);
 
-  // ── Fetch summary + trend + pivot on any control change ───────────────────
+  // ── Summary (fast) — independent of measure ───────────────────────────────
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    const p = { ...baseParams };
-    Promise.all([
-      stockAvailabilityService.getSummary({ as_of: toISO, ...p }),
-      stockAvailabilityService.getTrend({ group_by: effectiveGroupBy, from: fromISO, to: toISO, top: 8, ...p }),
-      stockAvailabilityService.getPivot({ group_by: effectiveGroupBy, as_of: toISO, ...p }),
-    ])
-      .then(([s, t, pv]) => {
-        if (!alive) return;
-        setSummary(s.data?.data || null);
-        setTrend(t.data?.data || null);
-        setPivot(pv.data?.data || null);
-      })
-      .catch((err) => { if (alive) notifyApiError(err, 'Failed to load stock availability'); })
-      .finally(() => { if (alive) setLoading(false); });
+    setSummaryLoading(true);
+    stockAvailabilityService.getSummary({ as_of: toISO, ...scopeParams })
+      .then((s) => { if (alive) setSummary(s.data?.data || null); })
+      .catch((err) => { if (alive) notifyApiError(err, 'Failed to load summary'); })
+      .finally(() => { if (alive) setSummaryLoading(false); });
     return () => { alive = false; };
-  }, [baseParams, effectiveGroupBy, fromISO, toISO]);
+  }, [scopeKey, toISO]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Pivot (can be heavy) — independent of measure, paints when ready ──────
+  useEffect(() => {
+    let alive = true;
+    setPivotLoading(true);
+    stockAvailabilityService.getPivot({ group_by: effectiveGroupBy, as_of: toISO, ...scopeParams })
+      .then((pv) => { if (alive) setPivot(pv.data?.data || null); })
+      .catch((err) => { if (alive) notifyApiError(err, 'Failed to load pivot'); })
+      .finally(() => { if (alive) setPivotLoading(false); });
+    return () => { alive = false; };
+  }, [scopeKey, effectiveGroupBy, toISO]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Trend (depends on measure — series values are in the chosen unit) ─────
+  useEffect(() => {
+    let alive = true;
+    setTrendLoading(true);
+    stockAvailabilityService.getTrend({ group_by: effectiveGroupBy, from: fromISO, to: toISO, top: 8, measure, ...scopeParams })
+      .then((t) => { if (alive) setTrend(t.data?.data || null); })
+      .catch((err) => { if (alive) notifyApiError(err, 'Failed to load trend'); })
+      .finally(() => { if (alive) setTrendLoading(false); });
+    return () => { alive = false; };
+  }, [scopeKey, effectiveGroupBy, measure, fromISO, toISO]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Fetch per-store trend when a store is selected ────────────────────────
   useEffect(() => {
@@ -268,20 +289,11 @@ export default function StockAvailabilityPage() {
     setDrill((d) => d.slice(0, idx));
   }, []);
 
-  // Heatmap shows only at the State level (base or reset).
-  const showHeatmap = effectiveGroupBy === 'state';
-  const heatmapData = useMemo(() => {
-    if (!showHeatmap || !pivot?.rows) return [];
-    return pivot.rows.map((r) => ({
-      state_name: r.label,
-      net_value: measureValue(r, measure),
-      units_sold: r.stock_units,
-      store_count: r.store_count,
-      units_returned: 0,
-    }));
-  }, [showHeatmap, pivot, measure]);
-
-  // Sorted pivot rows for the table.
+  // Sorted pivot rows for the table. High-cardinality dimensions (Colour, Size)
+  // can return 800+ members — sort all, but only render the top slice so the
+  // DOM stays light and the page feels instant. CSV export keeps the full set.
+  const ROW_CAP = 100;
+  const totalRows = pivot?.rows?.length || 0;
   const sortedRows = useMemo(() => {
     const rows = [...(pivot?.rows || [])];
     const cmp = {
@@ -290,7 +302,8 @@ export default function StockAvailabilityPage() {
       cover:   (a, b) => (b.cover_days ?? -1) - (a.cover_days ?? -1),
       delta:   (a, b) => (b.delta_vs_30d_pct ?? -1e9) - (a.delta_vs_30d_pct ?? -1e9),
     }[sortBy] || (() => 0);
-    return rows.sort(cmp);
+    rows.sort(cmp);
+    return rows.slice(0, ROW_CAP);
   }, [pivot, measure, sortBy]);
 
   const dimLabel = (VIEW_BY.find((v) => v.key === effectiveGroupBy)?.label) || effectiveGroupBy;
@@ -352,7 +365,7 @@ export default function StockAvailabilityPage() {
   const onExport = useCallback(async () => {
     try {
       setExporting(true);
-      const res = await stockAvailabilityService.exportCsv({ group_by: effectiveGroupBy, as_of: toISO, ...baseParams });
+      const res = await stockAvailabilityService.exportCsv({ group_by: effectiveGroupBy, as_of: toISO, measure, ...scopeParams });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
       const a = document.createElement('a');
       a.href = url; a.download = `stock-availability-${effectiveGroupBy}-${toISO}.csv`;
@@ -360,7 +373,7 @@ export default function StockAvailabilityPage() {
       window.URL.revokeObjectURL(url);
     } catch (err) { notifyApiError(err, 'Export failed'); }
     finally { setExporting(false); }
-  }, [effectiveGroupBy, toISO, baseParams]);
+  }, [effectiveGroupBy, toISO, measure, scopeParams]);
 
   // Granularity note for the hero chart (honest about month-end-only history).
   const granNote = trend?.granularity === 'monthly'
@@ -391,18 +404,18 @@ export default function StockAvailabilityPage() {
       <div className="sx-page sx-fade">
         {/* ── KPI strip ── */}
         <div className="sa-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0,1fr))', gap: 12, marginBottom: 18 }}>
-          <KpiCard icon={Boxes} label="Stock Units" accent="#3B82F6" loading={loading}
+          <KpiCard icon={Boxes} label="Stock Units" accent="#3B82F6" loading={summaryLoading}
             value={fmtNum(summary?.stock_units)} sub={summary?.as_of ? `as of ${summary.as_of}` : '—'} />
-          <KpiCard icon={IndianRupee} label={measure === 'cost' ? 'Stock Cost' : 'Stock Value'} accent="#10B981" loading={loading}
+          <KpiCard icon={IndianRupee} label={measure === 'cost' ? 'Stock Cost' : 'Stock Value'} accent="#10B981" loading={summaryLoading}
             value={fmtCr(measure === 'cost' ? summary?.value_cost : summary?.value_gross)} sub={measure === 'cost' ? 'qty × cost' : 'qty × MRP'} />
-          <KpiCard icon={Store} label="Stores" accent="#F59E0B" loading={loading}
+          <KpiCard icon={Store} label="Stores" accent="#F59E0B" loading={summaryLoading}
             value={fmtNum(summary?.store_count)} sub="with stock on hand" />
-          <KpiCard icon={Package} label="SKUs" accent="#A855F7" loading={loading}
+          <KpiCard icon={Package} label="SKUs" accent="#A855F7" loading={summaryLoading}
             value={fmtNum(summary?.sku_count)} sub="distinct in stock" />
-          <KpiCard icon={Layers} label="Avg / Store" accent="#EC4899" loading={loading}
+          <KpiCard icon={Layers} label="Avg / Store" accent="#EC4899" loading={summaryLoading}
             value={fmtNum(summary?.avg_per_store)} sub="units per store" />
           <KpiCard icon={summary?.delta_units_vs_30d_pct >= 0 ? TrendingUp : TrendingDown}
-            label="Δ vs 30d" accent={summary?.delta_units_vs_30d_pct >= 0 ? '#10B981' : '#EF4444'} loading={loading}
+            label="Δ vs 30d" accent={summary?.delta_units_vs_30d_pct >= 0 ? '#10B981' : '#EF4444'} loading={summaryLoading}
             value={summary?.delta_units_vs_30d_pct == null ? '—' : `${summary.delta_units_vs_30d_pct > 0 ? '+' : ''}${summary.delta_units_vs_30d_pct}%`}
             sub="units vs ~30d ago" />
         </div>
@@ -454,7 +467,7 @@ export default function StockAvailabilityPage() {
           <div className="sx-card" style={{ padding: 20, marginBottom: 18 }}>
             <SectionTitle icon={TrendingUp} label={`Stock on hand over time · by ${dimLabel}`}
               right={granNote && <span style={{ fontSize: 11, fontWeight: 700, color: T.muted }}>{granNote}</span>} />
-            {loading ? (
+            {trendLoading ? (
               <div className="sx-shimmer" style={{ height: 340, borderRadius: 10 }} />
             ) : trendSeries.length && (trend?.dates?.length) ? (
               <Chart options={trendOptions} series={trendSeries} type="line" height={340} />
@@ -504,29 +517,20 @@ export default function StockAvailabilityPage() {
           </div>
         )}
 
-        {/* ── State choropleth (reused IndiaHeatmap, scoped v2-app for tokens) ── */}
-        {showHeatmap && !storeSel && (
-          <div className={`v2-app${isDark ? ' theme-dark' : ''}`} style={{ marginBottom: 18, background: 'transparent' }}>
-            <IndiaHeatmap
-              data={heatmapData}
-              loading={loading}
-              title="India · Stock by State"
-              metricLabel={measureLabel(measure)}
-              valueFormatter={(v) => measureFmt(v, measure)}
-              onStateClick={(s) => setDrill((d) => [...d, { dim: 'state', key: s, label: s }])}
-            />
-          </div>
-        )}
-
         {/* ── Pivot table ── */}
         <div className="sx-card" style={{ overflow: 'hidden', marginBottom: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: `1px solid ${T.border}`, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, fontWeight: 800, color: T.accent, letterSpacing: '0.10em', textTransform: 'uppercase' }}>
               By {dimLabel}
             </span>
-            {!loading && pivot?.rows && (
+            {!pivotLoading && pivot?.rows && (
               <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: T.accent, borderRadius: 100, padding: '2px 8px' }}>
-                {fmtNum(pivot.rows.length)}
+                {fmtNum(totalRows)}
+              </span>
+            )}
+            {!pivotLoading && totalRows > ROW_CAP && (
+              <span style={{ fontSize: 11, fontWeight: 600, color: T.muted }}>
+                showing top {ROW_CAP} · export for all
               </span>
             )}
             <div style={{ flex: 1 }} />
@@ -550,7 +554,7 @@ export default function StockAvailabilityPage() {
                 </tr>
               </thead>
               <tbody>
-                {loading && !pivot ? (
+                {pivotLoading && !pivot ? (
                   Array.from({ length: 10 }).map((_, i) => (
                     <tr key={i}><td colSpan={7} style={{ padding: '10px 14px' }}><div className="sx-shimmer" style={{ height: 14, borderRadius: 4 }} /></td></tr>
                   ))

@@ -1345,32 +1345,44 @@ html.theme-light .sx-page {
 
 /* ─── Header fit (desktop) ─────────────────────────────────────────────────
    On control-dense pages (/sales injects TimeRange + Show + Valuation into
-   the header slot) the row's fixed-width pieces — title block (subtitle up
-   to 380px), ~760px of slot controls, clock, theme toggle — exceed the bar
-   on laptop widths and spill out the right edge. Two graceful degradations,
-   in order, BOTH preserving the subtitle and the slot position:
-     1. The title block may shrink — the subtitle ellipsizes (the title line
-        itself stays whole; nowrap sets the shrink floor).
-     2. Below 1700px, slot pages drop the clock (+ its divider) — the one
-        truly optional item on the right. Pages without a slot keep it. */
+   the header slot) the row's fixed-width pieces — title block, ~760px of slot
+   controls, clock, theme toggle — exceed the bar on laptop widths. This gets
+   WORSE the instant the hover-rail expands (the fixed header's left jumps
+   64→240px, so it loses 176px exactly when the cursor is on the sidebar).
+
+   The title block absorbs the squeeze gracefully and — critically — NEVER
+   spills out of its own box into the time pills:
+     • The whole title-container shrinks (flex-shrink:1).
+     • The subtitle (the widest line) ellipsizes first, so the title text
+       stays whole in virtually every real case.
+     • Only under an extreme squeeze does the title text itself ellipsize —
+       cleanly (text-overflow), never overlapping the slot. overflow:hidden
+       on the stack is what guarantees no collision; the previous
+       overflow:visible let the title bleed over the Today/WTD/… pills.
+     • Below 1700px, slot pages drop the clock (+ divider) for more room. */
 .app-header__title-container {
   flex-shrink: 1 !important;   /* inline style pins 0 — allow shrink */
   min-width: 0;
 }
-/* Text stack may narrow, but it must NOT clip — overflow:hidden here was
-   cutting the title line itself ("Analytics" → "Analyti…"). Keep it visible;
-   the title row holds full width and only the subtitle gives. */
+/* Text stack must CLIP, not spill — this is the anti-collision guard. */
 .app-header__title-container > div:nth-child(2) {
   min-width: 0;
-  overflow: visible;
+  overflow: hidden;
 }
-/* Title line — never shrinks, never truncates. It is the shrink floor. */
+/* Title row can shrink + clip (it no longer acts as a rigid floor that
+   forced the text to overflow sideways into the slot). */
 .app-header__title-container > div:nth-child(2) > div:first-child {
-  flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
 }
-/* Subtitle — the only element that gives. It already carries
-   overflow:hidden + text-overflow:ellipsis inline, so it ellipsizes
-   gracefully instead of forcing the whole block wide. */
+/* Title text — ellipsizes cleanly as the last resort instead of bleeding
+   over the time-range pills. */
+.app-header__title-container > div:nth-child(2) > div:first-child > div:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Subtitle gives first (it's the widest line), so the title stays whole. */
 .app-header__title-container > div:nth-child(2) > div:nth-child(2) {
   min-width: 0;
   flex-shrink: 1;
