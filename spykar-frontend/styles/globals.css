@@ -1357,9 +1357,23 @@ html.theme-light .sx-page {
   flex-shrink: 1 !important;   /* inline style pins 0 — allow shrink */
   min-width: 0;
 }
+/* Text stack may narrow, but it must NOT clip — overflow:hidden here was
+   cutting the title line itself ("Analytics" → "Analyti…"). Keep it visible;
+   the title row holds full width and only the subtitle gives. */
 .app-header__title-container > div:nth-child(2) {
   min-width: 0;
-  overflow: hidden;            /* lets the subtitle ellipsize as it shrinks */
+  overflow: visible;
+}
+/* Title line — never shrinks, never truncates. It is the shrink floor. */
+.app-header__title-container > div:nth-child(2) > div:first-child {
+  flex-shrink: 0;
+}
+/* Subtitle — the only element that gives. It already carries
+   overflow:hidden + text-overflow:ellipsis inline, so it ellipsizes
+   gracefully instead of forcing the whole block wide. */
+.app-header__title-container > div:nth-child(2) > div:nth-child(2) {
+  min-width: 0;
+  flex-shrink: 1;
 }
 @media (max-width: 1700px) {
   .app-header:has(.app-header__slot) .app-header__clock,
@@ -1532,105 +1546,14 @@ html.theme-light .sx-page {
     padding-right: 12px !important;
   }
 
-  .app-sidebar {
-    /* Bulletproof visibility — the bar must ALWAYS render on phones */
-    display: flex !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    pointer-events: auto !important;
-    position: fixed !important;
-    top: auto !important;
-    left: 10px !important;
-    right: 10px !important;
-    bottom: calc(8px + env(safe-area-inset-bottom)) !important;
-    width: auto !important;
-    height: 66px !important;
-    max-height: 66px !important;
-    transform: none !important;
-    border: 1px solid var(--border-default) !important;
-    border-radius: 18px !important;
-    /* Solid fallback first — iOS < 16.2 has no color-mix(); without this the
-       bar's background resolved invalid → fully transparent ("sidebar is not
-       there"). */
-    background: var(--bg-surface) !important;
-    background: color-mix(in srgb, var(--bg-surface) 92%, transparent) !important;
-    box-shadow: 0 18px 42px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.06) !important;
-    backdrop-filter: blur(22px);
-    -webkit-backdrop-filter: blur(22px);
-    z-index: 220 !important;
-    transition: none !important;
-  }
-
-  html.theme-light .app-sidebar {
-    background: rgba(255,255,255,0.94) !important;
-    box-shadow: 0 16px 38px rgba(15,23,42,0.16), inset 0 1px 0 rgba(255,255,255,0.85) !important;
-  }
-
-  .app-sidebar > div:first-child,
-  .app-sidebar > div:last-child,
-  .app-sidebar__filters,
-  .nav-tooltip {
-    display: none !important;
-  }
-
-  .app-sidebar nav {
-    padding: 6px !important;
-    display: flex !important;
-    align-items: stretch !important;
-    justify-content: space-around !important;
-    gap: 4px !important;
-    overflow: hidden !important;
-  }
-
-  .app-sidebar nav > div {
-    display: contents !important;
-  }
-
-  /* The lux filter panel must STAY hidden in the tab bar. The generic
-     `nav > div { display: contents }` rule above has HIGHER specificity
-     (0,1,2) than the earlier `.app-sidebar__filters { display:none }` (0,1,0)
-     — both !important — so the panel was being dissolved INTO the tab bar
-     instead of removed. Re-assert with winning specificity. */
-  .app-sidebar nav > .app-sidebar__filters,
-  .app-sidebar nav .app-sidebar__filters * {
-    display: none !important;
-  }
-
-  .app-sidebar nav > div > div:first-child {
-    display: none !important;
-  }
-
-  .app-sidebar nav a {
-    flex: 1 1 0 !important;
-    min-width: 0 !important;
-  }
-
-  .app-sidebar .nav-item {
-    height: 54px !important;
-    margin: 0 !important;
-    padding: 6px 4px !important;
-    border-radius: 14px !important;
-    flex-direction: column !important;
-    justify-content: center !important;
-    gap: 3px !important;
-  }
-
-  .app-sidebar .nav-item > div {
-    margin-left: auto !important;
-    margin-right: auto !important;
-  }
-
-  .app-sidebar .nav-item span {
-    opacity: 1 !important;
-    transform: none !important;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    font-size: 10px !important;
-    line-height: 1.1 !important;
-    font-weight: 800 !important;
-    letter-spacing: 0 !important;
-  }
+  /* Mobile: the desktop hover-rail can't open on touch (there's no hover),
+     so the Sidebar component swaps itself for a slide-in drawer on phones
+     (the .mnav-* launcher + drawer, fully styled inline/scoped inside
+     Sidebar.js — see MobileNav). The desktop `.app-sidebar` is never rendered
+     on mobile after hydration; this hide just suppresses it for the one
+     pre-hydration frame so the full-height rail never flashes. No fragile
+     CSS reshaping to break. */
+  .app-sidebar { display: none !important; }
 
   .grid-4,
   .grid-3,
@@ -1777,15 +1700,6 @@ html.theme-light .sx-page {
 
   .app-header__slot {
     max-width: 100%;
-  }
-
-  .app-sidebar {
-    left: 8px !important;
-    right: 8px !important;
-  }
-
-  .app-sidebar .nav-item span {
-    font-size: 9px !important;
   }
 
   .sx-card,
