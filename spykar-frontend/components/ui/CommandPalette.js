@@ -19,7 +19,7 @@ import { useRouter } from 'next/router';
 
 const COMMANDS = [
   { id: 'go-overview',     section: 'Navigate', label: 'Overview',          hint: 'Executive summary',           keys: 'g o', path: '/' },
-  { id: 'go-network',      section: 'Navigate', label: 'Network',           hint: 'All locations + filters',     keys: 'g n', path: '/network' },
+  { id: 'go-network',      section: 'Navigate', label: 'EBO Network',       hint: 'All locations + filters',     keys: 'g n', path: '/network' },
   { id: 'go-sales',        section: 'Navigate', label: 'Sales Analytics',   hint: 'Velocity, returns, trends',    keys: 'g s', path: '/sales' },
   { id: 'go-locations',    section: 'Navigate', label: 'Locations',         hint: 'Per-store deep-dive',          keys: 'g l', path: '/locations' },
   { id: 'go-distributors', section: 'Navigate', label: 'Distributors',      hint: 'Channel partners',             keys: 'g d', path: '/distributors' },

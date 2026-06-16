@@ -1164,7 +1164,7 @@ export default function NetworkPage() {
   return (
     <FiltersProvider value={v2FilterApi}>
     <DashboardLayout
-      title="Network"
+      title="EBO Network"
       subtitle="Retail network — inventory positions across all locations and channels"
       hideSync={true}
     >
