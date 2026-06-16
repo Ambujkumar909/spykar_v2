@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { RefreshCw, Clock, Sun, Moon, TrendingUp, Globe, Sparkles, UserCog, LayoutDashboard } from 'lucide-react';
+import { RefreshCw, Clock, Sun, Moon, TrendingUp, Globe, Sparkles, UserCog, LayoutDashboard, LineChart } from 'lucide-react';
 import { syncService } from '../../lib/services';
 import { setDataVersion } from '../../lib/dashboardCache';
 import { timeAgo } from '../../lib/utils';
@@ -83,6 +83,12 @@ export default function Header({ title, subtitle, headerSlot, hideSync }) {
     themeColor = '#3B82F6';
     glowColor = 'rgba(59, 130, 246, 0.15)';
     iconBorderColor = 'rgba(59, 130, 246, 0.3)';
+  } else if (lowerTitle.includes('availab')) {
+    // Stock Availability — sky/cyan, distinct from the other three pages.
+    PageIcon = LineChart;
+    themeColor = '#0EA5E9';
+    glowColor = 'rgba(14, 165, 233, 0.15)';
+    iconBorderColor = 'rgba(14, 165, 233, 0.3)';
   } else if (lowerTitle.includes('ai') || lowerTitle.includes('query')) {
     isAi = true;
     PageIcon = Sparkles;

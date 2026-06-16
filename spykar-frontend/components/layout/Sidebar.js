@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
-  LayoutDashboard, Globe, TrendingUp, RefreshCw, LogOut, UserCog, Menu, X,
+  LayoutDashboard, Globe, TrendingUp, RefreshCw, LogOut, UserCog, Menu, X, LineChart,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth-context';
 import PremiumFilterBar from './PremiumFilterBar';
@@ -14,6 +14,7 @@ const NAV = [
       { label: 'Overview',      href: '/',        icon: LayoutDashboard, color: '#EF4444', glow: 'rgba(239,68,68,0.15)' },
       { label: 'EBO Network',   href: '/network', icon: Globe,           color: '#3B82F6', glow: 'rgba(59,130,246,0.15)' },
       { label: 'Sales & Returns', href: '/sales', icon: TrendingUp,      color: '#10B981', glow: 'rgba(16,185,129,0.15)' },
+      { label: 'Stock Availability', href: '/stock-availability', icon: LineChart, color: '#0EA5E9', glow: 'rgba(14,165,233,0.15)' },
     ],
   },
   {

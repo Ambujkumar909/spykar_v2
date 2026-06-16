@@ -107,6 +107,18 @@ export const analyticsService = {
   getStateHeatmap: (params = {}) => api.get('/analytics/state-heatmap', { params }),
 };
 
+// ─── Stock Availability (4th page — stock over time) ──────────────────────────
+// Read-only daily-stock analytics. Mirrors analyticsService's param-passing.
+export const stockAvailabilityService = {
+  getSummary: (params = {}) => api.get('/stock-availability/summary', { params }),
+  getTrend:   (params = {}) => api.get('/stock-availability/trend', { params }),
+  getPivot:   (params = {}) => api.get('/stock-availability/pivot', { params }),
+  getStoreTrend: (locationId, params = {}) =>
+    api.get(`/stock-availability/store/${locationId}/trend`, { params }),
+  // CSV export — same filters as getPivot. Returns a blob for download.
+  exportCsv: (params = {}) => api.get('/stock-availability/export.csv', { params, responseType: 'blob' }),
+};
+
 // ─── AI Query ─────────────────────────────────────────────────────────────────
 export const aiService = {
   query: (question) => api.post('/ai/query', { question }),

@@ -56,9 +56,22 @@ const displayName = n => GEO_DISPLAY[(n || '').toLowerCase().trim()] || n;
 const norm = s => (s || '').toUpperCase().trim();
 const lookupKey = s => ALIASES[norm(s)] || norm(s).toLowerCase();
 
-export default function IndiaHeatmap({ data, loading, preset, fromISO, toISO }) {
+export default function IndiaHeatmap({
+  data, loading, preset, fromISO, toISO,
+  // ── Optional, backward-compatible reuse hooks (Overview passes none, so its
+  //    behaviour is byte-identical) ──────────────────────────────────────────
+  // onStateClick(stateValue): intercept the click instead of navigating to
+  //   /sales — lets a host page (e.g. Stock Availability) drill in-page.
+  // title / metricLabel / valueFormatter: relabel the card + tooltip so the
+  //   same choropleth can render a non-sales measure (e.g. stock).
+  onStateClick = null,
+  title = 'India · Sales by State',
+  metricLabel = 'Net sales',
+  valueFormatter = null,
+}) {
   const router = useRouter();
   const [hovered, setHovered] = useState(null);
+  const fmtValue = valueFormatter || formatINR;
 
   // Click a state → jump to the Sales page pre-filtered to that state AND on
   // the SAME date window the dashboard is currently showing.
@@ -71,6 +84,8 @@ export default function IndiaHeatmap({ data, loading, preset, fromISO, toISO }) 
   const goToStateSales = (stateValue) => {
     const s = String(stateValue || '').trim();
     if (!s) return;
+    // Host-page drill takes precedence over the default /sales navigation.
+    if (onStateClick) { onStateClick(s); return; }
     const params = new URLSearchParams({ state: s });
     if (preset)  params.set('preset', preset);
     if (fromISO) params.set('date_from', fromISO);
@@ -108,7 +123,7 @@ export default function IndiaHeatmap({ data, loading, preset, fromISO, toISO }) 
             letterSpacing: '0.08em', textTransform: 'uppercase',
             color: 'var(--v2-fg-tertiary)',
           }}>
-            India · Sales by State
+            {title}
           </div>
           <div style={{ fontSize: 13, marginTop: 4, color: 'var(--v2-fg-secondary)' }}>
             {(data || []).length > 0
@@ -186,7 +201,7 @@ export default function IndiaHeatmap({ data, loading, preset, fromISO, toISO }) 
               {hovered.row ? (
                 <>
                   <div className="tabular-nums" style={{ color: 'var(--v2-fg-secondary)' }}>
-                    Net sales <strong style={{ color: 'var(--v2-fg-primary)' }}>{formatINR(hovered.row.net_value)}</strong>
+                    {metricLabel} <strong style={{ color: 'var(--v2-fg-primary)' }}>{fmtValue(hovered.row.net_value)}</strong>
                   </div>
                   <div className="tabular-nums" style={{ color: 'var(--v2-fg-secondary)' }}>
                     {formatCompact(hovered.row.units_sold)} units · {hovered.row.store_count} stores
