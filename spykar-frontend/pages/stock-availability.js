@@ -1,623 +1,585 @@
-// ─── /stock-availability — the 4th portal page: STOCK OVER TIME ─────────────
-// The other three pages show CURRENT positions and sales. This page is the
-// only one that reads inventory_daily_snapshot to show how stock-on-hand
-// MOVES day by day, pivotable by State / City / Channel / Store / Category /
-// Colour / Size, drillable to a single store's stock-vs-sales.
-//
-// Built on the Network/Sales design system (DashboardLayout + headerSlot +
-// sx-card + react-apexcharts) for visual parity with those pages.
-//
-// PERF: summary + pivot are fetched independently of the measure toggle (the
-// backend returns units, gross AND cost in every row), so Units/Gross/Cost is
-// a zero-network client re-read. Each section (KPIs / trend / pivot) has its
-// own loader so it paints the moment its call lands. High-cardinality pivots
-// (Colour/Size) render only the top ROW_CAP members; CSV export keeps all.
-//
-// EXCLUSIONS (deliberate, matching the portal): no ageing / dead-stock; no
-// "region" dimension (locations.zone_id is NULL for every row — revisit once
-// the sync populates it); and no India choropleth (removed by request — it
-// pulled in react-simple-maps + a TopoJSON fetch and slowed the page).
+// ─── /stock-availability — AS-ON-DATE stock history (Zoho/Cliq-style) ────────
+// Pick ONE date on a full calendar → see exactly what stock was on hand that day
+// across the network, pivotable by state/city/channel/store/category/colour/size,
+// drillable to a single store, with a recent-history sparkline for context.
+// Point-in-time, NOT a range. Reads inventory_daily_snapshot via resolveAsOf
+// (snaps to the newest snapshot on/before the chosen date).
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import DashboardLayout from '../components/layout/DashboardLayout';
-import TimeRangeControl from '../components/dashboard-v2/TimeRangeControl';
-import { useTimeRange } from '../lib/v2/useTimeRange';
 import { useTheme } from '../lib/useTheme';
+import { useFilters } from '../lib/useFilters';
+import { FiltersProvider } from '../lib/FiltersContext';
 import { stockAvailabilityService } from '../lib/services';
 import { notifyApiError } from '../lib/notifyApiError';
 import {
-  Boxes, Layers, Store, Package, IndianRupee, TrendingUp, TrendingDown,
-  Map as MapIcon, Building2, Tag, Palette, Ruler, Download, ChevronRight,
-  ArrowLeft, Activity, Clock, BarChart2,
+  Boxes, Layers, Store, Package, IndianRupee, TrendingUp, TrendingDown, CalendarDays,
+  Map as MapIcon, Building2, Tag, Palette, Ruler, Download, ChevronRight, ArrowLeft,
+  Activity, Clock, BarChart2, ArrowUpRight, ArrowDownRight,
 } from 'lucide-react';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
-// ── Theme tokens (mirror network.js/sales.js) ───────────────────────────────
-const T = {
-  primary:   'var(--text-primary,   #F1F5F9)',
-  secondary: 'var(--text-secondary, #CBD5E1)',
-  muted:     'var(--text-muted,     #64748B)',
-  border:    'var(--border-subtle,  rgba(255,255,255,0.07))',
-  bg:        'var(--bg-canvas,      #070C18)',
-  accent:    'var(--accent-primary, #EF4444)',
-};
-
-// ── Formatters (identical conventions to the other pages) ───────────────────
-function fmtL(n) {
-  if (!n && n !== 0) return '—';
-  n = Number(n);
-  if (n >= 10000000) return (n / 10000000).toFixed(2) + ' Cr';
-  if (n >= 100000)   return (n / 100000).toFixed(2) + 'L';
-  if (n >= 1000)     return (n / 1000).toFixed(1) + 'K';
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const fmtNum = (n) => (n == null ? '0' : Number(n).toLocaleString('en-IN'));
+function fmtCr(n) {
+  if (n == null) return '—'; n = Number(n); const neg = n < 0; const a = Math.abs(n); let s;
+  if (a >= 1e7) s = '₹' + (a / 1e7).toFixed(2) + ' Cr';
+  else if (a >= 1e5) s = '₹' + (a / 1e5).toFixed(2) + 'L';
+  else s = '₹' + Math.round(a).toLocaleString('en-IN');
+  return (neg ? '−' : '') + s;
+}
+function cnt(n) {
+  if (n == null) return '0'; n = Number(n);
+  if (n >= 1e7) return (n / 1e7).toFixed(2) + ' Cr';
+  if (n >= 1e5) return (n / 1e5).toFixed(2) + ' L';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
   return n.toLocaleString('en-IN');
 }
-function fmtCr(n) {
-  if (!n && n !== 0) return '—';
-  n = Number(n);
-  if (n >= 10000000) return '₹' + (n / 10000000).toFixed(2) + ' Cr';
-  if (n >= 100000)   return '₹' + (n / 100000).toFixed(1) + 'L';
-  return '₹' + Number(n).toLocaleString('en-IN');
-}
-function fmtNum(n) {
-  if (!n && n !== 0) return '0';
-  return Number(n).toLocaleString('en-IN');
-}
+const prettyDate = (iso) => (iso ? new Date(String(iso).length === 10 ? iso + 'T00:00:00' : iso).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 
-// ── Controls ────────────────────────────────────────────────────────────────
-const STATUS_OPTIONS = [
-  { value: 'active',   label: 'Active Stores' },
-  { value: 'inactive', label: 'Inactive Stores' },
-  { value: 'all',      label: 'All Stores' },
-];
-const MEASURE_OPTIONS = [
-  { value: 'units', label: 'Units' },
-  { value: 'gross', label: 'Gross (MRP)' },
-  { value: 'cost',  label: 'Cost' },
-];
+const STATUS_OPTIONS = [{ value: 'active', label: 'Active stores' }, { value: 'inactive', label: 'Inactive stores' }, { value: 'all', label: 'All stores' }];
+const MEASURE_OPTIONS = [{ value: 'units', label: 'Units' }, { value: 'gross', label: 'Value (MRP)' }, { value: 'cost', label: 'Cost' }];
 const VIEW_BY = [
-  { key: 'state',    label: 'State',    Icon: MapIcon },
-  { key: 'city',     label: 'City',     Icon: Building2 },
-  { key: 'channel',  label: 'Channel',  Icon: Layers },
-  { key: 'store',    label: 'Store',    Icon: Store },
-  { key: 'category', label: 'Category', Icon: Tag },
-  { key: 'colour',   label: 'Colour',   Icon: Palette },
-  { key: 'size',     label: 'Size',     Icon: Ruler },
+  { key: 'state', label: 'State', Icon: MapIcon }, { key: 'city', label: 'City', Icon: Building2 },
+  { key: 'channel', label: 'Channel', Icon: Layers }, { key: 'store', label: 'Store', Icon: Store },
+  { key: 'category', label: 'Category', Icon: Tag }, { key: 'colour', label: 'Colour', Icon: Palette },
+  { key: 'size', label: 'Size', Icon: Ruler },
 ];
+// Sidebar "Lens" dims → on-page chip labels (all dims applicable to store-level stock).
+const LENS_LABELS = {
+  state: 'State', city: 'City', store_code: 'Store', group_name: 'Channel',
+  category: 'Category', product: 'Product', sub_product: 'Sub-product',
+  gender_name: 'Gender', size: 'Size', color: 'Colour', season: 'Season',
+};
+// View-by dimension → the Lens filter key a row-click drills into.
+const VIEWBY_LENS = { state: 'state', city: 'city', channel: 'group_name',
+  category: 'category', colour: 'color', size: 'size' };
 
-// Per-measure value accessor + formatter so one toggle re-skins every figure.
-function measureValue(row, measure) {
-  if (measure === 'gross') return Number(row.value_gross || 0);
-  if (measure === 'cost')  return Number(row.value_cost || 0);
-  return Number(row.stock_units || 0);
-}
-const measureFmt = (n, measure) => (measure === 'units' ? fmtNum(n) : fmtCr(n));
-const measureLabel = (measure) => (measure === 'units' ? 'Units' : measure === 'gross' ? 'Gross value' : 'Cost value');
+const measureVal = (r, m) => (m === 'gross' ? Number(r.value_gross || 0) : m === 'cost' ? Number(r.value_cost || 0) : Number(r.stock_units || 0));
+const measureFmt = (n, m) => (m === 'units' ? fmtNum(n) : fmtCr(n));
+const measureLabel = (m) => (m === 'units' ? 'Units' : m === 'gross' ? 'Value' : 'Cost');
 
-// ── HeaderField — one clean capsule (copied from sales.js for parity) ────────
-function HeaderField({ label, value, onChange, options, minWidth = 120, title }) {
+function HeaderField({ label, value, onChange, options, minWidth = 120 }) {
   return (
-    <label
-      title={title}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 9, height: 34,
-        padding: '0 6px 0 12px', borderRadius: 10,
-        background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
-        cursor: 'pointer', transition: 'border-color 180ms ease',
-      }}
-      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; }}
-    >
-      <span style={{
-        fontSize: 9.5, fontWeight: 800, letterSpacing: '0.10em', textTransform: 'uppercase',
-        color: 'var(--text-muted)', fontFamily: 'var(--font-display)', whiteSpace: 'nowrap',
-      }}>{label}</span>
+    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 9, height: 34, padding: '0 6px 0 12px',
+      borderRadius: 10, background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+      <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.10em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{label}</span>
       <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-        <select
-          value={value}
-          onChange={(e) => onChange?.(e.target.value)}
-          style={{
-            height: 28, padding: '0 24px 0 6px', background: 'transparent', border: 'none',
-            fontFamily: 'var(--font-body)', fontSize: 12.5, fontWeight: 700,
-            color: 'var(--text-primary)', cursor: 'pointer', appearance: 'none',
-            WebkitAppearance: 'none', MozAppearance: 'none', outline: 'none', minWidth,
-          }}
-        >
+        <select value={value} onChange={(e) => onChange?.(e.target.value)} style={{ height: 28, padding: '0 22px 0 4px',
+          background: 'transparent', border: 'none', fontSize: 12.5, fontWeight: 700, color: 'var(--text-primary)',
+          cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', outline: 'none', minWidth }}>
           {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-        <svg style={{ position: 'absolute', right: 6, pointerEvents: 'none', opacity: 0.5 }}
-          width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4}>
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
+        <svg style={{ position: 'absolute', right: 4, pointerEvents: 'none', opacity: 0.5 }} width={11} height={11}
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4}><polyline points="6 9 12 15 18 9" /></svg>
       </div>
     </label>
   );
 }
 
-// ── KPI card (sx-card hero, mirrors network.js) ─────────────────────────────
-function KpiCard({ icon: Icon, label, value, sub, accent = '#3B82F6', loading }) {
+export default function StockAvailabilityPage() {
+  const { isDark } = useTheme();
+  const CYAN = isDark ? '#38BDF8' : '#0EA5E9';
+  const SEQ = isDark ? '#38BDF8' : '#0284C7';
+  const SERIES = isDark
+    ? ['#38BDF8', '#199e70', '#c98500', '#9085e9', '#e66767', '#d55181', '#d95926', '#3ba33b']
+    : ['#0284C7', '#1baf7a', '#eda100', '#4a3aa7', '#e34948', '#e87ba4', '#eb6834', '#008300'];
+  const axis = isDark ? 'rgba(255,255,255,0.45)' : 'rgba(15,23,42,0.55)';
+  const grid = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)';
+
+  const [range, setRange] = useState(null);       // { from, to, days, dates:[{d,u}] }
+  const [asOf, setAsOf] = useState(todayISO());
+  const [measure, setMeasure] = useState('units');
+  const [viewBy, setViewBy] = useState('state');
+  const [sortBy, setSortBy] = useState('measure');
+
+  const [summary, setSummary] = useState(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [pivot, setPivot] = useState(null);
+  const [pivotLoading, setPivotLoading] = useState(true);
+  const [storeSel, setStoreSel] = useState(null);
+  const [storeData, setStoreData] = useState(null);
+  const [storeLoading, setStoreLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  // ── Sales vs Stock feature state ──
+  const [svsWindow, setSvsWindow] = useState(90);  // trailing days ending at asOf
+  const [svs, setSvs] = useState(null);
+  const [svsLoading, setSvsLoading] = useState(false);
+  const svsRef = useRef(null);                     // for smooth-scroll on drill
+
+  // ── Sidebar "Lens" filters — shared via FiltersContext so the PremiumFilterBar
+  // in the rail drives this page. Row-clicks in the pivot ALSO write here, so a
+  // single scope object powers the KPIs, the breakdown, and Sales-vs-Stock. ──
+  const filtersApi = useFilters({ defaults: { mode: 'active' }, persist: ['mode'] });
+  const lens = filtersApi.filters;
+  const setLens = filtersApi.setFilter;
+  const clearLens = filtersApi.clearFilter;
+  const status = lens.mode || 'active';
+
+  const activeLensDims = useMemo(
+    () => Object.keys(LENS_LABELS).filter((d) => { const v = lens[d]; return Array.isArray(v) ? v.length > 0 : Boolean(v); }),
+    [lens]
+  );
+  const lensScope = useMemo(() => {
+    const p = {};
+    const put = (k, v) => { if (v && v.length) p[k] = Array.isArray(v) ? v.join(',') : v; };
+    put('state', lens.state); put('city', lens.city); put('channel', lens.group_name);
+    put('store', lens.store_code); put('category', lens.category); put('color', lens.color);
+    put('size', lens.size); put('product', lens.product); put('gender', lens.gender_name);
+    put('sub_product', lens.sub_product); put('season', lens.season);
+    return p;
+  }, [lens]);
+
+  const scope = useMemo(() => ({ status, ...lensScope }), [status, lensScope]);
+  const scopeKey = useMemo(() => JSON.stringify(scope), [scope]);
+
+  // Available date range → default the calendar to the newest snapshot.
+  useEffect(() => {
+    let a = true;
+    stockAvailabilityService.getRange().then((r) => {
+      if (!a) return; const d = r.data?.data || null; setRange(d);
+      if (d?.to) setAsOf(d.to);
+    }).catch(() => {});
+    return () => { a = false; };
+  }, []);
+
+  useEffect(() => {
+    let a = true; setSummaryLoading(true);
+    stockAvailabilityService.getSummary({ as_of: asOf, ...scope })
+      .then((s) => { if (a) setSummary(s.data?.data || null); })
+      .catch((e) => { if (a) notifyApiError(e, 'Failed to load stock summary'); })
+      .finally(() => { if (a) setSummaryLoading(false); });
+    return () => { a = false; };
+  }, [asOf, scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    let a = true; setPivotLoading(true);
+    stockAvailabilityService.getPivot({ group_by: viewBy, as_of: asOf, ...scope })
+      .then((p) => { if (a) setPivot(p.data?.data || null); })
+      .catch((e) => { if (a) notifyApiError(e, 'Failed to load breakdown'); })
+      .finally(() => { if (a) setPivotLoading(false); });
+    return () => { a = false; };
+  }, [viewBy, asOf, scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!storeSel) { setStoreData(null); return; }
+    let a = true; setStoreLoading(true);
+    const from = new Date(asOf); from.setDate(from.getDate() - 30);
+    stockAvailabilityService.getStoreTrend(storeSel.id, { from: from.toISOString().slice(0, 10), to: asOf })
+      .then((r) => { if (a) setStoreData(r.data?.data || null); })
+      .catch((e) => { if (a) notifyApiError(e, 'Failed to load store detail'); })
+      .finally(() => { if (a) setStoreLoading(false); });
+    return () => { a = false; };
+  }, [storeSel, asOf]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sales vs Stock — trailing window ending at asOf, driven by the SAME unified
+  // scope (Lens + row-click drills) as the rest of the page.
+  useEffect(() => {
+    let a = true; setSvsLoading(true);
+    const from = new Date(asOf); from.setDate(from.getDate() - (svsWindow - 1));
+    stockAvailabilityService.getSalesVsStock({ from: from.toISOString().slice(0, 10), to: asOf, ...scope })
+      .then((r) => { if (a) setSvs(r.data?.data || null); })
+      .catch((e) => { if (a) notifyApiError(e, 'Failed to load sales vs stock'); })
+      .finally(() => { if (a) setSvsLoading(false); });
+    return () => { a = false; };
+  }, [asOf, svsWindow, scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const onViewBy = useCallback((k) => { setViewBy(k); setStoreSel(null); }, []);
+  const dimLabel = VIEW_BY.find((v) => v.key === viewBy)?.label || viewBy;
+
+  // Every row is clickable. Store rows open the rich per-store panel; every other
+  // dimension drills by writing the corresponding Lens filter (toggle) — which
+  // re-scopes the KPIs, the breakdown, AND the Sales-vs-Stock card in one move.
+  const lensKeyFor = VIEWBY_LENS[viewBy];
+  const onRowClick = useCallback((r) => {
+    if (viewBy === 'store') { setStoreSel({ id: r.key, label: r.label }); return; }
+    if (!lensKeyFor) return;
+    const cur = lens[lensKeyFor];
+    const already = Array.isArray(cur) ? (cur.length === 1 && cur[0] === r.key) : cur === r.key;
+    setLens(lensKeyFor, already ? undefined : [r.key]);
+    if (!already && svsRef.current) svsRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [viewBy, lensKeyFor, lens, setLens]);
+
+  const ROW_CAP = 200;
+  const totalRows = pivot?.rows?.length || 0;
+  const sortedRows = useMemo(() => {
+    const rows = [...(pivot?.rows || [])];
+    const cmp = { measure: (a, b) => measureVal(b, measure) - measureVal(a, measure),
+      stores: (a, b) => (b.store_count || 0) - (a.store_count || 0),
+      delta: (a, b) => (b.delta_vs_30d_pct ?? -1e9) - (a.delta_vs_30d_pct ?? -1e9) }[sortBy] || (() => 0);
+    return rows.sort(cmp).slice(0, ROW_CAP);
+  }, [pivot, measure, sortBy]);
+
+  const onExport = useCallback(async () => {
+    try {
+      setExporting(true);
+      const res = await stockAvailabilityService.exportCsv({ group_by: viewBy, as_of: asOf, measure, ...scope });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
+      const a = document.createElement('a'); a.href = url; a.download = `stock-as-on-${viewBy}-${asOf}.csv`;
+      document.body.appendChild(a); a.click(); a.remove(); window.URL.revokeObjectURL(url);
+    } catch (e) { notifyApiError(e, 'Export failed'); } finally { setExporting(false); }
+  }, [viewBy, asOf, measure, scope]);
+
+  // ── recent-history sparkline (units per snapshot date, selected day marked) ──
+  // Category-axis date formatter (v = 'YYYY-MM-DD' category value). Guarded so a
+  // stray numeric index (ApexCharts quirk) never renders "Invalid Date"/1970.
+  const catDay = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v))
+    ? new Date(v + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '');
+
+  const spark = useMemo(() => (range?.dates || []).slice(-30), [range]);
+  const sparkCats = useMemo(() => spark.map((p) => p.d), [spark]);
+  const selDay = summary?.as_of || asOf;
+  const sparkOpts = useMemo(() => ({
+    chart: { type: 'area', sparkline: { enabled: false }, fontFamily: 'inherit', toolbar: { show: false }, zoom: { enabled: false }, background: 'transparent', animations: { enabled: false } },
+    colors: [SEQ], stroke: { width: 2, curve: 'smooth' },
+    fill: { type: 'gradient', gradient: { opacityFrom: 0.25, opacityTo: 0, stops: [0, 100] } },
+    dataLabels: { enabled: false },
+    markers: { size: 0, colors: [CYAN], strokeColors: isDark ? '#0B1220' : '#fff', strokeWidth: 2, hover: { size: 6 } },
+    // Highlight the selected day with a vertical annotation line (category-safe).
+    annotations: { xaxis: sparkCats.includes(selDay) ? [{ x: selDay, borderColor: CYAN, strokeDashArray: 3, opacity: 0.7 }] : [] },
+    grid: { borderColor: grid, padding: { left: 6, right: 8 } },
+    xaxis: { type: 'category', categories: sparkCats, tickPlacement: 'on', labels: { style: { colors: axis, fontSize: '10px' }, rotate: -30, hideOverlappingLabels: true, formatter: catDay }, axisBorder: { show: false }, axisTicks: { show: false }, crosshairs: { show: true } },
+    yaxis: { labels: { style: { colors: axis, fontSize: '10px' }, formatter: (v) => cnt(v) } },
+    tooltip: { theme: isDark ? 'dark' : 'light', x: { formatter: (v, o) => prettyDate(sparkCats[o?.dataPointIndex] ?? v) }, y: { formatter: (v) => fmtNum(v) + ' units', title: { formatter: () => 'On hand' } } },
+  }), [sparkCats, selDay, isDark]); // eslint-disable-line react-hooks/exhaustive-deps
+  const sparkSeries = useMemo(() => [{ name: 'On hand', data: spark.map((p) => p.u) }], [spark]);
+
+  // store dual chart — shared category axis so line + columns align, hover is 1:1
+  const storeSorted = useMemo(() => [...(storeData?.series || [])].sort((a, b) => (a.date < b.date ? -1 : 1)), [storeData]);
+  const storeCats = useMemo(() => storeSorted.map((s) => s.date), [storeSorted]);
+  const storeOpts = useMemo(() => ({
+    chart: { type: 'line', fontFamily: 'inherit', toolbar: { show: false }, zoom: { enabled: false }, background: 'transparent', animations: { enabled: false } },
+    colors: [SEQ, '#e34948'], stroke: { width: [3, 0], curve: 'smooth' }, markers: { size: 0, hover: { size: 5 } }, plotOptions: { bar: { columnWidth: '55%', borderRadius: 2 } },
+    dataLabels: { enabled: false }, legend: { show: true, position: 'bottom', labels: { colors: axis } },
+    grid: { borderColor: grid }, xaxis: { type: 'category', categories: storeCats, tickPlacement: 'on', labels: { style: { colors: axis, fontSize: '11px' }, rotate: -30, hideOverlappingLabels: true, formatter: catDay }, axisBorder: { show: false }, axisTicks: { show: false }, crosshairs: { show: true } },
+    yaxis: [{ labels: { style: { colors: axis }, formatter: (v) => fmtNum(Math.round(v)) } }, { opposite: true, labels: { style: { colors: axis }, formatter: (v) => fmtNum(Math.round(v)) } }],
+    tooltip: { theme: isDark ? 'dark' : 'light', shared: true, x: { formatter: (v, o) => prettyDate(storeCats[o?.dataPointIndex] ?? v) } },
+  }), [storeCats, isDark]); // eslint-disable-line react-hooks/exhaustive-deps
+  const storeSeries = useMemo(() => ([
+    { name: 'Stock on hand', type: 'line', data: storeSorted.map((s) => s.stock_on_hand) },
+    { name: 'Units sold', type: 'column', data: storeSorted.map((s) => s.units_sold) },
+  ]), [storeSorted]);
+
+  // ── Sales vs Stock chart — shared daily category axis (crosshair snaps 1:1) ──
+  const svsSorted = useMemo(() => [...(svs?.series || [])].sort((a, b) => (a.date < b.date ? -1 : 1)), [svs]);
+  const svsCats = useMemo(() => svsSorted.map((s) => s.date), [svsSorted]);
+  const svsOpts = useMemo(() => ({
+    chart: { type: 'line', fontFamily: 'inherit', toolbar: { show: false }, zoom: { enabled: false }, stacked: false, background: 'transparent', animations: { enabled: false } },
+    colors: [SEQ, '#e34948'], stroke: { width: [3, 0], curve: 'smooth' }, markers: { size: 0, hover: { size: 5 } }, plotOptions: { bar: { columnWidth: '52%', borderRadius: 2 } },
+    fill: { type: ['gradient', 'solid'], gradient: { opacityFrom: 0.22, opacityTo: 0, stops: [0, 100] } },
+    dataLabels: { enabled: false }, legend: { show: true, position: 'bottom', fontSize: '12px', labels: { colors: axis }, markers: { width: 10, height: 10, radius: 3 } },
+    grid: { borderColor: grid, padding: { left: 6, right: 8 } },
+    xaxis: { type: 'category', categories: svsCats, tickPlacement: 'on', labels: { style: { colors: axis, fontSize: '11px' }, rotate: -30, hideOverlappingLabels: true, formatter: catDay }, axisBorder: { show: false }, axisTicks: { show: false }, crosshairs: { show: true } },
+    yaxis: [
+      { seriesName: 'Stock on hand', labels: { style: { colors: axis, fontSize: '11px' }, formatter: (v) => cnt(Math.round(v)) }, title: { text: 'Stock on hand', style: { color: axis, fontWeight: 600 } } },
+      { opposite: true, seriesName: 'Units sold', labels: { style: { colors: axis, fontSize: '11px' }, formatter: (v) => fmtNum(Math.round(v)) }, title: { text: 'Units sold / day', style: { color: axis, fontWeight: 600 } } },
+    ],
+    tooltip: { theme: isDark ? 'dark' : 'light', shared: true, intersect: false, x: { formatter: (v, o) => prettyDate(svsCats[o?.dataPointIndex] ?? v) } },
+  }), [svsCats, isDark]); // eslint-disable-line react-hooks/exhaustive-deps
+  const svsSeries = useMemo(() => ([
+    { name: 'Stock on hand', type: 'area', data: svsSorted.map((s) => s.stock_on_hand) },
+    { name: 'Units sold', type: 'column', data: svsSorted.map((s) => s.units_sold) },
+  ]), [svsSorted]);
+
+  const snapped = summary?.as_of && summary.as_of !== asOf;
+  const heroVal = measure === 'units' ? cnt(summary?.stock_units) : fmtCr(measure === 'cost' ? summary?.value_cost : summary?.value_gross);
+  const delta = summary?.delta_units_vs_30d_pct;
+
   return (
-    <div className="sx-card" style={{ padding: '18px 20px 16px', position: 'relative', overflow: 'hidden' }}>
-      <div style={{ position: 'absolute', top: 0, left: 14, right: 14, height: 2,
-        background: `linear-gradient(90deg, ${accent}, ${accent}cc)`, borderRadius: 2, opacity: 0.85 }} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, marginTop: 4 }}>
-        <div style={{ width: 28, height: 28, borderRadius: 8, background: `${accent}14`, color: accent,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Icon size={14} strokeWidth={2} />
+    <FiltersProvider value={filtersApi}>
+    <DashboardLayout title="Stock Availability"
+      subtitle="As-on-date stock history — pick any day and see exactly what was on hand across the network">
+      <div className="sa-page">
+        {/* ── AS-ON toolbar ── */}
+        <div className="sa-toolbar">
+          <div className="sa-dateblock">
+            <CalendarDays size={18} style={{ color: CYAN, flexShrink: 0 }} />
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span className="sa-date-lbl">Stock as on</span>
+              <input type="date" className="sa-date" value={asOf} min={range?.from || undefined} max={range?.to || todayISO()}
+                onChange={(e) => e.target.value && setAsOf(e.target.value)} aria-label="Stock as-on date" />
+            </div>
+          </div>
+          <div style={{ flex: 1 }} />
+          <HeaderField label="Measure" value={measure} onChange={setMeasure} options={MEASURE_OPTIONS} minWidth={96} />
+          <HeaderField label="Status" value={status} onChange={(v) => setLens('mode', v)} options={STATUS_OPTIONS} minWidth={104} />
         </div>
-        <span style={{ fontFamily: 'var(--font-body)', fontSize: 11.5, fontWeight: 800,
-          letterSpacing: '0.08em', textTransform: 'uppercase', color: T.secondary }}>{label}</span>
+
+        {/* ── Active Lens filters (sidebar + row-click drills) as removable chips ── */}
+        {activeLensDims.length > 0 && (
+          <div className="sa-chips">
+            <span className="sa-unit" style={{ color: CYAN, marginRight: 2 }}>Filtered by</span>
+            {activeLensDims.map((dim) => {
+              const v = lens[dim]; const vals = Array.isArray(v) ? v : [v];
+              return (
+                <span key={dim} className="sa-chip">
+                  <span className="sa-chip-k">{LENS_LABELS[dim]}</span>
+                  <span className="sa-chip-v" title={vals.join(', ')}>{vals.join(', ')}</span>
+                  <button type="button" onClick={() => clearLens(dim)} aria-label={`Clear ${LENS_LABELS[dim]}`} className="sa-chip-x">✕</button>
+                </span>
+              );
+            })}
+            {activeLensDims.length > 1 && (
+              <button type="button" className="sa-chip-clear" onClick={() => activeLensDims.forEach((d) => clearLens(d))}>Clear all</button>
+            )}
+          </div>
+        )}
+
+        {/* ── HERO ── */}
+        <div className="sa-hero">
+          <div className="sa-hero-glow" />
+          <div style={{ position: 'relative' }}>
+            <div className="sa-eyebrow"><Boxes size={12} /> Stock on hand · {prettyDate(summary?.as_of || asOf)}</div>
+            {summaryLoading ? <div className="sx-shimmer" style={{ height: 60, width: '55%', borderRadius: 10 }} /> : (
+              <div className="sa-hero-num">
+                {heroVal}
+                {delta != null && (
+                  <span className={`sa-delta ${delta >= 0 ? 'up' : 'down'}`}>
+                    {delta >= 0 ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}{Math.abs(delta)}% <span style={{ opacity: 0.7, fontWeight: 600 }}>vs ~30d</span>
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="sa-hero-sub">
+              <span><b>{fmtNum(summary?.store_count)}</b> stores</span>
+              <span><b>{cnt(summary?.sku_count)}</b> SKUs</span>
+              <span><b>{fmtNum(summary?.avg_per_store)}</b> units/store</span>
+              {snapped && <span className="sa-snap">nearest snapshot · {prettyDate(summary.as_of)}</span>}
+            </div>
+          </div>
+        </div>
+
+        {/* ── KPI + recent history ── */}
+        <div className="sa-grid2">
+          <div className="sx-card" style={{ padding: 18 }}>
+            <div className="sa-kpis">
+              <Kpi icon={Boxes} label="Units" accent={CYAN} loading={summaryLoading} value={fmtNum(summary?.stock_units)} sub="on hand" />
+              <Kpi icon={IndianRupee} label={measure === 'cost' ? 'Cost' : 'Value'} accent="#10B981" loading={summaryLoading} value={fmtCr(measure === 'cost' ? summary?.value_cost : summary?.value_gross)} sub={measure === 'cost' ? 'qty×cost' : 'qty×MRP'} />
+              <Kpi icon={Store} label="Stores" accent="#F59E0B" loading={summaryLoading} value={fmtNum(summary?.store_count)} sub="with stock" />
+              <Kpi icon={Package} label="SKUs" accent="#A855F7" loading={summaryLoading} value={cnt(summary?.sku_count)} sub="distinct" />
+            </div>
+          </div>
+          <div className="sx-card" style={{ padding: 18 }}>
+            <SecTitle icon={Activity} label="Recent history" right={<span className="sa-unit">last {spark.length} snapshots</span>} />
+            {range == null ? <div className="sx-shimmer" style={{ height: 120, borderRadius: 8 }} />
+              : spark.length ? <Chart options={sparkOpts} series={sparkSeries} type="area" height={130} />
+              : <Empty label="No snapshots yet" small />}
+          </div>
+        </div>
+
+        {/* ── store panel OR breakdown ── */}
+        {storeSel ? (
+          <div className="sx-card" style={{ padding: 20, marginTop: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <button onClick={() => setStoreSel(null)} className="sa-back"><ArrowLeft size={13} /> Back</button>
+              <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-primary)' }}>
+                {storeData?.store ? `${storeData.store.code} · ${storeData.store.name}` : storeSel.label}
+              </div>
+              {storeData?.store && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{storeData.store.city}, {storeData.store.state} · {storeData.store.channel}</span>}
+            </div>
+            {storeLoading ? <div className="sx-shimmer" style={{ height: 300, borderRadius: 10 }} /> : storeData ? (
+              <>
+                <div className="sa-statgrid">
+                  <Stat icon={Boxes} label="Stock now" value={fmtNum(storeData.summary.stock_now)} accent={CYAN} />
+                  <Stat icon={BarChart2} label="Avg stock" value={fmtNum(storeData.summary.avg_stock)} accent="#A855F7" />
+                  <Stat icon={Activity} label="Avg sale/day" value={fmtNum(storeData.summary.avg_sale_per_day)} accent="#e34948" />
+                  <Stat icon={Clock} label="Cover days" value={storeData.summary.cover_days == null ? '—' : `${storeData.summary.cover_days}d`} accent="#10B981" />
+                </div>
+                {storeData.series?.length ? <Chart options={storeOpts} series={storeSeries} type="line" height={300} /> : <Empty label="No history for this store in the window" small />}
+                {storeData.recommendation && <div className="sa-reco"><strong style={{ color: 'var(--text-primary)' }}>Recommendation · </strong>{storeData.recommendation}</div>}
+              </>
+            ) : <Empty label="No data" small />}
+          </div>
+        ) : (
+          <>
+            {/* view-by + export */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '18px 0 12px' }}>
+              <div className="sa-viewby">
+                {VIEW_BY.map(({ key, label, Icon }) => (
+                  <button key={key} className={`sa-vb ${viewBy === key ? 'on' : ''}`} onClick={() => onViewBy(key)}><Icon size={13} /> {label}</button>
+                ))}
+              </div>
+              <div style={{ flex: 1 }} />
+              <button className="sa-export" onClick={onExport} disabled={exporting || !pivot?.rows?.length}>
+                <Download size={13} /> {exporting ? 'Exporting…' : 'Export CSV'}
+              </button>
+            </div>
+
+            <div className="sx-card" style={{ overflow: 'hidden' }}>
+              <div className="sa-tblhead">
+                <span className="sa-unit" style={{ color: CYAN }}>By {dimLabel} · as on {prettyDate(summary?.as_of || asOf)}</span>
+                {!pivotLoading && pivot?.rows && <span className="sa-count">{fmtNum(totalRows)}</span>}
+                {!pivotLoading && totalRows > ROW_CAP && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>top {ROW_CAP} · export for all</span>}
+                <div style={{ flex: 1 }} />
+                <HeaderField label="Sort" value={sortBy} onChange={setSortBy} minWidth={92}
+                  options={[{ value: 'measure', label: measureLabel(measure) }, { value: 'stores', label: 'Stores' }, { value: 'delta', label: 'Δ vs 30d' }]} />
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="sa-tbl">
+                  <thead><tr>
+                    <th className="l">{dimLabel}</th><th>Stores</th><th>Stock (u)</th>{measure !== 'units' && <th>{measureLabel(measure)}</th>}<th>Δ vs 30d</th>
+                  </tr></thead>
+                  <tbody>
+                    {pivotLoading ? Array.from({ length: 10 }).map((_, i) => <tr key={i}><td colSpan={7}><div className="sx-shimmer" style={{ height: 14, borderRadius: 4 }} /></td></tr>)
+                      : sortedRows.length ? sortedRows.map((r, i) => {
+                        const clickable = viewBy === 'store' || !!lensKeyFor;
+                        const active = lensKeyFor && (Array.isArray(lens[lensKeyFor]) ? lens[lensKeyFor].includes(r.key) : lens[lensKeyFor] === r.key);
+                        return (
+                        <tr key={r.key || i} className={`${clickable ? 'clk' : ''}${active ? ' on' : ''}`} onClick={() => clickable && onRowClick(r)}>
+                          <td className="l strong">{r.label || '—'} {clickable && <ChevronRight size={12} style={{ color: active ? CYAN : 'var(--text-muted)', verticalAlign: 'middle' }} />}</td>
+                          <td>{fmtNum(r.store_count)}</td>
+                          <td className="strong">{fmtNum(r.stock_units)}</td>
+                          {measure !== 'units' && <td style={{ color: '#10B981', fontWeight: 700 }}>{fmtCr(measure === 'cost' ? r.value_cost : r.value_gross)}</td>}
+                          <td className={r.delta_vs_30d_pct == null ? '' : r.delta_vs_30d_pct >= 0 ? 'pos' : 'neg'}>{r.delta_vs_30d_pct == null ? '—' : `${r.delta_vs_30d_pct > 0 ? '+' : ''}${r.delta_vs_30d_pct}%`}</td>
+                        </tr>); }) : <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)', fontWeight: 700 }}>No stock on this date for this selection</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ── SALES vs STOCK ── */}
+        <div className="sx-card" ref={svsRef} style={{ padding: 20, marginTop: 16 }}>
+          <div className="sa-svs-head">
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ width: 26, height: 26, borderRadius: 8, background: 'var(--bg-elevated)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Activity size={13} color={CYAN} /></span>
+                <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)' }}>Sales vs Stock</span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                Daily on-hand vs units sold — {activeLensDims.length
+                  ? <>scoped to <b style={{ color: CYAN }}>{activeLensDims.map((d) => LENS_LABELS[d]).join(' · ')}</b> (click any row above, or use the Lens, to re-scope)</>
+                  : <>whole network · click any row above or use the <b style={{ color: CYAN }}>Lens</b> to scope to a state, store, category, colour or size</>}
+              </div>
+            </div>
+            <div style={{ flex: 1 }} />
+            <HeaderField label="Window" value={String(svsWindow)} onChange={(v) => setSvsWindow(Number(v))} minWidth={78}
+              options={[{ value: '30', label: '30 days' }, { value: '60', label: '60 days' }, { value: '90', label: '90 days' }, { value: '180', label: '180 days' }]} />
+          </div>
+
+          {svsLoading ? <div className="sx-shimmer" style={{ height: 300, borderRadius: 10, marginTop: 14 }} /> : svs ? (
+            <>
+              <div className="sa-svs-kpis">
+                <Stat icon={Boxes} label="Stock now" value={fmtNum(svs.summary.stock_now)} accent={CYAN} />
+                <Stat icon={Activity} label="Avg sold/day" value={fmtNum(svs.summary.avg_sale_per_day)} accent="#e34948" />
+                <Stat icon={TrendingUp} label="Total sold" value={fmtNum(svs.summary.total_sold)} accent="#F59E0B" />
+                <Stat icon={Clock} label="Cover days" value={svs.summary.cover_days == null ? '—' : `${svs.summary.cover_days}d`} accent="#10B981" />
+                <Stat icon={Layers} label="Sell-through" value={svs.summary.sell_through_pct == null ? '—' : `${svs.summary.sell_through_pct}%`} accent="#A855F7" />
+              </div>
+              {svs.series?.length ? <Chart options={svsOpts} series={svsSeries} type="line" height={320} /> : <Empty label="No stock/sales in this window for this scope" small />}
+            </>
+          ) : <Empty label="No data" small />}
+        </div>
       </div>
-      {loading
-        ? <div className="sx-shimmer" style={{ height: 30, width: '70%', borderRadius: 6 }} />
-        : <div className="sx-hero-num" style={{ fontSize: 26, marginBottom: 6 }}>{value}</div>}
-      {sub && <div style={{ fontSize: 12, fontWeight: 600, color: T.secondary, lineHeight: 1.4 }}>{sub}</div>}
-    </div>
+
+      <style jsx global>{`
+        input.sa-date::-webkit-calendar-picker-indicator { filter: brightness(0) invert(1); opacity: 0.85; cursor: pointer; }
+        html.theme-light input.sa-date::-webkit-calendar-picker-indicator { filter: brightness(0); opacity: 0.6; }
+        /* Crosshair + tooltip trail the cursor because ApexCharts eases them with
+           a CSS transition — kill it so they SNAP to the point under the mouse. */
+        .apexcharts-xcrosshairs, .apexcharts-ycrosshairs { transition: none !important; }
+        .apexcharts-tooltip { transition: none !important; }
+        .apexcharts-marker { transition: none !important; }
+      `}</style>
+      <style jsx>{`
+        .sa-page { padding-bottom: 40px; }
+        .sa-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+        .sa-dateblock { display: inline-flex; align-items: center; gap: 12px; padding: 8px 16px; border-radius: 14px;
+          background: var(--bg-surface); border: 1px solid ${CYAN}44; box-shadow: 0 0 0 3px ${CYAN}10, 0 2px 10px rgba(2,6,23,0.06); }
+        .sa-date-lbl { font-size: 9.5px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: var(--text-muted); }
+        .sa-date { border: none; background: transparent; color: var(--text-primary); font-size: 17px; font-weight: 800;
+          font-family: inherit; outline: none; cursor: pointer; padding: 0; letter-spacing: -0.01em; }
+        .sa-hero { position: relative; overflow: hidden; border-radius: 20px; padding: 26px 28px; margin-bottom: 16px;
+          background: linear-gradient(135deg, var(--bg-surface), var(--bg-elevated)); border: 1px solid var(--border-subtle); }
+        .sa-hero-glow { position: absolute; inset: 0; background: radial-gradient(600px 260px at 85% -30%, ${CYAN}26, transparent 60%); }
+        .sa-eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px; }
+        .sa-hero-num { font-size: clamp(40px, 6.5vw, 66px); font-weight: 850; letter-spacing: -0.03em; line-height: 1; color: var(--text-primary); display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+        .sa-delta { font-size: 14px; font-weight: 800; display: inline-flex; align-items: center; gap: 3px; padding: 4px 10px; border-radius: 999px; }
+        .sa-delta.up { color: #0a7f4f; background: rgba(16,163,74,0.14); } .sa-delta.down { color: #e34948; background: rgba(227,73,72,0.14); }
+        .sa-hero-sub { display: flex; gap: 8px 22px; flex-wrap: wrap; margin-top: 16px; font-size: 14px; color: var(--text-secondary); }
+        .sa-hero-sub b { color: var(--text-primary); font-weight: 800; }
+        .sa-snap { color: ${CYAN}; font-weight: 700; }
+        .sa-grid2 { display: grid; grid-template-columns: 1fr 1.1fr; gap: 16px; }
+        .sa-kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; height: 100%; }
+        .sa-unit { font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+        .sa-viewby { display: inline-flex; flex-wrap: wrap; gap: 5px; padding: 4px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 12px; }
+        .sa-vb { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 8px; border: none; cursor: pointer; font-size: 12px; font-weight: 700; background: transparent; color: var(--text-secondary); transition: all 0.15s; }
+        .sa-vb.on { background: ${CYAN}; color: #062634; box-shadow: 0 4px 12px ${CYAN}55; }
+        .sa-export { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--border-subtle); background: var(--bg-elevated); cursor: pointer; color: var(--text-primary); font-size: 12px; font-weight: 700; }
+        .sa-export:disabled { opacity: 0.5; }
+        .sa-tblhead { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border-subtle); flex-wrap: wrap; }
+        .sa-count { font-size: 10px; font-weight: 800; color: #062634; background: ${CYAN}; border-radius: 100px; padding: 2px 8px; }
+        .sa-tbl { width: 100%; border-collapse: collapse; }
+        .sa-tbl th, .sa-tbl td { padding: 10px 14px; font-size: 13px; white-space: nowrap; border-bottom: 1px solid var(--border-subtle); text-align: right; }
+        .sa-tbl th { font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+        .sa-tbl th.l, .sa-tbl td.l { text-align: left; }
+        .sa-tbl td { color: var(--text-secondary); font-weight: 600; font-variant-numeric: tabular-nums; }
+        .sa-tbl td.strong { color: var(--text-primary); font-weight: 800; }
+        .sa-tbl tr.clk { cursor: pointer; } .sa-tbl tbody tr:hover { background: var(--bg-card-hover, rgba(148,163,184,0.06)); }
+        .sa-tbl td.pos { color: #0a7f4f; font-weight: 800; } .sa-tbl td.neg { color: #e34948; font-weight: 800; }
+        .sa-back { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 1px solid var(--border-subtle); border-radius: 8px; padding: 6px 10px; cursor: pointer; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+        .sa-statgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+        .sa-reco { margin-top: 14px; padding: 12px 14px; border-radius: 10px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); font-size: 13px; font-weight: 600; color: var(--text-secondary); line-height: 1.5; }
+        .sa-svs-head { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+        .sa-svs-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 14px; margin-bottom: 6px; border-bottom: 1px solid var(--border-subtle); }
+        .sa-svs-clear { border: none; background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 700; cursor: pointer; padding: 4px 6px; }
+        .sa-svs-clear:hover { color: var(--text-primary); }
+        .sa-svs-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 14px 0 16px; }
+        /* ── active-filter chips ── */
+        .sa-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 16px; padding: 10px 14px;
+          border-radius: 12px; background: ${CYAN}0d; border: 1px solid ${CYAN}33; }
+        .sa-chip { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 4px 0 11px; border-radius: 999px;
+          background: var(--bg-surface); border: 1px solid var(--border-subtle); box-shadow: 0 1px 3px rgba(2,6,23,0.06); max-width: 320px; }
+        .sa-chip-k { font-size: 9px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: ${CYAN}; flex-shrink: 0; }
+        .sa-chip-v { font-size: 12.5px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sa-chip-x { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: none; border-radius: 50%;
+          background: transparent; color: var(--text-muted); cursor: pointer; font-size: 11px; line-height: 1; flex-shrink: 0; transition: all 0.15s; }
+        .sa-chip-x:hover { background: ${CYAN}; color: #062634; }
+        .sa-chip-clear { border: none; background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 700; cursor: pointer; padding: 4px 6px; }
+        .sa-chip-clear:hover { color: var(--text-primary); }
+        .sa-tbl tr.on { background: ${CYAN}14; }
+        .sa-tbl tr.on td.l.strong { color: ${CYAN}; }
+        @media (max-width: 900px) { .sa-svs-kpis { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 1000px) { .sa-grid2 { grid-template-columns: 1fr; } .sa-statgrid { grid-template-columns: repeat(2, 1fr); } }
+      `}</style>
+    </DashboardLayout>
+    </FiltersProvider>
   );
 }
 
-// ── Section title (mirrors network.js) ──────────────────────────────────────
-function SectionTitle({ icon: Icon, label, right }) {
+function Kpi({ icon: Icon, label, value, sub, accent, loading }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-      <span style={{ width: 26, height: 26, borderRadius: 8, background: 'var(--bg-elevated)',
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <Icon size={13} color={T.primary} strokeWidth={2.4} />
-      </span>
-      <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 800,
-        letterSpacing: '-0.01em', color: T.primary }}>{label}</span>
+    <div style={{ borderRadius: 12, background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', padding: '14px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span style={{ width: 24, height: 24, borderRadius: 7, background: accent + '1e', color: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon size={13} /></span>
+        <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{label}</span>
+      </div>
+      {loading ? <div className="sx-shimmer" style={{ height: 24, width: '70%', borderRadius: 6 }} /> : <div style={{ fontSize: 23, fontWeight: 850, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>{value}</div>}
+      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>{sub}</div>
+    </div>
+  );
+}
+function SecTitle({ icon: Icon, label, right }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+      <span style={{ width: 26, height: 26, borderRadius: 8, background: 'var(--bg-elevated)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon size={13} color="var(--text-primary)" /></span>
+      <span style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{label}</span>
       {right && <div style={{ marginLeft: 'auto' }}>{right}</div>}
     </div>
   );
 }
-
-// Line palette (brand-led, distinct hues for multi-line series)
-const LINE_COLORS = ['#EF4444', '#3B82F6', '#10B981', '#F59E0B', '#A855F7', '#EC4899', '#14B8A6', '#F97316'];
-
-export default function StockAvailabilityPage() {
-  const { preset, setPreset, setCustom, fromISO, toISO } = useTimeRange('mtd');
-  const { isDark } = useTheme();
-  const [mode, setMode]       = useState('active');
-  const [measure, setMeasure] = useState('units');
-  const [viewBy, setViewBy]   = useState('state');
-
-  // Geographic drill: state → city → store. Each entry narrows the scope.
-  const [drill, setDrill] = useState([]); // [{ dim:'state', key, label }, ...]
-  const [storeSel, setStoreSel] = useState(null); // { id, label } → opens panel
-
-  // Effective table dimension = chosen viewBy, unless drilling overrides it.
-  const effectiveGroupBy = useMemo(() => {
-    if (drill.length === 0) return viewBy;
-    const last = drill[drill.length - 1].dim;
-    if (last === 'state') return 'city';
-    if (last === 'city')  return 'store';
-    return viewBy;
-  }, [drill, viewBy]);
-
-  // Filters derived from the drill path (state/city) sent to every endpoint.
-  const drillFilters = useMemo(() => {
-    const f = {};
-    for (const d of drill) f[d.dim] = d.key;
-    return f;
-  }, [drill]);
-
-  // Scope params WITHOUT measure — summary + pivot are measure-independent
-  // (the backend returns units, gross AND cost in every row), so flipping the
-  // Units/Gross/Cost toggle is a pure client-side re-read with zero network.
-  const scopeParams = useMemo(() => ({
-    status: mode, ...drillFilters,
-  }), [mode, drillFilters]);
-  const scopeKey = useMemo(() => JSON.stringify(scopeParams), [scopeParams]);
-
-  // ── Data state (independent loaders so each section paints as it lands) ───
-  const [summary, setSummary] = useState(null);
-  const [summaryLoading, setSummaryLoading] = useState(true);
-  const [trend, setTrend]     = useState(null);
-  const [trendLoading, setTrendLoading] = useState(true);
-  const [pivot, setPivot]     = useState(null);
-  const [pivotLoading, setPivotLoading] = useState(true);
-  const [storeData, setStoreData] = useState(null);
-  const [storeLoading, setStoreLoading] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [sortBy, setSortBy] = useState('measure'); // measure | cover | delta | stores
-
-  // Reset drill + store panel whenever the base View-by changes.
-  const onViewByChange = useCallback((k) => {
-    setViewBy(k); setDrill([]); setStoreSel(null);
-  }, []);
-
-  // ── Summary (fast) — independent of measure ───────────────────────────────
-  useEffect(() => {
-    let alive = true;
-    setSummaryLoading(true);
-    stockAvailabilityService.getSummary({ as_of: toISO, ...scopeParams })
-      .then((s) => { if (alive) setSummary(s.data?.data || null); })
-      .catch((err) => { if (alive) notifyApiError(err, 'Failed to load summary'); })
-      .finally(() => { if (alive) setSummaryLoading(false); });
-    return () => { alive = false; };
-  }, [scopeKey, toISO]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Pivot (can be heavy) — independent of measure, paints when ready ──────
-  useEffect(() => {
-    let alive = true;
-    setPivotLoading(true);
-    stockAvailabilityService.getPivot({ group_by: effectiveGroupBy, as_of: toISO, ...scopeParams })
-      .then((pv) => { if (alive) setPivot(pv.data?.data || null); })
-      .catch((err) => { if (alive) notifyApiError(err, 'Failed to load pivot'); })
-      .finally(() => { if (alive) setPivotLoading(false); });
-    return () => { alive = false; };
-  }, [scopeKey, effectiveGroupBy, toISO]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Trend (depends on measure — series values are in the chosen unit) ─────
-  useEffect(() => {
-    let alive = true;
-    setTrendLoading(true);
-    stockAvailabilityService.getTrend({ group_by: effectiveGroupBy, from: fromISO, to: toISO, top: 8, measure, ...scopeParams })
-      .then((t) => { if (alive) setTrend(t.data?.data || null); })
-      .catch((err) => { if (alive) notifyApiError(err, 'Failed to load trend'); })
-      .finally(() => { if (alive) setTrendLoading(false); });
-    return () => { alive = false; };
-  }, [scopeKey, effectiveGroupBy, measure, fromISO, toISO]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Fetch per-store trend when a store is selected ────────────────────────
-  useEffect(() => {
-    if (!storeSel) { setStoreData(null); return; }
-    let alive = true;
-    setStoreLoading(true);
-    stockAvailabilityService.getStoreTrend(storeSel.id, { from: fromISO, to: toISO })
-      .then((r) => { if (alive) setStoreData(r.data?.data || null); })
-      .catch((err) => { if (alive) notifyApiError(err, 'Failed to load store detail'); })
-      .finally(() => { if (alive) setStoreLoading(false); });
-    return () => { alive = false; };
-  }, [storeSel, fromISO, toISO]);
-
-  // ── Drill handlers ────────────────────────────────────────────────────────
-  const drillInto = useCallback((row) => {
-    if (effectiveGroupBy === 'store') {
-      setStoreSel({ id: row.key, label: row.label });
-      return;
-    }
-    if (effectiveGroupBy === 'state' || effectiveGroupBy === 'city') {
-      setDrill((d) => [...d, { dim: effectiveGroupBy, key: row.label, label: row.label }]);
-    }
-    // channel/category/colour/size rows aren't drillable (no sub-level).
-  }, [effectiveGroupBy]);
-
-  const breadcrumbTo = useCallback((idx) => {
-    setStoreSel(null);
-    setDrill((d) => d.slice(0, idx));
-  }, []);
-
-  // Sorted pivot rows for the table. High-cardinality dimensions (Colour, Size)
-  // can return 800+ members — sort all, but only render the top slice so the
-  // DOM stays light and the page feels instant. CSV export keeps the full set.
-  const ROW_CAP = 100;
-  const totalRows = pivot?.rows?.length || 0;
-  const sortedRows = useMemo(() => {
-    const rows = [...(pivot?.rows || [])];
-    const cmp = {
-      measure: (a, b) => measureValue(b, measure) - measureValue(a, measure),
-      stores:  (a, b) => b.store_count - a.store_count,
-      cover:   (a, b) => (b.cover_days ?? -1) - (a.cover_days ?? -1),
-      delta:   (a, b) => (b.delta_vs_30d_pct ?? -1e9) - (a.delta_vs_30d_pct ?? -1e9),
-    }[sortBy] || (() => 0);
-    rows.sort(cmp);
-    return rows.slice(0, ROW_CAP);
-  }, [pivot, measure, sortBy]);
-
-  const dimLabel = (VIEW_BY.find((v) => v.key === effectiveGroupBy)?.label) || effectiveGroupBy;
-  const isDrillable = effectiveGroupBy === 'state' || effectiveGroupBy === 'city' || effectiveGroupBy === 'store';
-
-  // ── Apexcharts: multi-line stock-on-hand trend ────────────────────────────
-  const axisColor = isDark ? 'rgba(255,255,255,0.45)' : 'rgba(15,23,42,0.55)';
-  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)';
-
-  const trendOptions = useMemo(() => ({
-    chart: { type: 'line', fontFamily: 'Inter, system-ui, sans-serif', toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: true, speed: 500 }, background: 'transparent' },
-    colors: LINE_COLORS,
-    stroke: { width: 2.5, curve: 'smooth' },
-    markers: { size: (trend?.dates?.length || 0) <= 2 ? 5 : 0, hover: { size: 6 } },
-    dataLabels: { enabled: false },
-    legend: { show: true, position: 'bottom', fontSize: '12px', labels: { colors: axisColor }, markers: { width: 9, height: 9, radius: 9 } },
-    grid: { borderColor: gridColor, strokeDashArray: 4, padding: { left: 6, right: 12 } },
-    xaxis: {
-      type: 'category', categories: trend?.dates || [],
-      labels: { style: { colors: axisColor, fontSize: '11px' }, rotate: -30, hideOverlappingLabels: true },
-      axisBorder: { show: false }, axisTicks: { show: false },
-    },
-    yaxis: { labels: { style: { colors: axisColor, fontSize: '11px' }, formatter: (v) => measureFmt(v, measure) } },
-    tooltip: { theme: isDark ? 'dark' : 'light', y: { formatter: (v) => measureFmt(v, measure) } },
-  }), [trend, measure, axisColor, gridColor, isDark]);
-
-  const trendSeries = useMemo(
-    () => (trend?.series || []).map((s) => ({ name: s.label, data: s.points.map((p) => p.value) })),
-    [trend]
-  );
-
-  // ── Apexcharts: store dual-axis (stock line + sales bars) ─────────────────
-  const storeOptions = useMemo(() => ({
-    chart: { type: 'line', fontFamily: 'Inter, system-ui, sans-serif', toolbar: { show: false }, zoom: { enabled: false }, stacked: false, background: 'transparent' },
-    colors: ['#3B82F6', '#EF4444'],
-    stroke: { width: [3, 0], curve: 'smooth' },
-    plotOptions: { bar: { columnWidth: '55%', borderRadius: 2 } },
-    dataLabels: { enabled: false },
-    legend: { show: true, position: 'bottom', labels: { colors: axisColor } },
-    grid: { borderColor: gridColor, strokeDashArray: 4 },
-    xaxis: {
-      type: 'category', categories: (storeData?.series || []).map((s) => s.date),
-      labels: { style: { colors: axisColor, fontSize: '11px' }, rotate: -30, hideOverlappingLabels: true },
-      axisBorder: { show: false }, axisTicks: { show: false },
-    },
-    yaxis: [
-      { seriesName: 'Stock on hand', labels: { style: { colors: axisColor, fontSize: '11px' }, formatter: (v) => fmtNum(Math.round(v)) }, title: { text: 'Stock on hand', style: { color: axisColor } } },
-      { opposite: true, seriesName: 'Units sold', labels: { style: { colors: axisColor, fontSize: '11px' }, formatter: (v) => fmtNum(Math.round(v)) }, title: { text: 'Units sold/day', style: { color: axisColor } } },
-    ],
-    tooltip: { theme: isDark ? 'dark' : 'light', shared: true },
-  }), [storeData, axisColor, gridColor, isDark]);
-
-  const storeSeries = useMemo(() => ([
-    { name: 'Stock on hand', type: 'line',   data: (storeData?.series || []).map((s) => s.stock_on_hand) },
-    { name: 'Units sold',    type: 'column', data: (storeData?.series || []).map((s) => s.units_sold) },
-  ]), [storeData]);
-
-  // ── CSV export ────────────────────────────────────────────────────────────
-  const onExport = useCallback(async () => {
-    try {
-      setExporting(true);
-      const res = await stockAvailabilityService.exportCsv({ group_by: effectiveGroupBy, as_of: toISO, measure, ...scopeParams });
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
-      const a = document.createElement('a');
-      a.href = url; a.download = `stock-availability-${effectiveGroupBy}-${toISO}.csv`;
-      document.body.appendChild(a); a.click(); a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (err) { notifyApiError(err, 'Export failed'); }
-    finally { setExporting(false); }
-  }, [effectiveGroupBy, toISO, measure, scopeParams]);
-
-  // Granularity note for the hero chart (honest about month-end-only history).
-  const granNote = trend?.granularity === 'monthly'
-    ? 'Month-end snapshots only for this range'
-    : trend?.granularity === 'mixed'
-      ? 'Mixed daily + month-end snapshots'
-      : null;
-
-  // ── headerSlot: period pills + Status + Measure (Network/Sales idiom) ─────
-  const headerSlot = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-      <TimeRangeControl preset={preset} onChange={setPreset} />
-      <div style={{ width: 1, height: 22, background: 'var(--border-subtle)' }} />
-      <HeaderField label="Status" value={mode} onChange={setMode} options={STATUS_OPTIONS} minWidth={104}
-        title="Which subset of the network to count" />
-      <HeaderField label="Measure" value={measure} onChange={setMeasure} options={MEASURE_OPTIONS} minWidth={96}
-        title="Units, Gross (qty×MRP) or Cost (qty×cost price)" />
-    </div>
-  );
-
+function Stat({ icon: Icon, label, value, accent }) {
   return (
-    <DashboardLayout
-      title="Stock Availability"
-      subtitle="Stock-on-hand over time — daily trends across state, city, channel, store, category, colour & size"
-      headerSlot={headerSlot}
-      hideSync={true}
-    >
-      <div className="sx-page sx-fade">
-        {/* ── KPI strip ── */}
-        <div className="sa-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0,1fr))', gap: 12, marginBottom: 18 }}>
-          <KpiCard icon={Boxes} label="Stock Units" accent="#3B82F6" loading={summaryLoading}
-            value={fmtNum(summary?.stock_units)} sub={summary?.as_of ? `as of ${summary.as_of}` : '—'} />
-          <KpiCard icon={IndianRupee} label={measure === 'cost' ? 'Stock Cost' : 'Stock Value'} accent="#10B981" loading={summaryLoading}
-            value={fmtCr(measure === 'cost' ? summary?.value_cost : summary?.value_gross)} sub={measure === 'cost' ? 'qty × cost' : 'qty × MRP'} />
-          <KpiCard icon={Store} label="Stores" accent="#F59E0B" loading={summaryLoading}
-            value={fmtNum(summary?.store_count)} sub="with stock on hand" />
-          <KpiCard icon={Package} label="SKUs" accent="#A855F7" loading={summaryLoading}
-            value={fmtNum(summary?.sku_count)} sub="distinct in stock" />
-          <KpiCard icon={Layers} label="Avg / Store" accent="#EC4899" loading={summaryLoading}
-            value={fmtNum(summary?.avg_per_store)} sub="units per store" />
-          <KpiCard icon={summary?.delta_units_vs_30d_pct >= 0 ? TrendingUp : TrendingDown}
-            label="Δ vs 30d" accent={summary?.delta_units_vs_30d_pct >= 0 ? '#10B981' : '#EF4444'} loading={summaryLoading}
-            value={summary?.delta_units_vs_30d_pct == null ? '—' : `${summary.delta_units_vs_30d_pct > 0 ? '+' : ''}${summary.delta_units_vs_30d_pct}%`}
-            sub="units vs ~30d ago" />
-        </div>
-
-        {/* ── HERO: store panel (if a store is open) OR the multi-line trend ── */}
-        {storeSel ? (
-          <div className="sx-card" style={{ padding: 20, marginBottom: 18 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-              <button onClick={() => setStoreSel(null)} className="sa-back"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent',
-                  border: `1px solid ${T.border}`, borderRadius: 8, padding: '6px 10px', cursor: 'pointer',
-                  color: T.secondary, fontSize: 12, fontWeight: 700 }}>
-                <ArrowLeft size={13} /> Back
-              </button>
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 800, color: T.primary }}>
-                {storeData?.store ? `${storeData.store.code} · ${storeData.store.name}` : storeSel.label}
-              </div>
-              {storeData?.store && (
-                <span style={{ fontSize: 12, fontWeight: 600, color: T.muted }}>
-                  {storeData.store.city}, {storeData.store.state} · {storeData.store.channel}
-                </span>
-              )}
-            </div>
-
-            {storeLoading ? (
-              <div className="sx-shimmer" style={{ height: 320, borderRadius: 10 }} />
-            ) : storeData ? (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 12, marginBottom: 16 }}>
-                  <StatCard icon={Boxes}    label="Stock now"      value={fmtNum(storeData.summary.stock_now)} accent="#3B82F6" />
-                  <StatCard icon={BarChart2} label="Avg stock"      value={fmtNum(storeData.summary.avg_stock)} accent="#A855F7" />
-                  <StatCard icon={Activity}  label="Avg sale/day"   value={fmtNum(storeData.summary.avg_sale_per_day)} accent="#EF4444" />
-                  <StatCard icon={Clock}     label="Cover days"     value={storeData.summary.cover_days == null ? '—' : `${storeData.summary.cover_days}d`} accent="#10B981" />
-                </div>
-                {storeData.series?.length ? (
-                  <Chart options={storeOptions} series={storeSeries} type="line" height={320} />
-                ) : <Empty label="No snapshots for this store in the selected range" />}
-                {storeData.recommendation && (
-                  <div style={{ marginTop: 14, padding: '12px 14px', borderRadius: 10,
-                    background: 'var(--bg-elevated)', border: `1px solid ${T.border}`,
-                    fontSize: 13, fontWeight: 600, color: T.secondary, lineHeight: 1.5 }}>
-                    <strong style={{ color: T.primary }}>Recommendation · </strong>{storeData.recommendation}
-                  </div>
-                )}
-              </>
-            ) : <Empty label="No data" />}
-          </div>
-        ) : (
-          <div className="sx-card" style={{ padding: 20, marginBottom: 18 }}>
-            <SectionTitle icon={TrendingUp} label={`Stock on hand over time · by ${dimLabel}`}
-              right={granNote && <span style={{ fontSize: 11, fontWeight: 700, color: T.muted }}>{granNote}</span>} />
-            {trendLoading ? (
-              <div className="sx-shimmer" style={{ height: 340, borderRadius: 10 }} />
-            ) : trendSeries.length && (trend?.dates?.length) ? (
-              <Chart options={trendOptions} series={trendSeries} type="line" height={340} />
-            ) : <Empty label="No stock snapshots in this date range" />}
-          </div>
-        )}
-
-        {/* ── View-by switch + breadcrumb + export ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-          <div className="sa-viewby" style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 6, padding: 4,
-            background: 'var(--bg-elevated)', border: `1px solid ${T.border}`, borderRadius: 12 }}>
-            {VIEW_BY.map(({ key, label, Icon }) => {
-              const active = viewBy === key;
-              return (
-                <button key={key} onClick={() => onViewByChange(key)}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8,
-                    border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
-                    background: active ? T.accent : 'transparent', color: active ? '#fff' : T.secondary,
-                    transition: 'all 150ms ease' }}>
-                  <Icon size={13} /> {label}
-                </button>
-              );
-            })}
-          </div>
-          <div style={{ flex: 1 }} />
-          <button onClick={onExport} disabled={exporting || !pivot?.rows?.length}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 9,
-              border: `1px solid ${T.border}`, background: 'var(--bg-elevated)', cursor: exporting ? 'wait' : 'pointer',
-              color: T.primary, fontSize: 12, fontWeight: 700, opacity: pivot?.rows?.length ? 1 : 0.5 }}>
-            <Download size={13} /> {exporting ? 'Exporting…' : 'Export CSV'}
-          </button>
-        </div>
-
-        {/* Breadcrumb (drill path) */}
-        {drill.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14, flexWrap: 'wrap', fontSize: 13 }}>
-            <button onClick={() => breadcrumbTo(0)} style={crumbBtn}>All</button>
-            {drill.map((d, i) => (
-              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <ChevronRight size={13} color={T.muted} />
-                <button onClick={() => breadcrumbTo(i + 1)}
-                  style={{ ...crumbBtn, color: i === drill.length - 1 ? T.primary : T.secondary, fontWeight: i === drill.length - 1 ? 800 : 700 }}>
-                  {d.label}
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* ── Pivot table ── */}
-        <div className="sx-card" style={{ overflow: 'hidden', marginBottom: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: `1px solid ${T.border}`, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, fontWeight: 800, color: T.accent, letterSpacing: '0.10em', textTransform: 'uppercase' }}>
-              By {dimLabel}
-            </span>
-            {!pivotLoading && pivot?.rows && (
-              <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: T.accent, borderRadius: 100, padding: '2px 8px' }}>
-                {fmtNum(totalRows)}
-              </span>
-            )}
-            {!pivotLoading && totalRows > ROW_CAP && (
-              <span style={{ fontSize: 11, fontWeight: 600, color: T.muted }}>
-                showing top {ROW_CAP} · export for all
-              </span>
-            )}
-            <div style={{ flex: 1 }} />
-            <HeaderField label="Sort" value={sortBy} onChange={setSortBy} minWidth={92}
-              options={[
-                { value: 'measure', label: measureLabel(measure) },
-                { value: 'stores',  label: 'Stores' },
-                { value: 'cover',   label: 'Cover days' },
-                { value: 'delta',   label: 'Δ vs 30d' },
-              ]} />
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: 'var(--bg-card-hover)' }}>
-                  {[dimLabel, 'Stores', measure === 'units' ? 'Stock now' : 'Stock now (u)', measure !== 'units' ? measureLabel(measure) : null, '30d avg', 'Δ vs 30d', 'Cover days']
-                    .filter(Boolean).map((h) => (
-                    <th key={h} style={{ padding: '10px 14px', textAlign: h === dimLabel ? 'left' : 'right', fontSize: 10, fontWeight: 800,
-                      color: T.muted, letterSpacing: '0.10em', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {pivotLoading && !pivot ? (
-                  Array.from({ length: 10 }).map((_, i) => (
-                    <tr key={i}><td colSpan={7} style={{ padding: '10px 14px' }}><div className="sx-shimmer" style={{ height: 14, borderRadius: 4 }} /></td></tr>
-                  ))
-                ) : sortedRows.length ? sortedRows.map((r, i) => (
-                  <tr key={r.key || i}
-                    onClick={() => isDrillable && drillInto(r)}
-                    style={{ borderBottom: `1px solid ${T.border}`, cursor: isDrillable ? 'pointer' : 'default',
-                      background: i % 2 === 0 ? 'transparent' : 'var(--row-stripe)' }}
-                    onMouseEnter={(e) => { if (isDrillable) e.currentTarget.style.background = 'var(--row-hover)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'var(--row-stripe)'; }}>
-                    <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, color: T.primary, whiteSpace: 'nowrap' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                        {r.label || '—'}
-                        {isDrillable && <ChevronRight size={13} color={T.muted} />}
-                      </span>
-                    </td>
-                    <td style={{ ...td }}>{fmtNum(r.store_count)}</td>
-                    <td style={{ ...td, fontWeight: 900, color: T.primary }}>{fmtNum(r.stock_units)}</td>
-                    {measure !== 'units' && <td style={{ ...td, color: '#059669', fontWeight: 800 }}>{measure === 'cost' ? fmtCr(r.value_cost) : fmtCr(r.value_gross)}</td>}
-                    <td style={{ ...td }}>{fmtNum(r.avg_30d)}</td>
-                    <td style={{ ...td, color: r.delta_vs_30d_pct == null ? T.muted : r.delta_vs_30d_pct >= 0 ? '#059669' : '#DC2626', fontWeight: 800 }}>
-                      {r.delta_vs_30d_pct == null ? '—' : `${r.delta_vs_30d_pct > 0 ? '+' : ''}${r.delta_vs_30d_pct}%`}
-                    </td>
-                    <td style={{ ...td }}>{r.cover_days == null ? '—' : `${r.cover_days}d`}</td>
-                  </tr>
-                )) : (
-                  <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', fontSize: 13, fontWeight: 700, color: T.muted }}>No data for this selection</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <style jsx>{`
-        @media (max-width: 1100px) { :global(.sa-kpis) { grid-template-columns: repeat(3, minmax(0,1fr)) !important; } }
-        @media (max-width: 640px)  { :global(.sa-kpis) { grid-template-columns: repeat(2, minmax(0,1fr)) !important; } }
-      `}</style>
-    </DashboardLayout>
-  );
-}
-
-const td = { padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: 'var(--text-secondary, #CBD5E1)', whiteSpace: 'nowrap' };
-const crumbBtn = { background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary, #CBD5E1)', fontSize: 13, fontWeight: 700, padding: '2px 4px', fontFamily: 'var(--font-body)' };
-
-function StatCard({ icon: Icon, label, value, accent }) {
-  return (
-    <div style={{ padding: '14px 16px', borderRadius: 12, background: 'var(--bg-elevated)', border: `1px solid ${T.border}` }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <Icon size={13} color={accent} strokeWidth={2.2} />
-        <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.muted }}>{label}</span>
-      </div>
-      <div className="sx-hero-num" style={{ fontSize: 22 }}>{value}</div>
+    <div style={{ padding: '14px 16px', borderRadius: 12, background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}><Icon size={13} color={accent} /><span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{label}</span></div>
+      <div style={{ fontSize: 22, fontWeight: 850, color: 'var(--text-primary)' }}>{value}</div>
     </div>
   );
 }
-
-function Empty({ label }) {
-  return (
-    <div style={{ minHeight: 220, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      flexDirection: 'column', gap: 10, color: 'var(--text-muted)' }}>
-      <Boxes size={28} strokeWidth={1.6} />
-      <span style={{ fontSize: 13, fontWeight: 600 }}>{label}</span>
-    </div>
-  );
+function Empty({ label, small }) {
+  return <div style={{ minHeight: small ? 120 : 200, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10, color: 'var(--text-muted)' }}><Boxes size={small ? 20 : 28} strokeWidth={1.6} /><span style={{ fontSize: 13, fontWeight: 600 }}>{label}</span></div>;
 }

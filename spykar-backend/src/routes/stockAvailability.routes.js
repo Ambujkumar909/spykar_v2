@@ -16,11 +16,23 @@ const STATUS = ['active', 'inactive', 'all'];
 const PERIOD = ['Today', 'WTD', 'MTD', 'QTD', 'YTD', 'custom',
                 'today', 'wtd', 'mtd', 'qtd', 'ytd'];
 
+// Shared scope filters — the sidebar Lens + row-click drills send these as
+// comma-joined multi-select lists. All optional strings (buildScope validates
+// them against a strict column whitelist, so free text can't reach SQL).
+const SCOPE = ['state', 'city', 'channel', 'group_name', 'store', 'store_code',
+               'category', 'colour', 'color', 'size', 'product', 'gender',
+               'sub_product', 'season']
+  .map((k) => query(k).optional().isString().trim());
+
+// 0) Available snapshot-date range (bounds the calendar).
+router.get('/range', ctrl.getRange);
+
 // A) Summary KPIs at a point in time.
 router.get('/summary', [
   query('as_of').optional().isISO8601(),
   query('status').optional().isIn(STATUS),
   query('measure').optional().isIn(MEASURE),
+  ...SCOPE,
 ], validate, ctrl.getSummary);
 
 // B) Multi-line stock-on-hand trend per top-N dimension member.
@@ -40,6 +52,7 @@ router.get('/pivot', [
   query('as_of').optional().isISO8601(),
   query('measure').optional().isIn(MEASURE),
   query('status').optional().isIn(STATUS),
+  ...SCOPE,
 ], validate, ctrl.getPivot);
 
 // E) CSV export — same filters as /pivot. (Declared before the param route.)
@@ -48,7 +61,19 @@ router.get('/export.csv', [
   query('as_of').optional().isISO8601(),
   query('measure').optional().isIn(MEASURE),
   query('status').optional().isIn(STATUS),
+  ...SCOPE,
 ], validate, ctrl.exportCsv);
+
+// G) Sales vs Stock — daily, scoped by store/colour/size/category/SKU (both sides).
+router.get('/sales-vs-stock', [
+  query('period').optional().isIn(PERIOD),
+  query('from').optional().isISO8601(),
+  query('to').optional().isISO8601(),
+  query('status').optional().isIn(STATUS),
+  query('location_id').optional().isUUID(),
+  query('sku_id').optional().isUUID(),
+  ...SCOPE,
+], validate, ctrl.getSalesVsStock);
 
 // D) Single-store day-wise stock vs sales.
 router.get('/store/:locationId/trend', [

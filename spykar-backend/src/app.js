@@ -21,6 +21,8 @@ const aiRoutes = require('./routes/ai.routes');
 const syncRoutes = require('./routes/sync.routes');
 const filterRoutes = require('./routes/filters.routes');
 const stockAvailabilityRoutes = require('./routes/stockAvailability.routes');
+const primarySalesRoutes = require('./routes/primarySales.routes');
+const ageingRoutes = require('./routes/ageing.routes');
 
 const app = express();
 
@@ -142,6 +144,10 @@ app.use(`${API_V1}/ai`, aiLimiter, aiRoutes);
 app.use(`${API_V1}/sync`, syncRoutes);
 app.use(`${API_V1}/filters`, filterRoutes);
 app.use(`${API_V1}/stock-availability`, stockAvailabilityRoutes);
+app.use(`${API_V1}/primary-sales`, primarySalesRoutes);
+// Inventory Ageing DISABLED for now — route intentionally not registered so all
+// /ageing/* API calls 404. Re-enable this line to bring the feature back.
+// app.use(`${API_V1}/ageing`, ageingRoutes);
 
 // ─── Error Handling ────────────────────────────────────────────────────────────
 app.use(notFound);

@@ -26,7 +26,34 @@ import { filterService } from '../../lib/services';
 import { getCached, setCached, isFresh } from '../../lib/dashboardCache';
 import { useSharedFilters } from '../../lib/FiltersContext';
 
-const FILTER_ROUTES = new Set(['/network', '/sales']);
+const FILTER_ROUTES = new Set(['/network', '/sales', '/primary-sales', '/stock-availability']); // '/inventory-ageing' disabled
+
+// Per-route dimension whitelist. Primary Sales is a WAREHOUSE-level feed, so only
+// the SKU-attribute dims that actually carry data there are relevant (verified
+// against the data): Gender, Category, Product, Sub-product, Size, Colour, Season.
+// Deliberately excluded: location/party/status (store-level, N/A to warehouses),
+// Shade (duplicate of Colour), Style (13k values), Fit (empty), Brand (single).
+const ROUTE_DIMS = {
+  '/primary-sales': new Set(['gender_name', 'category', 'product', 'sub_product', 'size', 'color', 'season']),
+  // Stock Availability is STORE-level inventory (locations ⋈ skus), so the FULL
+  // dimensional lens applies — location AND product attributes. Status (mode) is
+  // driven by the page's own control, and Shade/Style are excluded (Shade dups
+  // Colour; Style is 13k values). Party (group_name) == the store channel here.
+  '/stock-availability': new Set(['gender_name', 'category', 'product', 'sub_product',
+    'size', 'color', 'season', 'state', 'city', 'store_code', 'group_name', 'mode']),
+  // Inventory Ageing spans BOTH sources (warehouse FIFO + store snapshot); the
+  // page's Source toggle decides which location dims apply, so expose the full
+  // set. SKU attributes apply to both.
+  '/inventory-ageing': new Set(['gender_name', 'category', 'product', 'sub_product',
+    'size', 'color', 'season', 'state', 'city', 'store_code', 'group_name', 'mode']),
+};
+function groupsForRoute(pathname) {
+  const allow = ROUTE_DIMS[pathname];
+  if (!allow) return FILTER_GROUPS;
+  return FILTER_GROUPS
+    .map((g) => ({ ...g, dims: g.dims.filter((d) => allow.has(d.key)) }))
+    .filter((g) => g.dims.length);
+}
 
 // Each dimension carries a tiny lucide glyph rendered to the LEFT of the
 // MultiSelect trigger.  Adds richness without clutter — a CEO scans icons
@@ -145,7 +172,7 @@ export default function PremiumFilterBar({ isOpen = false }) {
 
   return (
     <div className={`lux${isOpen ? ' is-open' : ''}`} aria-hidden={!isOpen}>
-      {isOpen && <Panel api={api} />}
+      {isOpen && <Panel api={api} pathname={router.pathname} />}
       <LuxPopoverStyles />
       <style jsx>{`
         .lux {
@@ -168,7 +195,7 @@ export default function PremiumFilterBar({ isOpen = false }) {
   );
 }
 
-function Panel({ api }) {
+function Panel({ api, pathname }) {
   const { filters, setFilter, clearAll, activeCount } = api;
 
   const [optionsByDim, setOptionsByDim] = useState(() => {
@@ -248,9 +275,9 @@ function Panel({ api }) {
         )}
       </div>
 
-      {/* ─── Filter groups ─── */}
+      {/* ─── Filter groups (route-scoped) ─── */}
       <div className="lux__groups">
-        {FILTER_GROUPS.map((group) => (
+        {groupsForRoute(pathname).map((group) => (
           <FilterGroup
             key={group.name}
             group={group}

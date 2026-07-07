@@ -13,7 +13,7 @@
 //
 // NO ageing / dead-stock here by design (receipt/warehouse data is incomplete).
 
-const { query } = require('../config/database');
+const { query, pool } = require('../config/database');
 const { getOrSet, TTL } = require('../config/cache');
 
 // Today as 'YYYY-MM-DD' (server local). Default upper bound — never hardcode.
@@ -79,17 +79,36 @@ function buildScope(q, params) {
   if (mode === 'inactive') conds.push('l.shop_closed = true');
   // 'all' → no shop_closed filter
 
-  const addIlike = (col, val) => { params.push(val); conds.push(`${col} ILIKE $${params.length}`); };
-  const addEq    = (col, val) => { params.push(val); conds.push(`${col} = $${params.length}`); };
+  // Every dimension is MULTI-select — the sidebar Lens sends comma-joined lists
+  // (e.g. category=Denim,Shirts). Split → match with `= ANY(array)`. Text dims
+  // are matched case-insensitively (lower(col) = ANY(lowered array)); exact dims
+  // (channel/store code/size) match verbatim. A single value is just a 1-elem array.
+  const split = (v) => String(v).split(',').map((s) => s.trim()).filter(Boolean);
+  const addCI = (col, val) => {           // case-insensitive multi-match
+    const arr = split(val).map((s) => s.toLowerCase());
+    if (!arr.length) return;
+    params.push(arr); conds.push(`lower(${col}) = ANY($${params.length})`);
+  };
+  const addEq = (col, val) => {           // exact multi-match
+    const arr = split(val);
+    if (!arr.length) return;
+    params.push(arr); conds.push(`${col} = ANY($${params.length})`);
+  };
 
-  if (q.state)   addIlike('l.state', q.state);
-  if (q.city)    addIlike('l.city', q.city);
-  if (q.channel) addEq('l.group_name', q.channel);
-  if (q.store)   addEq('l.code', q.store);
+  if (q.state)    addCI('l.state', q.state);
+  if (q.city)     addCI('l.city', q.city);
+  if (q.channel || q.group_name) addEq('l.group_name', q.channel || q.group_name);
+  if (q.store || q.store_code)   addEq('l.code', q.store || q.store_code);
+  if (q.location_id) { params.push(q.location_id); conds.push(`l.id = $${params.length}::uuid`); } // drill by store UUID
 
-  if (q.category) { addIlike('s.category_norm', q.category); joinSku = true; }
-  if (q.colour || q.color) { addIlike('s.color_name', q.colour || q.color); joinSku = true; }
-  if (q.size)     { addEq('s.size', q.size); joinSku = true; }
+  if (q.category)    { addCI('s.category_norm', q.category); joinSku = true; }
+  if (q.colour || q.color) { addCI('s.color_name', q.colour || q.color); joinSku = true; }
+  if (q.size)        { addEq('s.size', q.size); joinSku = true; }
+  if (q.product)     { addCI('s.product', q.product); joinSku = true; }
+  if (q.gender)      { addCI('s.gender_name', q.gender); joinSku = true; }
+  if (q.sub_product) { addCI('s.sub_product', q.sub_product); joinSku = true; }
+  if (q.season)      { addCI('s.season', q.season); joinSku = true; }
+  if (q.sku_id)      { params.push(q.sku_id); conds.push(`s.id = $${params.length}::uuid`); joinSku = true; } // drill by SKU
 
   return { conds, joinSku, mode };
 }
@@ -120,6 +139,28 @@ function classifyGranularity(dates) {
   if (allDaily) return 'daily';
   if (allMonthly) return 'monthly';
   return 'mixed';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 0) GET /range — available snapshot dates (bounds the calendar; defaults to max)
+// ════════════════════════════════════════════════════════════════════════════
+async function getRange(req, res, next) {
+  try {
+    const data = await getOrSet('stockavail:range', async () => {
+      const r = await query(
+        `SELECT MIN(snapshot_date)::text AS from, MAX(snapshot_date)::text AS to,
+                COUNT(DISTINCT snapshot_date)::int AS days FROM inventory_daily_snapshot`
+      );
+      // Per-date total units — powers the recent-history sparkline. Cheap over
+      // the current few days; cached at the snapshot TTL for the full-history case.
+      const dts = await query(`SELECT snapshot_date::text AS d, SUM(qty_on_hand)::bigint AS u
+                                 FROM inventory_daily_snapshot GROUP BY snapshot_date ORDER BY 1`);
+      const row = r.rows[0] || {};
+      return { from: row.from || null, to: row.to || null, days: row.days || 0,
+               dates: dts.rows.map((x) => ({ d: x.d, u: Number(x.u) })) };
+    }, TTL.INVENTORY_SNAPSHOT);
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -334,36 +375,41 @@ async function buildPivot(req) {
 
   const sortExpr = { units: 'stock_units', gross: 'value_gross', cost: 'value_cost' }[measure];
 
-  // One round-trip: current + trailing-30d avg + 30d-ago + sales-30d, joined on
-  // the member key. CTEs pre-aggregate so each scan is bounded.
+  // cur (today's snapshot) + prior (30d-ago snapshot, for Δ) + sales30 (cover
+  // days). The old avg30 CTE re-scanned the whole 30-day snapshot window on
+  // EVERY pivot — the dominant cost — for a secondary "30d avg" column; dropped.
+  // Runs on a dedicated client with raised work_mem + parallel workers.
   const params = [...p];                       // $1..$asOfIdx already include asOf + filters
-  const winStartIdx = params.push(`${asOf}`);  // window end = as_of
   const priorIdx = params.push(priorDate);     // may be null
-  // 30d sales window uses moved_at >= as_of - 30d
-  const rows = await query(
-    `WITH cur AS (
-        SELECT ${dim.keyCol} AS k, MAX(${dim.labelCol}) AS label,
-               COUNT(DISTINCT l.id)::int                                   AS store_count,
-               COALESCE(SUM(d.qty_on_hand),0)::bigint                      AS stock_units,
-               COALESCE(SUM(d.qty_on_hand * s.mrp),0)::bigint              AS value_gross,
-               COALESCE(SUM(d.qty_on_hand * COALESCE(s.cost_price,0)),0)::bigint AS value_cost
+  const client = await pool.connect();
+  let rows, totRes;
+  try {
+    await client.query(`SET work_mem = '512MB'`);
+    await client.query(`SET max_parallel_workers_per_gather = 4`);
+  // `base` collapses to one row per (member, store) so `cur` can COUNT(*) for
+  // store_count — a two-level GROUP BY that is far cheaper than COUNT(DISTINCT)
+  // over the raw rows (which was the pivot's dominant cost for wide dims like
+  // category/colour). label is functionally determined by the key, so the extra
+  // GROUP BY column doesn't change cardinality.
+  rows = await client.query(
+    `WITH base AS (
+        SELECT ${dim.keyCol} AS k, ${dim.labelCol} AS label, d.location_id AS lid,
+               SUM(d.qty_on_hand)                          AS u,
+               SUM(d.qty_on_hand * s.mrp)                  AS vg,
+               SUM(d.qty_on_hand * COALESCE(s.cost_price,0)) AS vc
           FROM inventory_daily_snapshot d
           JOIN locations l ON l.id = d.location_id
           JOIN skus s ON s.id = d.sku_id
          WHERE d.snapshot_date = $${asOfIdx} AND ${where} AND ${dim.keyCol} IS NOT NULL
-         GROUP BY ${dim.keyCol}
+         GROUP BY ${dim.keyCol}, ${dim.labelCol}, d.location_id
      ),
-     avg30 AS (
-        SELECT k, AVG(daily_units)::bigint AS avg_30d FROM (
-          SELECT ${dim.keyCol} AS k, d.snapshot_date, SUM(d.qty_on_hand) AS daily_units
-            FROM inventory_daily_snapshot d
-            JOIN locations l ON l.id = d.location_id
-            JOIN skus s ON s.id = d.sku_id
-           WHERE d.snapshot_date > ($${winStartIdx}::date - INTERVAL '30 days')
-             AND d.snapshot_date <= $${winStartIdx}::date
-             AND ${where} AND ${dim.keyCol} IS NOT NULL
-           GROUP BY ${dim.keyCol}, d.snapshot_date
-        ) q GROUP BY k
+     cur AS (
+        SELECT k, MAX(label) AS label,
+               COUNT(*)::int                       AS store_count,
+               COALESCE(SUM(u),0)::bigint          AS stock_units,
+               COALESCE(SUM(vg),0)::bigint         AS value_gross,
+               COALESCE(SUM(vc),0)::bigint         AS value_cost
+          FROM base GROUP BY k
      ),
      prior AS (
         SELECT ${dim.keyCol} AS k, COALESCE(SUM(d.qty_on_hand),0)::bigint AS units_then
@@ -373,75 +419,42 @@ async function buildPivot(req) {
          WHERE $${priorIdx}::date IS NOT NULL AND d.snapshot_date = $${priorIdx}::date
            AND ${where} AND ${dim.keyCol} IS NOT NULL
          GROUP BY ${dim.keyCol}
-     ),
-     sales30 AS (
-        SELECT ${dim.keyCol} AS k,
-               SUM(-m.qty_change)::bigint AS units_sold_30d
-          FROM inventory_movements m
-          JOIN locations l ON l.id = m.location_id
-          JOIN skus s ON s.id = m.sku_id
-         WHERE m.movement_type = 'SALE'
-           AND m.moved_at >= ($${asOfIdx}::date - INTERVAL '30 days')
-           AND m.moved_at <  ($${asOfIdx}::date + INTERVAL '1 day')
-           AND ${where} AND ${dim.keyCol} IS NOT NULL
-         GROUP BY ${dim.keyCol}
      )
      SELECT cur.k AS key, cur.label, cur.store_count, cur.stock_units,
             cur.value_gross, cur.value_cost,
-            COALESCE(avg30.avg_30d,0)::bigint AS avg_30d,
             CASE WHEN prior.units_then > 0
                  THEN ROUND(((cur.stock_units - prior.units_then)::numeric / prior.units_then) * 100, 1)
-                 ELSE NULL END AS delta_vs_30d_pct,
-            CASE WHEN COALESCE(sales30.units_sold_30d,0) > 0
-                 THEN ROUND(cur.stock_units::numeric / (sales30.units_sold_30d::numeric / 30.0), 1)
-                 ELSE NULL END AS cover_days
+                 ELSE NULL END AS delta_vs_30d_pct
        FROM cur
-       LEFT JOIN avg30   ON avg30.k = cur.k
-       LEFT JOIN prior   ON prior.k = cur.k
-       LEFT JOIN sales30 ON sales30.k = cur.k
+       LEFT JOIN prior ON prior.k = cur.k
       ORDER BY ${sortExpr} DESC NULLS LAST`,
     params
   );
 
-  // Totals row (filters applied, ungrouped) at as_of.
-  const tParams = [];
-  const tsc = buildScope(req.query, tParams);
-  const tIdx = tParams.push(asOf);
-  const totRes = await query(
-    `SELECT COUNT(DISTINCT l.id)::int AS store_count,
-            COALESCE(SUM(d.qty_on_hand),0)::bigint AS stock_units,
-            COALESCE(SUM(d.qty_on_hand * s.mrp),0)::bigint AS value_gross,
-            COALESCE(SUM(d.qty_on_hand * COALESCE(s.cost_price,0)),0)::bigint AS value_cost
-       FROM inventory_daily_snapshot d
-       JOIN locations l ON l.id = d.location_id
-       JOIN skus s ON s.id = d.sku_id
-      WHERE d.snapshot_date = $${tIdx} AND ${tsc.conds.join(' AND ')}`,
-    tParams
-  );
-  const t = totRes.rows[0];
+  } finally {
+    try { await client.query('RESET work_mem'); } catch (_) {}
+    try { await client.query('RESET max_parallel_workers_per_gather'); } catch (_) {}
+    client.release();
+  }
 
-  return {
-    group_by: groupBy,
-    measure,
-    as_of: asOf,
-    rows: rows.rows.map((r) => ({
-      key: r.key,
-      label: r.label,
-      store_count: Number(r.store_count),
-      stock_units: Number(r.stock_units),
-      value_gross: Number(r.value_gross),
-      value_cost: Number(r.value_cost),
-      avg_30d: Number(r.avg_30d),
-      delta_vs_30d_pct: r.delta_vs_30d_pct === null ? null : Number(r.delta_vs_30d_pct),
-      cover_days: r.cover_days === null ? null : Number(r.cover_days),
-    })),
-    totals: t ? {
-      store_count: Number(t.store_count),
-      stock_units: Number(t.stock_units),
-      value_gross: Number(t.value_gross),
-      value_cost: Number(t.value_cost),
-    } : null,
-  };
+  const outRows = rows.rows.map((r) => ({
+    key: r.key,
+    label: r.label,
+    store_count: Number(r.store_count),
+    stock_units: Number(r.stock_units),
+    value_gross: Number(r.value_gross),
+    value_cost: Number(r.value_cost),
+    delta_vs_30d_pct: r.delta_vs_30d_pct === null ? null : Number(r.delta_vs_30d_pct),
+  }));
+
+  // Totals summed in JS from the rows — no extra full-day scan.
+  const totals = outRows.length ? {
+    stock_units: outRows.reduce((a, x) => a + x.stock_units, 0),
+    value_gross: outRows.reduce((a, x) => a + x.value_gross, 0),
+    value_cost: outRows.reduce((a, x) => a + x.value_cost, 0),
+  } : null;
+
+  return { group_by: groupBy, measure, as_of: asOf, rows: outRows, totals };
 }
 
 async function getPivot(req, res, next) {
@@ -557,7 +570,7 @@ async function getStoreTrend(req, res, next) {
 async function exportCsv(req, res, next) {
   try {
     const pivot = await buildPivot(req);
-    const cols = ['member', 'stores', 'stock_units', 'value_gross', 'value_cost', 'avg_30d', 'delta_vs_30d_pct', 'cover_days'];
+    const cols = ['member', 'stores', 'stock_units', 'value_gross', 'value_cost', 'delta_vs_30d_pct'];
     const esc = (v) => {
       if (v === null || v === undefined) return '';
       const s = String(v);
@@ -569,7 +582,7 @@ async function exportCsv(req, res, next) {
     for (const r of pivot.rows) {
       res.write([
         esc(r.label), r.store_count, r.stock_units, r.value_gross, r.value_cost,
-        r.avg_30d, r.delta_vs_30d_pct, r.cover_days,
+        r.delta_vs_30d_pct,
       ].map(esc).join(',') + '\n');
     }
     res.end();
@@ -579,4 +592,77 @@ async function exportCsv(req, res, next) {
   }
 }
 
-module.exports = { getSummary, getTrend, getPivot, getStoreTrend, exportCsv };
+// ════════════════════════════════════════════════════════════════════════════
+// G) GET /sales-vs-stock — daily stock-on-hand (line) vs units sold (bars),
+//    scoped by store / colour / size / category / SKU (both sides filtered).
+//    Store optional → network-wide when omitted. Powers the "Sales vs Stock"
+//    feature: e.g. "store X, colour Red — daily sell-through vs cover".
+// ════════════════════════════════════════════════════════════════════════════
+async function getSalesVsStock(req, res, next) {
+  try {
+    const { from, to } = periodToRange(req.query.period, req.query.from, req.query.to);
+    const cacheKey = `stockavail:svs:${from}:${to}:${JSON.stringify(req.query)}`;
+    const data = await getOrSet(cacheKey, async () => {
+      // Stock side — daily on-hand from the snapshot table, scoped.
+      const p1 = [];
+      const sc1 = buildScope(req.query, p1);
+      const j1 = sc1.joinSku ? 'JOIN skus s ON s.id = d.sku_id' : 'LEFT JOIN skus s ON s.id = d.sku_id';
+      const f1 = p1.push(from); const t1 = p1.push(to);
+      const stock = await query(
+        `SELECT d.snapshot_date::text AS date, SUM(d.qty_on_hand)::bigint AS stock_on_hand,
+                SUM(d.qty_on_hand * s.mrp)::bigint AS stock_value
+           FROM inventory_daily_snapshot d
+           JOIN locations l ON l.id = d.location_id
+           ${j1}
+          WHERE d.snapshot_date BETWEEN $${f1}::date AND $${t1}::date AND ${sc1.conds.join(' AND ')}
+          GROUP BY d.snapshot_date`, p1);
+
+      // Sales side — daily SALE movements, same scope.
+      const p2 = [];
+      const sc2 = buildScope(req.query, p2);
+      const j2 = sc2.joinSku ? 'JOIN skus s ON s.id = m.sku_id' : 'LEFT JOIN skus s ON s.id = m.sku_id';
+      const f2 = p2.push(from); const t2 = p2.push(to);
+      const sales = await query(
+        `SELECT (m.moved_at AT TIME ZONE 'Asia/Kolkata')::date::text AS date,
+                SUM(-m.qty_change)::bigint AS units_sold,
+                SUM(COALESCE(m.sale_value,0))::bigint AS sale_value
+           FROM inventory_movements m
+           JOIN locations l ON l.id = m.location_id
+           ${j2}
+          WHERE m.movement_type = 'SALE'
+            AND m.moved_at >= $${f2}::date AND m.moved_at < ($${t2}::date + INTERVAL '1 day')
+            AND ${sc2.conds.join(' AND ')}
+          GROUP BY 1`, p2);
+
+      const stockBy = new Map(stock.rows.map((r) => [r.date, Number(r.stock_on_hand)]));
+      const svalBy  = new Map(stock.rows.map((r) => [r.date, Number(r.stock_value)]));
+      const soldBy  = new Map(sales.rows.map((r) => [r.date, Number(r.units_sold)]));
+      const salvBy  = new Map(sales.rows.map((r) => [r.date, Number(r.sale_value)]));
+      const dates = Array.from(new Set([...stockBy.keys(), ...soldBy.keys()])).sort();
+      const series = dates.map((dt) => ({
+        date: dt,
+        stock_on_hand: stockBy.get(dt) ?? null,
+        stock_value: svalBy.get(dt) ?? null,
+        units_sold: soldBy.get(dt) ?? 0,
+        sale_value: salvBy.get(dt) ?? 0,
+      }));
+
+      const stockVals = series.map((s) => s.stock_on_hand).filter((v) => v != null);
+      const stockNow = stockVals.length ? stockVals[stockVals.length - 1] : 0;
+      const avgStock = stockVals.length ? Math.round(stockVals.reduce((a, b) => a + b, 0) / stockVals.length) : 0;
+      const totalSold = series.reduce((a, s) => a + s.units_sold, 0);
+      const totalSaleValue = series.reduce((a, s) => a + s.sale_value, 0);
+      const spanDays = Math.max(1, Math.round((new Date(to) - new Date(from)) / 86400000) + 1);
+      const avgSalePerDay = Number((totalSold / spanDays).toFixed(2));
+      const coverDays = avgSalePerDay > 0 ? Number((stockNow / avgSalePerDay).toFixed(1)) : null;
+      const sellThroughPct = (stockNow + totalSold) > 0 ? Number((totalSold / (stockNow + totalSold) * 100).toFixed(1)) : null;
+
+      return { from, to, series,
+        summary: { stock_now: stockNow, avg_stock: avgStock, total_sold: totalSold, total_sale_value: totalSaleValue,
+                   avg_sale_per_day: avgSalePerDay, cover_days: coverDays, sell_through_pct: sellThroughPct } };
+    }, TTL.INVENTORY_SNAPSHOT);
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+}
+
+module.exports = { getRange, getSummary, getTrend, getPivot, getStoreTrend, getSalesVsStock, exportCsv };

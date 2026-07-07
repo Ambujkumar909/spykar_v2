@@ -470,6 +470,39 @@ async function warmSalesAnalyticsAllModes() {
   for (const m of ['active', 'inactive', 'all']) await warmSalesAnalytics(m);
 }
 
+/**
+ * Warm the Primary Sales page for its default FY window (the range the page
+ * opens on). Pre-populates the /overview payload, the by-dimension pivots (so
+ * switching View-by is instant), the default trend, and the tiny filter lists.
+ * Reads the fast rollup, so all of this warms in a few seconds. Cache keys match
+ * the controller exactly (same query objects the page sends post-validation).
+ */
+async function warmPrimarySales() {
+  const start = Date.now();
+  try {
+    const ctrl = require('../controllers/primarySales.controller');
+    const today = new Date();
+    const y = today.getFullYear();
+    const from = (today.getMonth() >= 3 ? y : y - 1) + '-04-01';   // Indian FY start
+    const to = today.toISOString().slice(0, 10);
+    const win = { from, to };
+
+    const tasks = [
+      invokeController(ctrl.getOverview, { ...win }),
+      invokeController(ctrl.getTrend, { group_by: 'warehouse', ...win, top: 6, measure: 'gross' }),
+      invokeController(ctrl.getTypes, {}),
+      invokeController(ctrl.getWarehouses, {}),
+    ];
+    for (const dim of ['warehouse', 'type', 'category', 'colour', 'size', 'product']) {
+      tasks.push(invokeController(ctrl.getPivot, { group_by: dim, ...win }));
+    }
+    await Promise.allSettled(tasks);
+    logger.info(`🔥 Cache warmed: primary-sales (overview + 6 pivots + trend) in ${Date.now() - start}ms`);
+  } catch (err) {
+    logger.warn(`Cache warm-up (primary-sales) failed: ${err.message}`);
+  }
+}
+
 async function warmCaches() {
   logger.info('🔥 Starting background cache warm-up…');
   await Promise.allSettled([
@@ -483,6 +516,7 @@ async function warmCaches() {
     warmFilterOptionsDefault(),  // /filters/options default key — front-page entry path
     warmNetworkPulseAllModes(),  // /locations/network-pulse — 13 s cold; warm all 3 modes
     warmSalesAnalyticsAllModes(),// /analytics/sales — 8 s cold; warm all 3 modes for FY default
+    warmPrimarySales(),          // /primary-sales — overview + all pivots for FY default
   ]);
   logger.info('🔥 Cache warm-up complete — Overview hot for every lens');
 }
@@ -530,6 +564,6 @@ module.exports = {
   warmModeVariants, warmCrossPivotAllModes,
   warmNetworkPulse, warmNetworkPulseAllModes,
   warmSalesAnalytics, warmSalesAnalyticsAllModes,
-  warmFilterOptionsDefault,
+  warmFilterOptionsDefault, warmPrimarySales,
   startPeriodicRewarm,
 };

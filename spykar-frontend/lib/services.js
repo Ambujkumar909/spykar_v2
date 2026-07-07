@@ -110,13 +110,38 @@ export const analyticsService = {
 // ─── Stock Availability (4th page — stock over time) ──────────────────────────
 // Read-only daily-stock analytics. Mirrors analyticsService's param-passing.
 export const stockAvailabilityService = {
+  getRange: () => api.get('/stock-availability/range'),
   getSummary: (params = {}) => api.get('/stock-availability/summary', { params }),
   getTrend:   (params = {}) => api.get('/stock-availability/trend', { params }),
   getPivot:   (params = {}) => api.get('/stock-availability/pivot', { params }),
   getStoreTrend: (locationId, params = {}) =>
     api.get(`/stock-availability/store/${locationId}/trend`, { params }),
+  // Sales vs Stock — daily, scoped by store/colour/size/category/SKU.
+  getSalesVsStock: (params = {}) => api.get('/stock-availability/sales-vs-stock', { params }),
   // CSV export — same filters as getPivot. Returns a blob for download.
   exportCsv: (params = {}) => api.get('/stock-availability/export.csv', { params, responseType: 'blob' }),
+};
+
+// ─── Primary Sales (5th page — warehouse-level MITTRA movements) ──────────────
+// Read-only primary-sales analytics off the Infor M3 ledger. Mirrors
+// stockAvailabilityService's param-passing.
+export const primarySalesService = {
+  getOverview:   (params = {}) => api.get('/primary-sales/overview', { params }),
+  getRange:      () => api.get('/primary-sales/range'),
+  getSummary:    (params = {}) => api.get('/primary-sales/summary', { params }),
+  getTrend:      (params = {}) => api.get('/primary-sales/trend', { params }),
+  getPivot:      (params = {}) => api.get('/primary-sales/pivot', { params }),
+  getTypes:      () => api.get('/primary-sales/types'),
+  getWarehouses: () => api.get('/primary-sales/warehouses'),
+  exportCsv:     (params = {}) => api.get('/primary-sales/export.csv', { params, responseType: 'blob' }),
+};
+
+// ─── Inventory Ageing (true FIFO warehouse + continuous-on-hand store) ────────
+// Reads the precomputed inventory_ageing table. ?source=warehouse|store.
+export const ageingService = {
+  getSummary: (params = {}) => api.get('/ageing/summary', { params }),
+  getPivot:   (params = {}) => api.get('/ageing/pivot', { params }),
+  exportCsv:  (params = {}) => api.get('/ageing/export.csv', { params, responseType: 'blob' }),
 };
 
 // ─── AI Query ─────────────────────────────────────────────────────────────────

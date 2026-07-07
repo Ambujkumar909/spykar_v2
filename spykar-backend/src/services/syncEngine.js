@@ -32,6 +32,7 @@ const copyFrom          = require('pg-copy-streams').from;
 const { query, pool: pgPool } = require('../config/database');
 const { invalidatePattern } = require('../config/cache');
 const { rebuildAll: rebuildSalesRollups, refreshRange: refreshSalesRollups } = require('./salesRollup');
+const primarySales      = require('./primarySales');
 const logger            = require('../config/logger');
 
 // ─── CSV-safe encoder for COPY FROM STDIN (FORMAT csv) ────────────────────────
@@ -1192,6 +1193,34 @@ async function rebuildInventorySnapshot(stats) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// STAGE 5 — Primary sales (MITTRA) delta  —  separate M3 feed, NON-FATAL
+// ─────────────────────────────────────────────────────────────────────────────
+// This is an INDEPENDENT feed off the raw Infor M3 tables (M3ReportdataPRD),
+// not the SP-based ERP. It manages its own SQL Server connection inside
+// primarySales.runDelta(), so it runs regardless of whether the SP pipeline
+// above reached the ERP. Wrapped non-fatal like the rollup stage: a primary
+// feed failure must never fail the main inventory sync — the next run resumes
+// from the same LMTS high-water mark (idempotent merge).
+//
+// Disable per-run with SYNC_PRIMARY_SALES=false (e.g. before Phase 0 confirms
+// the LMTS / TRDT-index / (cono,whlo,itno,repn) assumptions on a live M3).
+async function syncPrimarySales(stats) {
+  if (process.env.SYNC_PRIMARY_SALES === 'false') {
+    logger.info('[PRIMARY] Skipped (SYNC_PRIMARY_SALES=false)');
+    return;
+  }
+  try {
+    const r = await primarySales.runDelta();
+    stats.fetched  += r.merged;
+    stats.inserted += r.merged;
+    logger.info(`[PRIMARY] ✅ delta stage: ${r.merged.toLocaleString()} merged, ${r.miss.toLocaleString()} misses`);
+  } catch (err) {
+    stats.failed++;
+    logger.error(`[PRIMARY] delta stage failed (non-fatal — retries next sync from LMTS high-water): ${err.message}`);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN ORCHESTRATOR
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1355,8 +1384,41 @@ async function runDeltaSync(syncType = 'DELTA') {
       await rebuildInventorySnapshot(stats);
     }
 
+    // STAGE 3.9: Capture-forward — archive today's freshly-synced snapshot into
+    // inventory_daily_snapshot so the Stock Availability "as of date" history
+    // accrues one exact, ERP-truthful day per sync (no extra ERP calls). Non-
+    // fatal: a history-archive hiccup must never fail the core sync.
+    try {
+      const { archiveCurrentSnapshot, toPgDate } = require('./historicalStockLoader');
+      const n = await archiveCurrentSnapshot(toPgDate(runToday));
+      logger.info(`[PIPELINE] Daily stock history archived: ${n.toLocaleString()} rows for ${toPgDate(runToday)}`);
+    } catch (archErr) {
+      logger.error(`[PIPELINE] Daily stock archive failed (non-fatal): ${archErr.message}`);
+    }
+
     // STAGE 4: Ageing (always runs — uses PG data only)
     await updateStockAgeing();
+
+    // STAGE 5: Primary sales (MITTRA) delta — independent M3 feed, non-fatal.
+    // Runs after ageing so a primary-feed hiccup can't delay the core inventory
+    // refresh. Manages its own M3 connection + LMTS high-water mark.
+    await syncPrimarySales(stats);
+
+    // STAGE 5.5: TRUE inventory ageing — DISABLED for now (feature hidden).
+    // Re-enable by flipping AGEING_ENABLED to true. When on: warehouse FIFO
+    // (needs the fresh MITTRA ledger from Stage 5) + store continuous-on-hand
+    // (needs the daily snapshot archived at Stage 3.9), non-fatal.
+    const AGEING_ENABLED = false;
+    if (AGEING_ENABLED) {
+      try {
+        const t0 = Date.now();
+        const { rebuildAll } = require('../database/load_inventory_ageing');
+        await rebuildAll();
+        logger.info(`[PIPELINE] Inventory ageing recomputed (FIFO + on-hand) in ${Math.round((Date.now() - t0) / 1000)}s`);
+      } catch (ageErr) {
+        logger.error(`[PIPELINE] Inventory ageing recompute failed (non-fatal): ${ageErr.message}`);
+      }
+    }
 
     // ── Finalise sync log ─────────────────────────────────────────────────────
     const duration  = Date.now() - pipelineStart;
@@ -1386,6 +1448,7 @@ async function runDeltaSync(syncType = 'DELTA') {
       invalidatePattern('network:*'),       // network-pulse aggregations
       invalidatePattern('skuids:*'),        // pre-resolved SKU UUID lists
       invalidatePattern('category:*'),      // category → sku_id[] cache
+      invalidatePattern('ageing:*'),        // true FIFO + on-hand ageing
     ]);
 
     const mins = Math.floor(duration / 60000);
