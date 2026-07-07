@@ -147,16 +147,25 @@ function classifyGranularity(dates) {
 async function getRange(req, res, next) {
   try {
     const data = await getOrSet('stockavail:range', async () => {
-      const r = await query(
-        `SELECT MIN(snapshot_date)::text AS from, MAX(snapshot_date)::text AS to,
-                COUNT(DISTINCT snapshot_date)::int AS days FROM inventory_daily_snapshot`
-      );
-      // Per-date total units — powers the recent-history sparkline. Cheap over
-      // the current few days; cached at the snapshot TTL for the full-history case.
-      const dts = await query(`SELECT snapshot_date::text AS d, SUM(qty_on_hand)::bigint AS u
-                                 FROM inventory_daily_snapshot GROUP BY snapshot_date ORDER BY 1`);
-      const row = r.rows[0] || {};
-      return { from: row.from || null, to: row.to || null, days: row.days || 0,
+      // Bounds ONLY — MIN/MAX(snapshot_date) are per-partition index lookups, so
+      // this stays instant even on full history. (The old query also did
+      // COUNT(DISTINCT) + a per-date SUM over the ENTIRE table — a full scan that
+      // exploded to a 45s timeout once prod carried years of snapshots.)
+      const b = await query(
+        `SELECT MIN(snapshot_date)::text AS from, MAX(snapshot_date)::text AS to
+           FROM inventory_daily_snapshot`);
+      const from = b.rows[0]?.from || null;
+      const to   = b.rows[0]?.to   || null;
+      if (!to) return { from: null, to: null, days: 0, dates: [] };
+      // The recent-history sparkline only needs the last ~120 days — bound it so
+      // this scans a handful of partitions, never the whole history. The calendar
+      // can still pick any date back to `from` (min/max above are exact).
+      const dts = await query(
+        `SELECT snapshot_date::text AS d, SUM(qty_on_hand)::bigint AS u
+           FROM inventory_daily_snapshot
+          WHERE snapshot_date > ($1::date - INTERVAL '120 days')
+          GROUP BY snapshot_date ORDER BY 1`, [to]);
+      return { from, to, days: dts.rows.length,
                dates: dts.rows.map((x) => ({ d: x.d, u: Number(x.u) })) };
     }, TTL.INVENTORY_SNAPSHOT);
     res.json({ success: true, data });
@@ -603,24 +612,29 @@ async function getSalesVsStock(req, res, next) {
     const { from, to } = periodToRange(req.query.period, req.query.from, req.query.to);
     const cacheKey = `stockavail:svs:${from}:${to}:${JSON.stringify(req.query)}`;
     const data = await getOrSet(cacheKey, async () => {
-      // Stock side — daily on-hand from the snapshot table, scoped.
+      // Stock side — daily on-hand from the snapshot table, scoped. Only join
+      // skus when the scope actually needs a SKU attribute (category/colour/…);
+      // otherwise summing qty over a 90–180-day window × skus is a needless join
+      // that dominates on full history. stock_value (unused by the UI) is skipped
+      // entirely when unscoped so the network-wide default is a pure SUM.
       const p1 = [];
       const sc1 = buildScope(req.query, p1);
-      const j1 = sc1.joinSku ? 'JOIN skus s ON s.id = d.sku_id' : 'LEFT JOIN skus s ON s.id = d.sku_id';
+      const j1 = sc1.joinSku ? 'JOIN skus s ON s.id = d.sku_id' : '';
+      const val1 = sc1.joinSku ? 'SUM(d.qty_on_hand * s.mrp)::bigint' : '0::bigint';
       const f1 = p1.push(from); const t1 = p1.push(to);
       const stock = await query(
         `SELECT d.snapshot_date::text AS date, SUM(d.qty_on_hand)::bigint AS stock_on_hand,
-                SUM(d.qty_on_hand * s.mrp)::bigint AS stock_value
+                ${val1} AS stock_value
            FROM inventory_daily_snapshot d
            JOIN locations l ON l.id = d.location_id
            ${j1}
           WHERE d.snapshot_date BETWEEN $${f1}::date AND $${t1}::date AND ${sc1.conds.join(' AND ')}
           GROUP BY d.snapshot_date`, p1);
 
-      // Sales side — daily SALE movements, same scope.
+      // Sales side — daily SALE movements, same scope. Same conditional join.
       const p2 = [];
       const sc2 = buildScope(req.query, p2);
-      const j2 = sc2.joinSku ? 'JOIN skus s ON s.id = m.sku_id' : 'LEFT JOIN skus s ON s.id = m.sku_id';
+      const j2 = sc2.joinSku ? 'JOIN skus s ON s.id = m.sku_id' : '';
       const f2 = p2.push(from); const t2 = p2.push(to);
       const sales = await query(
         `SELECT (m.moved_at AT TIME ZONE 'Asia/Kolkata')::date::text AS date,
