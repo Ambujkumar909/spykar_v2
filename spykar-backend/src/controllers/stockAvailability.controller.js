@@ -157,16 +157,15 @@ async function getRange(req, res, next) {
       const from = b.rows[0]?.from || null;
       const to   = b.rows[0]?.to   || null;
       if (!to) return { from: null, to: null, days: 0, dates: [] };
-      // The recent-history sparkline only needs the last ~120 days — bound it so
-      // this scans a handful of partitions, never the whole history. The calendar
-      // can still pick any date back to `from` (min/max above are exact).
+      // Sparkline dates come from the tiny precomputed rollup (one row per date),
+      // so this is a few-hundred-row read — NOT a SUM over the whole snapshot
+      // history. Last 120 dates is plenty for the recent-history strip.
       const dts = await query(
-        `SELECT snapshot_date::text AS d, SUM(qty_on_hand)::bigint AS u
-           FROM inventory_daily_snapshot
-          WHERE snapshot_date > ($1::date - INTERVAL '120 days')
-          GROUP BY snapshot_date ORDER BY 1`, [to]);
-      return { from, to, days: dts.rows.length,
-               dates: dts.rows.map((x) => ({ d: x.d, u: Number(x.u) })) };
+        `SELECT snapshot_date::text AS d, total_units::bigint AS u
+           FROM inventory_daily_totals
+          ORDER BY snapshot_date DESC LIMIT 120`);
+      const dates = dts.rows.map((x) => ({ d: x.d, u: Number(x.u) })).reverse();
+      return { from, to, days: dates.length, dates };
     }, TTL.INVENTORY_SNAPSHOT);
     res.json({ success: true, data });
   } catch (err) { next(err); }
