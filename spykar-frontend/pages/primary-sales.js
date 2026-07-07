@@ -135,7 +135,10 @@ function Empty({ label, small }) {
 }
 
 export default function PrimarySalesPage() {
-  const { preset, setPreset, setCustom, fromISO, toISO } = useTimeRange('ytd'); // open on the full FY
+  // Open on MTD (fast) — YTD over full history aggregates a whole year of the
+  // rollup on every load (10s+ cold). The user can switch to QTD/YTD any time
+  // (and it caches). Lightning-fast first paint beats a slow full-FY default.
+  const { preset, setPreset, setCustom, fromISO, toISO } = useTimeRange('mtd');
   const { isDark } = useTheme();
   const [measure, setMeasure]     = useState('value');
   const [viewBy, setViewBy]       = useState('warehouse');

@@ -276,11 +276,18 @@ async function getPivot(req, res, next) {
 async function getTypes(req, res, next) {
   try {
     const data = await getOrSet('primsales:types', async () => {
+      // Powers the Type dropdown (filters by ttyp only). Read the pre-aggregated
+      // rollup bounded to the last 120 days — the ttyp set is stable, so this
+      // covers every active type — instead of a full scan of the 110M-row raw
+      // ledger (which timed out cold on prod). Grouped by ttyp (trtp was only
+      // label decoration; the filter never used it).
       const r = await query(
-        `SELECT ttyp, trtp, COUNT(*)::bigint AS txns, COALESCE(SUM(trqt),0)::bigint AS qty
-           FROM primary_sales_movements WHERE ttyp IS NOT NULL
-          GROUP BY ttyp, trtp ORDER BY txns DESC`);
-      return r.rows.map((x) => ({ ttyp: x.ttyp, trtp: x.trtp, label: ttypLabel(x.ttyp), txns: Number(x.txns), qty: Number(x.qty) }));
+        `SELECT ttyp, COALESCE(SUM(txns),0)::bigint AS txns, COALESCE(SUM(qty),0)::bigint AS qty
+           FROM primary_sales_daily
+          WHERE ttyp IS NOT NULL
+            AND trdt > (SELECT MAX(trdt) FROM primary_sales_daily) - INTERVAL '120 days'
+          GROUP BY ttyp ORDER BY txns DESC`);
+      return r.rows.map((x) => ({ ttyp: x.ttyp, trtp: null, label: ttypLabel(x.ttyp), txns: Number(x.txns), qty: Number(x.qty) }));
     }, TTL.FILTER_OPTIONS);
     res.json({ success: true, data });
   } catch (err) { next(err); }
