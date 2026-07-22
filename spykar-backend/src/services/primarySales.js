@@ -302,6 +302,54 @@ async function rebuildRollup() {
   }
 }
 
+// ─── Incremental rollup — re-aggregate ONLY the given TRDT dates ─────────────
+// Deltas + reconcile touch a handful of recent days, so re-summing the whole
+// 110M-row ledger on every 4×/day sync (what the full rebuild did) is pure
+// waste that lags the box. This rebuilds just the affected dates — O(days),
+// backed by idx_primary_mv_trdt — and is ATOMIC per call (DELETE+INSERT in one
+// transaction) so a dashboard read never sees a half-updated date. Safety valve:
+// if an unusually wide set of dates arrives (e.g. a --force bootstrap), fall back
+// to the single-pass full rebuild, which is cheaper than thousands of lookups.
+async function rebuildRollupForDates(datesIn) {
+  const dates = [...new Set((datesIn || []).filter(Boolean))];
+  if (dates.length === 0) return 0;
+  if (dates.length > 90) {
+    logger.info(`[PRIMARY] ${dates.length} dates changed — full rebuild is cheaper than incremental.`);
+    return rebuildRollup();
+  }
+  const pg = await pgPool.connect();
+  guardClientErrors(pg, 'rollup-inc');
+  const t0 = Date.now();
+  try {
+    await pg.query(`SET work_mem = '256MB'`);
+    await pg.query('BEGIN');
+    await pg.query(`DELETE FROM primary_sales_daily WHERE trdt = ANY($1::date[])`, [dates]);
+    const ins = await pg.query(`
+      INSERT INTO primary_sales_daily (trdt, warehouse_id, sku_id, ttyp, qty, gross, gross_abs, cost, txns)
+      SELECT m.trdt, m.warehouse_id, m.sku_id, m.ttyp,
+             SUM(m.trqt)::numeric(20,3)                                              AS qty,
+             SUM(m.trqt * COALESCE(NULLIF(m.trpr,0), s.mrp, 0))::numeric(22,2)       AS gross,
+             SUM(ABS(m.trqt * COALESCE(NULLIF(m.trpr,0), s.mrp, 0)))::numeric(22,2)  AS gross_abs,
+             SUM(m.trqt * COALESCE(NULLIF(m.pupr,0), s.cost_price, 0))::numeric(22,2) AS cost,
+             COUNT(*)::int                                                            AS txns
+        FROM primary_sales_movements m
+        JOIN skus s ON s.id = m.sku_id
+       WHERE m.trdt = ANY($1::date[])
+       GROUP BY m.trdt, m.warehouse_id, m.sku_id, m.ttyp
+    `, [dates]);
+    await pg.query('COMMIT');
+    logger.info(`[PRIMARY] ✅ Rollup incrementally updated for ${dates.length} date(s): ${(ins.rowCount || 0).toLocaleString()} rows in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+    return ins.rowCount || 0;
+  } catch (err) {
+    try { await pg.query('ROLLBACK'); } catch (_) {}
+    logger.error(`[PRIMARY] Incremental rollup failed: ${err.message}`);
+    throw err;
+  } finally {
+    try { await pg.query('RESET work_mem'); } catch (_) {}
+    pg.release();
+  }
+}
+
 // ─── Preflight ────────────────────────────────────────────────────────────────
 async function preflight(erpPool) {
   const cfg = m3Config();
@@ -442,8 +490,12 @@ async function pullMerge(pg, erpPool, maps, whereExtra, label) {
       whsl=EXCLUDED.whsl, trpr=EXCLUDED.trpr, pupr=EXCLUDED.pupr, trqt=EXCLUDED.trqt,
       repn=EXCLUDED.repn, stas=EXCLUDED.stas, lmts=EXCLUDED.lmts, synced_at=NOW()
   `);
+  // Distinct TRDT dates in this batch → drive the incremental rollup. tmp_primary
+  // holds only the delta rows, so this is tiny.
+  const dRes = await pg.query(`SELECT DISTINCT trdt::text AS d FROM tmp_primary WHERE trdt IS NOT NULL`);
+  const dates = dRes.rows.map((r) => r.d);
   await pg.query('DROP TABLE IF EXISTS tmp_primary');
-  return { merged: merge.rowCount || 0, streamed: out.streamed, miss: out.miss, maxLmts: out.maxLmts };
+  return { merged: merge.rowCount || 0, streamed: out.streamed, miss: out.miss, maxLmts: out.maxLmts, dates };
 }
 
 // ─── Public: reconcile — the deterministic self-heal / audit ─────────────────
@@ -500,7 +552,7 @@ async function reconcile({ from = null, to = null } = {}) {
       residual += rem > 0 ? rem : 0;
       logger.info(`[PRIMARY] RECONCILE ${day.d}: src=${day.src} pg ${before}→${after} (+${after - before}) · unmappable≈${rem > 0 ? rem : 0}`);
     }
-    if (healed > 0) { logger.info('[PRIMARY] Rebuilding rollup after reconcile…'); await rebuildRollup(); }
+    if (healed > 0) { logger.info('[PRIMARY] Incremental rollup after reconcile…'); await rebuildRollupForDates(short.map((s) => s.d)); }
     const secs = ((Date.now() - t0) / 1000).toFixed(0);
     logger.info(`[PRIMARY] ✅ RECONCILE done in ${secs}s: ${short.length} short days, healed ${healed.toLocaleString()} rows, unmappable residual ≈ ${residual.toLocaleString()}`);
     return { window: [from, to], shortDays: short.length, healed, residual, seconds: Number(secs) };
@@ -546,7 +598,10 @@ async function runDelta({ force = false } = {}) {
     const out = await pullMerge(pg, erpPool, maps, whereExtra, 'delta');
 
     if (out.maxLmts) await advanceHighWater(out.maxLmts, out.merged);
-    if (out.merged > 0) { logger.info('[PRIMARY] Rebuilding rollup after delta…'); await rebuildRollup(); }
+    if (out.merged > 0) {
+      logger.info(`[PRIMARY] Incremental rollup for ${out.dates.length} affected date(s)…`);
+      await rebuildRollupForDates(out.dates);
+    }
     logger.info(`[PRIMARY] ✅ DELTA merged ${out.merged.toLocaleString()}, streamed ${out.streamed.toLocaleString()}, ${out.miss.toLocaleString()} misses`);
     return { merged: out.merged, streamed: out.streamed, miss: out.miss, maxLmts: out.maxLmts };
   } finally {
@@ -556,4 +611,4 @@ async function runDelta({ force = false } = {}) {
   }
 }
 
-module.exports = { runWarehouses, runBackfill, runDelta, reconcile, rebuildRollup, buildLookupMaps, FEED };
+module.exports = { runWarehouses, runBackfill, runDelta, reconcile, rebuildRollup, rebuildRollupForDates, buildLookupMaps, FEED };
