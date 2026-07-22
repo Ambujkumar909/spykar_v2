@@ -24,8 +24,11 @@ const SCOPE = ['state', 'city', 'channel', 'group_name', 'store', 'store_code',
                'sub_product', 'season']
   .map((k) => query(k).optional().isString().trim());
 
-// 0) Available snapshot-date range (bounds the calendar).
+// 0) Available snapshot-date range (bounds the calendar) — instant, no summing.
 router.get('/range', ctrl.getRange);
+
+// 0b) Recent-history sparkline (per-date total on-hand, last ~35 days) — lazy.
+router.get('/history', ctrl.getHistory);
 
 // A) Summary KPIs at a point in time.
 router.get('/summary', [

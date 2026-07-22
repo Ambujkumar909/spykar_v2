@@ -111,6 +111,8 @@ export const analyticsService = {
 // Read-only daily-stock analytics. Mirrors analyticsService's param-passing.
 export const stockAvailabilityService = {
   getRange: () => api.get('/stock-availability/range'),
+  // Recent-history sparkline — loaded lazily, independent of the critical path.
+  getHistory: () => api.get('/stock-availability/history'),
   getSummary: (params = {}) => api.get('/stock-availability/summary', { params }),
   getTrend:   (params = {}) => api.get('/stock-availability/trend', { params }),
   getPivot:   (params = {}) => api.get('/stock-availability/pivot', { params }),

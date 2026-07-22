@@ -142,30 +142,42 @@ function classifyGranularity(dates) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 0) GET /range — available snapshot dates (bounds the calendar; defaults to max)
+// 0) GET /range — calendar bounds ONLY (instant). The recent-history sparkline
+//    is a SEPARATE, lazy call (/history) so nothing on the critical path (the
+//    calendar + default date, which gate summary/pivot) waits on an aggregate.
 // ════════════════════════════════════════════════════════════════════════════
 async function getRange(req, res, next) {
   try {
     const data = await getOrSet('stockavail:range', async () => {
-      // Bounds ONLY — MIN/MAX(snapshot_date) are per-partition index lookups, so
-      // this stays instant even on full history. (The old query also did
-      // COUNT(DISTINCT) + a per-date SUM over the ENTIRE table — a full scan that
-      // exploded to a 45s timeout once prod carried years of snapshots.)
+      // MIN/MAX(snapshot_date) are per-partition index lookups — instant at any
+      // history size. No summing, no scan.
       const b = await query(
         `SELECT MIN(snapshot_date)::text AS from, MAX(snapshot_date)::text AS to
            FROM inventory_daily_snapshot`);
-      const from = b.rows[0]?.from || null;
-      const to   = b.rows[0]?.to   || null;
-      if (!to) return { from: null, to: null, days: 0, dates: [] };
-      // Sparkline dates come from the tiny precomputed rollup (one row per date),
-      // so this is a few-hundred-row read — NOT a SUM over the whole snapshot
-      // history. Last 120 dates is plenty for the recent-history strip.
+      return { from: b.rows[0]?.from || null, to: b.rows[0]?.to || null };
+    }, TTL.INVENTORY_SNAPSHOT);
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 0b) GET /history — recent-history sparkline (per-date total on-hand). Bounded
+//    to the last ~35 days so it prunes to the newest partition(s) — never a scan
+//    over full history — cached, and loaded LAZILY by the UI (after first paint),
+//    so it never blocks the page. No precomputed rollup to seed or maintain.
+// ════════════════════════════════════════════════════════════════════════════
+async function getHistory(req, res, next) {
+  try {
+    const data = await getOrSet('stockavail:history', async () => {
+      const mx = await query('SELECT MAX(snapshot_date)::text AS to FROM inventory_daily_snapshot');
+      const to = mx.rows[0]?.to || null;
+      if (!to) return { dates: [] };
       const dts = await query(
-        `SELECT snapshot_date::text AS d, total_units::bigint AS u
-           FROM inventory_daily_totals
-          ORDER BY snapshot_date DESC LIMIT 120`);
-      const dates = dts.rows.map((x) => ({ d: x.d, u: Number(x.u) })).reverse();
-      return { from, to, days: dates.length, dates };
+        `SELECT snapshot_date::text AS d, SUM(qty_on_hand)::bigint AS u
+           FROM inventory_daily_snapshot
+          WHERE snapshot_date > ($1::date - INTERVAL '35 days')
+          GROUP BY snapshot_date ORDER BY 1`, [to]);
+      return { dates: dts.rows.map((x) => ({ d: x.d, u: Number(x.u) })) };
     }, TTL.INVENTORY_SNAPSHOT);
     res.json({ success: true, data });
   } catch (err) { next(err); }
@@ -678,4 +690,4 @@ async function getSalesVsStock(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { getRange, getSummary, getTrend, getPivot, getStoreTrend, getSalesVsStock, exportCsv };
+module.exports = { getRange, getHistory, getSummary, getTrend, getPivot, getStoreTrend, getSalesVsStock, exportCsv };

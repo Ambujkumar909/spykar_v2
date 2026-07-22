@@ -89,7 +89,8 @@ export default function StockAvailabilityPage() {
   const axis = isDark ? 'rgba(255,255,255,0.45)' : 'rgba(15,23,42,0.55)';
   const grid = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)';
 
-  const [range, setRange] = useState(null);       // { from, to, days, dates:[{d,u}] }
+  const [range, setRange] = useState(null);       // { from, to } — calendar bounds
+  const [history, setHistory] = useState(null);   // [{d,u}] recent-history sparkline (lazy)
   const [asOf, setAsOf] = useState(todayISO());
   const [measure, setMeasure] = useState('units');
   const [viewBy, setViewBy] = useState('state');
@@ -136,13 +137,25 @@ export default function StockAvailabilityPage() {
   const scope = useMemo(() => ({ status, ...lensScope }), [status, lensScope]);
   const scopeKey = useMemo(() => JSON.stringify(scope), [scope]);
 
-  // Available date range → default the calendar to the newest snapshot.
+  // Available date range → default the calendar to the newest snapshot. This is
+  // the critical path (it sets the as-on date that summary/pivot depend on), and
+  // it's an instant MIN/MAX lookup — no aggregation.
   useEffect(() => {
     let a = true;
     stockAvailabilityService.getRange().then((r) => {
       if (!a) return; const d = r.data?.data || null; setRange(d);
       if (d?.to) setAsOf(d.to);
     }).catch(() => {});
+    return () => { a = false; };
+  }, []);
+
+  // Recent-history sparkline — fetched separately/lazily so its (bounded) sum
+  // never blocks first paint. Loads once; independent of the selected date.
+  useEffect(() => {
+    let a = true;
+    stockAvailabilityService.getHistory()
+      .then((r) => { if (a) setHistory(r.data?.data?.dates || []); })
+      .catch(() => { if (a) setHistory([]); });
     return () => { a = false; };
   }, []);
 
@@ -229,7 +242,7 @@ export default function StockAvailabilityPage() {
   const catDay = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v))
     ? new Date(v + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '');
 
-  const spark = useMemo(() => (range?.dates || []).slice(-30), [range]);
+  const spark = useMemo(() => (history || []).slice(-30), [history]);
   const sparkCats = useMemo(() => spark.map((p) => p.d), [spark]);
   const selDay = summary?.as_of || asOf;
   const sparkOpts = useMemo(() => ({
@@ -364,7 +377,7 @@ export default function StockAvailabilityPage() {
           </div>
           <div className="sx-card" style={{ padding: 18 }}>
             <SecTitle icon={Activity} label="Recent history" right={<span className="sa-unit">last {spark.length} snapshots</span>} />
-            {range == null ? <div className="sx-shimmer" style={{ height: 120, borderRadius: 8 }} />
+            {history == null ? <div className="sx-shimmer" style={{ height: 120, borderRadius: 8 }} />
               : spark.length ? <Chart options={sparkOpts} series={sparkSeries} type="area" height={130} />
               : <Empty label="No snapshots yet" small />}
           </div>

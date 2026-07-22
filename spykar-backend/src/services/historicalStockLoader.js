@@ -302,22 +302,6 @@ async function archiveCurrentSnapshot(dateISO) {
       ON CONFLICT (snapshot_date) DO UPDATE SET
         status='SUCCESS', resolved_rows=$2, duration_ms=$3, completed_at=NOW(), error_message=NULL
     `, [day, r.rowCount || 0, Date.now() - t0]);
-    // Refresh the per-date network totals rollup for this day (powers the fast
-    // /range sparkline). Guarded so a missing table (pre-migration) can't fail
-    // the archive.
-    try {
-      await client.query(`
-        INSERT INTO inventory_daily_totals (snapshot_date, total_units, value_gross, value_cost, computed_at)
-        SELECT $1::date, COALESCE(SUM(d.qty_on_hand),0)::bigint,
-               COALESCE(SUM(d.qty_on_hand * COALESCE(s.mrp,0)),0)::bigint,
-               COALESCE(SUM(d.qty_on_hand * COALESCE(s.cost_price,0)),0)::bigint, now()
-          FROM inventory_daily_snapshot d LEFT JOIN skus s ON s.id = d.sku_id
-         WHERE d.snapshot_date = $1::date
-        ON CONFLICT (snapshot_date) DO UPDATE SET
-          total_units=EXCLUDED.total_units, value_gross=EXCLUDED.value_gross,
-          value_cost=EXCLUDED.value_cost, computed_at=now()
-      `, [day]);
-    } catch (e) { logger.warn(`[ARCHIVE] daily-totals refresh skipped: ${e.message}`); }
     return r.rowCount || 0;
   });
   logger.info(`[ARCHIVE] Captured ${inserted.toLocaleString()} rows into inventory_daily_snapshot for ${day} (${((Date.now()-t0)/1000).toFixed(1)}s)`);
