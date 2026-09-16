@@ -33,6 +33,7 @@ const { query, pool: pgPool } = require('../config/database');
 const { invalidatePattern } = require('../config/cache');
 const { rebuildAll: rebuildSalesRollups, refreshRange: refreshSalesRollups } = require('./salesRollup');
 const primarySales      = require('./primarySales');
+const masterRefresh     = require('./masterRefresh');
 const logger            = require('../config/logger');
 
 // ─── CSV-safe encoder for COPY FROM STDIN (FORMAT csv) ────────────────────────
@@ -1204,7 +1205,7 @@ async function rebuildInventorySnapshot(stats) {
 //
 // Disable per-run with SYNC_PRIMARY_SALES=false (e.g. before Phase 0 confirms
 // the LMTS / TRDT-index / (cono,whlo,itno,repn) assumptions on a live M3).
-async function syncPrimarySales(stats) {
+async function syncPrimarySales(stats, masterResult = null) {
   if (process.env.SYNC_PRIMARY_SALES === 'false') {
     logger.info('[PRIMARY] Skipped (SYNC_PRIMARY_SALES=false)');
     return;
@@ -1213,10 +1214,52 @@ async function syncPrimarySales(stats) {
     const r = await primarySales.runDelta();
     stats.fetched  += r.merged;
     stats.inserted += r.merged;
-    logger.info(`[PRIMARY] ✅ delta stage: ${r.merged.toLocaleString()} merged, ${r.miss.toLocaleString()} misses`);
+    logger.info(`[PRIMARY] ✅ delta stage: ${r.merged.toLocaleString()} changed, ${r.miss.toLocaleString()} unmappable`);
   } catch (err) {
     stats.failed++;
     logger.error(`[PRIMARY] delta stage failed (non-fatal — retries next sync from LMTS high-water): ${err.message}`);
+    return; // if M3 is down the stages below would only fail the same way
+  }
+
+  // Heal item codes the SKU master now resolves (no-op when there are none).
+  try {
+    const r = await primarySales.remap();
+    if (r.items) { stats.inserted += r.merged; logger.info(`[PRIMARY] ✅ remap stage: ${r.items} item(s), ${r.merged.toLocaleString()} rows loaded`); }
+  } catch (err) {
+    stats.failed++;
+    logger.error(`[PRIMARY] remap stage failed (non-fatal — retries next sync): ${err.message}`);
+  }
+
+  // Prices / categories changed in the SKU master → the rollups bake those in
+  // → rebuild them (off-lock side tables + millisecond swap; readers never wait).
+  if (masterResult && masterResult.skuPriceChanged) {
+    try {
+      const n = await primarySales.rebuildRollup();
+      logger.info(`[PRIMARY] ✅ rollup rebuilt after SKU price/category change: ${n.toLocaleString()} rows`);
+    } catch (err) {
+      stats.failed++;
+      logger.error(`[PRIMARY] rollup rebuild after master change failed (non-fatal — run npm run primary:rollup): ${err.message}`);
+    }
+  }
+
+  // Nightly self-heal. The LMTS delta cannot see rows whose LMTS never moved
+  // (back-dated inserts, NULL LMTS) — only a count-match against M3 can. Runs
+  // once a day, in the sync whose local hour == PRIMARY_RECONCILE_HOUR (23),
+  // over the last PRIMARY_RECONCILE_DAYS (45) days; batched re-pulls, remembers
+  // unmappable residue. Kill switch: SYNC_PRIMARY_RECONCILE=false.
+  if (process.env.SYNC_PRIMARY_RECONCILE === 'false') return;
+  const hour = parseInt(process.env.PRIMARY_RECONCILE_HOUR, 10);
+  const wantHour = Number.isInteger(hour) ? hour : 23;
+  if (new Date().getHours() !== wantHour) return;
+  try {
+    const r = await primarySales.reconcile({});
+    if (r.skipped) return;
+    stats.inserted += r.healed;
+    logger.info(`[PRIMARY] ✅ reconcile stage: ${r.checkedDays} days checked, ${r.shortDays} re-pulled, healed +${r.healed.toLocaleString()}, ` +
+      `${r.knownDays} known-residual days skipped`);
+  } catch (err) {
+    stats.failed++;
+    logger.error(`[PRIMARY] reconcile stage failed (non-fatal — retries tomorrow): ${err.message}`);
   }
 }
 
@@ -1311,6 +1354,23 @@ async function runDeltaSync(syncType = 'DELTA') {
       logger.info(`[RANGE] DELTA sync: ${toErpDate(salesFrom)} → ${toErpDate(salesTo)}`);
     }
 
+    // ── STAGE 0a: master refresh (every MASTER_REFRESH_EVERY_DAYS days) ──────
+    // Runs BEFORE the lookup maps are built so this very sync benefits from a
+    // fresh SKU/store master. Non-fatal; a failed or floor-guarded loader is
+    // retried at the next sync (state in master_refresh_state). Kill switch:
+    // SYNC_MASTER_REFRESH=false. Manual: npm run masters:refresh -- --force.
+    let masterResult = null;
+    if (process.env.SYNC_MASTER_REFRESH !== 'false') {
+      try {
+        masterResult = await masterRefresh.refreshMastersIfDue();
+        if (masterResult.skipped) logger.info(`[MASTER] refresh not due (next ${masterResult.nextDueAt ? masterResult.nextDueAt.toISOString() : 'now'})`);
+        else if (masterResult.failed.length) stats.failed += masterResult.failed.length;
+      } catch (err) {
+        stats.failed++;
+        logger.error(`[MASTER] refresh stage failed (non-fatal — retries next sync): ${err.message}`);
+      }
+    }
+
     // ── Connect to SQL Server ─────────────────────────────────────────────────
     const pool = await tryConnectSqlServer();
 
@@ -1402,7 +1462,7 @@ async function runDeltaSync(syncType = 'DELTA') {
     // STAGE 5: Primary sales (MITTRA) delta — independent M3 feed, non-fatal.
     // Runs after ageing so a primary-feed hiccup can't delay the core inventory
     // refresh. Manages its own M3 connection + LMTS high-water mark.
-    await syncPrimarySales(stats);
+    await syncPrimarySales(stats, masterResult);
 
     // STAGE 5.5: TRUE inventory ageing — DISABLED for now (feature hidden).
     // Re-enable by flipping AGEING_ENABLED to true. When on: warehouse FIFO

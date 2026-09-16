@@ -7,13 +7,32 @@
  *
  *   node src/database/load_primary_sales.js --warehouses
  *        Load/refresh the AAA warehouse master (MITWHL). Run this FIRST.
- *   node src/database/load_primary_sales.js --backfill [--from=YYYY-MM-DD] [--to=YYYY-MM-DD]
- *        One-time history load, date-windowed (monthly chunks). Default from=2022-01-01.
- *   node src/database/load_primary_sales.js --delta
- *        Daily incremental — pulls LMTS > last_lmts, advances the high-water mark.
+ *   node src/database/load_primary_sales.js --backfill [--truncate] [--from=YYYY-MM-DD --to=YYYY-MM-DD] [--limit=N]
+ *        History load, streamed ONE WHLO AT A TIME with per-chunk progress in
+ *        primary_backfill_progress — re-run the same command after a crash /
+ *        VPN drop and it resumes at the interrupted warehouse.
+ *          empty ledger            → bulk index-light COPY, then full rollup (off-lock swap)
+ *          progress rows present   → resume
+ *          --from/--to on a loaded → (re)load that window via UPSERT, indexes live
+ *          --truncate              → wipe ledger + feed state, fresh full load
+ *          --limit=N               → smoke test via UPSERT (safe on any table state)
+ *        A populated ledger with no progress and no window is REFUSED (would duplicate).
+ *   node src/database/load_primary_sales.js --delta [--force]
+ *        Incremental — pulls LMTS > high-water (minus overlap), upserts, refreshes
+ *        the rollup for the touched dates only. --force on an EMPTY ledger runs the
+ *        backfill instead (never the 110M-row temp-table path).
+ *   node src/database/load_primary_sales.js --remap
+ *        Heal previously-unmappable item codes that the SKU master now resolves
+ *        (pulls exactly those ITNOs from M3). Runs automatically in every sync.
+ *   node src/database/load_primary_sales.js --rollup
+ *        Rebuild the speed layer (both rollups) from the ledger, off-lock, atomic swap.
+ *   node src/database/load_primary_sales.js --reconcile [--from= --to=]
+ *        Self-heal: per-day M3 vs PG counts (default last PRIMARY_RECONCILE_DAYS=45
+ *        days), batched re-pull of short days, remembers unmappable residue so
+ *        it is not re-chased. Runs automatically in the 23:00 sync.
  *
  * See primary_sales_discovery.sql for the Phase 0 checks that confirm the
- * LMTS / TRDT-index / (cono,whlo,itno,repn) assumptions baked into the engine.
+ * LMTS / TRDT-index / (cono,whlo,itno,rgdt,rgtm,tmsx) assumptions baked into the engine.
  */
 
 'use strict';
@@ -28,11 +47,13 @@ const MODE   = ARGS.includes('--warehouses') ? 'warehouses'
              : ARGS.includes('--delta')      ? 'delta'
              : ARGS.includes('--backfill')   ? 'backfill'
              : ARGS.includes('--reconcile')  ? 'reconcile'
+             : ARGS.includes('--rollup')     ? 'rollup'
+             : ARGS.includes('--remap')      ? 'remap'
              : null;
 
 async function main() {
   if (!MODE) {
-    console.error('Usage: node load_primary_sales.js --warehouses | --backfill [--from= --to=] | --delta [--force] | --reconcile [--from= --to=]');
+    console.error('Usage: node load_primary_sales.js --warehouses | --backfill [--truncate] [--from= --to=] [--limit=N] | --delta [--force] | --reconcile [--from= --to=] | --rollup | --remap');
     process.exit(1);
   }
   console.log('='.repeat(64));
@@ -51,17 +72,28 @@ async function main() {
         limit: argVal('limit') || undefined,   // TOP N — validation/smoke test
         truncate: ARGS.includes('--truncate'), // clear the table first
       });
-      console.log(`Backfill: loaded=${r.streamed} misses=${r.miss} seconds=${r.seconds} highWaterLmts=${r.maxLmts ? r.maxLmts.toISOString() : 'n/a'}`);
+      console.log(`Backfill (${r.mode}): streamed=${r.streamed} changed=${r.merged} unmappable=${r.miss} seconds=${r.seconds} highWaterLmts=${r.maxLmts ? r.maxLmts.toISOString() : 'n/a'}`);
+    } else if (MODE === 'remap') {
+      // After a SKU-master refresh: load the history of item codes that were
+      // unmappable before and resolve now.
+      const r = await primary.remap();
+      console.log(`Remap: items=${r.items} streamed=${r.streamed} loaded=${r.merged} dates=${r.dates} seconds=${r.seconds}`);
+    } else if (MODE === 'rollup') {
+      // Rebuild both rollups from the ledger off-lock and swap them in (no M3
+      // needed). Use after a SKU-master price/category change, or to physically
+      // re-cluster the sku-grain rollup by date on an existing deployment.
+      const n = await primary.rebuildRollup();
+      console.log(`Rollup rebuilt: ${n} sku-grain rows (warehouse grain derived + swapped in the same transaction)`);
     } else if (MODE === 'reconcile') {
       const r = await primary.reconcile({ from: argVal('from') || undefined, to: argVal('to') || undefined });
       if (r.skipped) console.log('Reconcile skipped — no data window.');
-      else console.log(`Reconcile: window=${r.window.join('..')} shortDays=${r.shortDays} healed=${r.healed} unmappableResidual=${r.residual} seconds=${r.seconds}`);
+      else console.log(`Reconcile: window=${r.window.join('..')} checkedDays=${r.checkedDays} rePulledDays=${r.shortDays} knownResidualDays=${r.knownDays} healed=${r.healed} changed=${r.changed} newResidual=${r.residual} knownResidual=${r.knownResidual} seconds=${r.seconds}`);
     } else if (MODE === 'delta') {
-      // `--force` bootstraps the whole history through the delta path when no
-      // backfill has run (high-water = 0). Normally run --backfill first.
+      // `--force` on an empty ledger bootstraps via the chunked backfill.
       const r = await primary.runDelta({ force: ARGS.includes('--force') });
       if (r.skipped) console.log('Delta skipped — no backfill yet. Run --backfill first, or --delta --force to bootstrap.');
-      else console.log(`Delta: merged=${r.merged} misses=${r.miss} highWaterLmts=${r.maxLmts}`);
+      else if (r.bootstrapped) console.log(`Delta bootstrapped via backfill: loaded=${r.streamed} unmappable=${r.miss} highWaterLmts=${r.maxLmts ? r.maxLmts.toISOString() : 'n/a'}`);
+      else console.log(`Delta: streamed=${r.streamed} changed=${r.merged} dates=${(r.dates || []).length} unmappable=${r.miss} highWaterLmts=${r.maxLmts ? r.maxLmts.toISOString() : 'n/a'}`);
     }
     console.log(`\nDone in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
   } finally {

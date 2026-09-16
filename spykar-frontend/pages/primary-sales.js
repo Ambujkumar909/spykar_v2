@@ -200,6 +200,11 @@ export default function PrimarySalesPage() {
 
   const [ov, setOv] = useState(null);
   const [ovLoading, setOvLoading] = useState(true);
+  // Distinct-SKU KPI is fetched separately (/sku-count): it is the one number
+  // that needs the sku-grain rollup (~1s over a full year), so it must never
+  // hold back the first paint of everything else.
+  const [skuCount, setSkuCount] = useState(null);
+  const [skuLoading, setSkuLoading] = useState(true);
   const [pivot, setPivot] = useState(null);
   const [pivotLoading, setPivotLoading] = useState(true);
   const [trend, setTrend] = useState(null);
@@ -222,6 +227,16 @@ export default function PrimarySalesPage() {
       .then((r) => { if (a) setOv(r.data?.data || null); })
       .catch((e) => { if (a) notifyApiError(e, 'Failed to load primary sales'); })
       .finally(() => { if (a) setOvLoading(false); });
+    return () => { a = false; };
+  }, [scopeKey, fromISO, toISO]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // lazy distinct-SKU KPI
+  useEffect(() => {
+    let a = true; setSkuLoading(true);
+    primarySalesService.getSkuCount({ from: fromISO, to: toISO, ...scope })
+      .then((r) => { if (a) setSkuCount(r.data?.data?.sku_count ?? null); })
+      .catch(() => { if (a) setSkuCount(null); })
+      .finally(() => { if (a) setSkuLoading(false); });
     return () => { a = false; };
   }, [scopeKey, fromISO, toISO]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -319,8 +334,9 @@ export default function PrimarySalesPage() {
 
   const wOpts = useMemo(() => ([{ value: '', label: 'All warehouses' },
     ...warehouses.map((w) => ({ value: w.whlo, label: `${w.whlo} · ${w.whnm || ''}`.trim() }))]), [warehouses]);
+  // /types returns { ttyp, label } (trtp is no longer read — see controller).
   const tOpts = useMemo(() => ([{ value: '', label: 'All types' },
-    ...types.map((t) => ({ value: t.ttyp, label: `${t.ttyp}${t.trtp ? ' / ' + t.trtp : ''}` }))]), [types]);
+    ...types.map((t) => ({ value: t.ttyp, label: t.label ? `${t.ttyp} · ${t.label}` : String(t.ttyp) }))]), [types]);
 
   // Header stays slim — just the time pills (like /sales) so the clock + theme
   // toggle never get pushed off-screen. All other controls live in the page
@@ -415,7 +431,7 @@ export default function PrimarySalesPage() {
             <div className="ps-hero-sub">
               <span><b className="tnum">{cnt(k?.txns || 0)}</b> transactions</span>
               <span><b className="tnum">{k?.warehouse_count || 0}</b> warehouses</span>
-              <span><b className="tnum">{cnt(k?.sku_count || 0)}</b> SKUs</span>
+              <span><b className="tnum">{skuLoading ? '…' : cnt(skuCount || 0)}</b> SKUs</span>
               <span className="ps-chip"><i style={{ background: IN }} />Inbound <b>{inShare}%</b></span>
               <span className="ps-chip"><i style={{ background: OUT }} />Outbound <b>{100 - inShare}%</b></span>
             </div>
@@ -430,7 +446,7 @@ export default function PrimarySalesPage() {
             { lab: 'Transactions', val: cnt(k?.txns || 0), foot: 'movement lines', Icon: Receipt, c: DENIM },
             { lab: 'Net value flow', val: (k?.net_value >= 0 ? '+' : '') + fmtCr(k?.net_value), foot: 'stock value added', Icon: IndianRupee, c: SERIES[1] },
             { lab: 'Warehouses', val: fmtNum(k?.warehouse_count), foot: 'with activity', Icon: Warehouse, c: SERIES[0] },
-            { lab: 'Distinct SKUs', val: cnt(k?.sku_count || 0), foot: 'items moved', Icon: Package, c: SERIES[4] },
+            { lab: 'Distinct SKUs', val: skuLoading ? '…' : cnt(skuCount || 0), foot: 'items moved', Icon: Package, c: SERIES[4] },
             { lab: 'Txn types', val: fmtNum(k?.ttyp_count), foot: 'receipt · issue · transfer', Icon: ArrowLeftRight, c: SERIES[2] },
             { lab: 'Net units', val: fmtNum(k?.net_qty), foot: 'signed quantity', Icon: Boxes, c: SERIES[7] },
           ].map((t, i) => (

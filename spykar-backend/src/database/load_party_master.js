@@ -251,6 +251,25 @@ async function main() {
       return;
     }
 
+    // ── ROW-FLOOR GUARD ─────────────────────────────────────────────────────
+    // This loader soft-archives every active store NOT in the refresh. A partial
+    // AIgetParty result (ERP hiccup, timeout, half a recordset) would therefore
+    // archive real stores. Refuse to touch anything unless the ERP returned at
+    // least MASTER_FLOOR_FRACTION (0.9) of the stores we currently hold.
+    {
+      const { floorOk, EXIT_FLOOR } = require('../services/masterRefresh');
+      const pgf = await pgPool.connect();
+      let activeNow = 0;
+      try { activeNow = parseInt((await pgf.query('SELECT COUNT(*) AS c FROM locations WHERE is_active = true')).rows[0].c, 10); }
+      finally { pgf.release(); }
+      if (!floorOk(rows.length, activeNow)) {
+        console.error(`\n❌ FLOOR GUARD: AIgetParty returned ${rows.length} rows but ${activeNow} stores are active in PG — ` +
+          'suspected partial ERP result. NOTHING was changed. Set MASTER_FLOOR_FRACTION to override.');
+        process.exitCode = EXIT_FLOOR;
+        return;
+      }
+    }
+
     // Print column names from first row — helps user verify / map fields
     console.log('\nColumn names returned by AIgetParty:');
     console.log(' ', Object.keys(rows[0]).join(', '));

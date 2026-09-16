@@ -471,33 +471,44 @@ async function warmSalesAnalyticsAllModes() {
 }
 
 /**
- * Warm the Primary Sales page for its default FY window (the range the page
- * opens on). Pre-populates the /overview payload, the by-dimension pivots (so
- * switching View-by is instant), the default trend, and the tiny filter lists.
- * Reads the fast rollup, so all of this warms in a few seconds. Cache keys match
- * the controller exactly (same query objects the page sends post-validation).
+ * Warm the Primary Sales page for the window it actually opens on (MTD — see
+ * pages/primary-sales.js) and then the FY window (the YTD pill). Pre-populates
+ * /overview, the by-dimension pivots (so switching View-by is instant), the
+ * default trend, and the tiny filter lists. Dates are formatted as LOCAL
+ * calendar dates exactly like the frontend's useTimeRange, so the cache keys
+ * match what the browser requests. (The previous version warmed only the FY
+ * window with a UTC date — the page's real default stayed cold, and after
+ * 18:30 UTC the key didn't even match the browser's.)
  */
 async function warmPrimarySales() {
   const start = Date.now();
   try {
     const ctrl = require('../controllers/primarySales.controller');
+    const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const today = new Date();
-    const y = today.getFullYear();
-    const from = (today.getMonth() >= 3 ? y : y - 1) + '-04-01';   // Indian FY start
-    const to = today.toISOString().slice(0, 10);
-    const win = { from, to };
+    const to = fmt(today);
+    const mtd = { from: fmt(new Date(today.getFullYear(), today.getMonth(), 1)), to };
+    const fy  = { from: fmt(new Date(today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1, 3, 1)), to };
 
-    const tasks = [
-      invokeController(ctrl.getOverview, { ...win }),
-      invokeController(ctrl.getTrend, { group_by: 'warehouse', ...win, top: 6, measure: 'gross' }),
+    const forWindow = (win) => {
+      const tasks = [
+        invokeController(ctrl.getOverview, { ...win }),
+        invokeController(ctrl.getSkuCount, { ...win }),
+        invokeController(ctrl.getTrend, { group_by: 'warehouse', ...win, top: 6, measure: 'gross' }),
+      ];
+      for (const dim of ['warehouse', 'type', 'category', 'colour', 'size', 'product']) {
+        tasks.push(invokeController(ctrl.getPivot, { group_by: dim, ...win }));
+      }
+      return tasks;
+    };
+    await Promise.allSettled([
       invokeController(ctrl.getTypes, {}),
       invokeController(ctrl.getWarehouses, {}),
-    ];
-    for (const dim of ['warehouse', 'type', 'category', 'colour', 'size', 'product']) {
-      tasks.push(invokeController(ctrl.getPivot, { group_by: dim, ...win }));
-    }
-    await Promise.allSettled(tasks);
-    logger.info(`🔥 Cache warmed: primary-sales (overview + 6 pivots + trend) in ${Date.now() - start}ms`);
+      invokeController(ctrl.getRange, {}),
+      ...forWindow(mtd),          // the page default — must be hot first
+    ]);
+    await Promise.allSettled(forWindow(fy));   // YTD, one click away
+    logger.info(`🔥 Cache warmed: primary-sales (MTD + FY: overview + 6 pivots + trend each) in ${Date.now() - start}ms`);
   } catch (err) {
     logger.warn(`Cache warm-up (primary-sales) failed: ${err.message}`);
   }

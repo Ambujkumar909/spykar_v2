@@ -41,6 +41,10 @@ router.get('/overview', scopeRules, validate, ctrl.getOverview);
 // H) Data range — min/max TRDT with data (defaults the Custom date picker).
 router.get('/range', ctrl.getRange);
 
+// I) Distinct SKUs in the window — the one KPI that needs sku grain; the page
+//    fetches it lazily after /overview has painted.
+router.get('/sku-count', scopeRules, validate, ctrl.getSkuCount);
+
 // B) Multi-line daily trend per top-N dimension member.
 router.get('/trend', [
   ...scopeRules,

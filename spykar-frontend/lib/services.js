@@ -129,6 +129,7 @@ export const stockAvailabilityService = {
 // stockAvailabilityService's param-passing.
 export const primarySalesService = {
   getOverview:   (params = {}) => api.get('/primary-sales/overview', { params }),
+  getSkuCount:   (params = {}) => api.get('/primary-sales/sku-count', { params }),
   getRange:      () => api.get('/primary-sales/range'),
   getSummary:    (params = {}) => api.get('/primary-sales/summary', { params }),
   getTrend:      (params = {}) => api.get('/primary-sales/trend', { params }),

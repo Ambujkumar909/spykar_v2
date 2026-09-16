@@ -313,6 +313,22 @@ async function loadItemMaster() {
     const allRows = result.recordset;
     console.log(`   Fetched ${allRows.length.toLocaleString()} rows\n`);
 
+    // ── ROW-FLOOR GUARD ─────────────────────────────────────────────────────
+    // A partial Item_spykar result must not be treated as the truth. Refuse to
+    // upsert unless the ERP returned at least MASTER_FLOOR_FRACTION (0.9) of
+    // the SKUs we currently hold (first load always passes).
+    {
+      const { floorOk, EXIT_FLOOR } = require('../services/masterRefresh');
+      const existingNow = parseInt((await pgClient.query('SELECT COUNT(*) AS c FROM skus')).rows[0].c, 10);
+      if (!floorOk(allRows.length, existingNow)) {
+        console.error(`\n❌ FLOOR GUARD: Item_spykar returned ${allRows.length.toLocaleString()} rows but skus holds ${existingNow.toLocaleString()} — ` +
+          'suspected partial ERP result. NOTHING was changed. Set MASTER_FLOOR_FRACTION to override.');
+        await sqlPool.close();
+        process.exitCode = EXIT_FLOOR;
+        return;
+      }
+    }
+
     // Print actual column names from first row — critical for field mapping
     if (allRows.length > 0) {
       console.log('Column names from Item_spykar (first row):');
