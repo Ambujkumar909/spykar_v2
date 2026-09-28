@@ -16,8 +16,8 @@
 const { query, pool } = require('../config/database');
 const { getOrSet, TTL } = require('../config/cache');
 
-// Today as 'YYYY-MM-DD' (server local). Default upper bound — never hardcode.
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// Today as 'YYYY-MM-DD' in IST (toISOString is UTC: wrong date 00:00–05:30 IST).
+const todayISO = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
 // ─── Whitelisted group-by dimensions ────────────────────────────────────────
 // `keyCol` identifies a member; `labelCol` is its display string. Strict

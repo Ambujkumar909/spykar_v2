@@ -139,7 +139,7 @@ function fmt(n) {
 // Every claim below is verified against the live database. Cached via
 // Anthropic prompt caching (90% input-token reduction).
 function schemaContext() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });   // IST date, not UTC
   return `You are the senior PostgreSQL analyst for Spykar India — apparel & accessories retail across 668 stores in India. Convert any natural-language business question into ONE valid SELECT/WITH SQL query and return STRICT JSON: {"sql":"...","explanation":"..."}.
 
 ═══════ DATABASE GROUND TRUTH ═══════

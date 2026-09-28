@@ -936,6 +936,20 @@ async function syncReturnsChunked(erpPool, lookupMaps, fromDate, toDate, stats) 
   logger.info(`[RETURNS] ✅ Done: ${totalInserted.toLocaleString()} inserted via COPY, ${failedChunks} chunks failed`);
 }
 
+// ─── ERP datetimes are IST wall-clock ────────────────────────────────────────
+// The ERP stores DATE as a zone-less IST datetime; the mssql driver (useUTC
+// default) hands it back as if it were UTC, so a return keyed at 20:30 IST was
+// stored as 20:30Z = 02:00 IST the NEXT day and landed on the wrong date.
+// Timed values → subtract the IST offset to get the true instant.
+// Date-only values (00:00:00.000) are kept as 00:00Z — the established
+// convention every sales row already uses, whose date is the same in UTC and IST.
+const ERP_UTC_OFFSET_MS = 330 * 60 * 1000; // IST = UTC+05:30, no DST
+function erpDateTime(v) {
+  if (!(v instanceof Date) || Number.isNaN(v.getTime())) return v;
+  const dateOnly = v.getUTCHours() === 0 && v.getUTCMinutes() === 0 && v.getUTCSeconds() === 0 && v.getUTCMilliseconds() === 0;
+  return dateOnly ? v : new Date(v.getTime() - ERP_UTC_OFFSET_MS);
+}
+
 // ─── Row resolvers — extract typed fields from SP result rows ─────────────────
 
 function resolveSalesRow(row, lookupMaps) {
@@ -945,7 +959,7 @@ function resolveSalesRow(row, lookupMaps) {
   const qty          = Math.abs(parseInt(col(row, 'QTY', 'qty', 'Qty')              || 0));
   const saleValue    = parseFloat(col(row, 'SALEAMT', 'saleamt', 'SaleAmt')         || 0);
   const refNo        = String(col(row, 'Invoice No', 'INVOICE_NO', 'InvoiceNo', 'invoice_no') || '').trim();
-  const movedAt      = col(row, 'DATE', 'date', 'Date') || new Date();
+  const movedAt      = erpDateTime(col(row, 'DATE', 'date', 'Date')) || new Date();
 
   if (!storeCode || qty === 0) return null;
 
@@ -965,7 +979,7 @@ function resolveReturnRow(row, lookupMaps) {
   const qty          = Math.abs(parseInt(col(row, 'QTY', 'qty', 'Qty')                   || 0));
   const returnValue  = parseFloat(col(row, 'SALEAMT', 'saleamt', 'SaleAmt')              || 0);
   const refNo        = String(col(row, 'VOUDNO', 'voudno', 'VoudNo')                      || '').trim();
-  const movedAt      = col(row, 'DATE', 'date', 'Date') || new Date();
+  const movedAt      = erpDateTime(col(row, 'DATE', 'date', 'Date')) || new Date();
 
   if (!storeCode || qty === 0) return null;
 

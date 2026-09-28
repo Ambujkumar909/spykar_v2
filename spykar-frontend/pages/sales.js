@@ -26,9 +26,15 @@ import {
 // ── Date-range presets — Stripe / Linear-grade UX ────────────────────────────
 // Click one chip and the date range jumps to that window. Custom-range stays
 // usable for irregular periods (e.g., a marketing campaign window).
+// Indian financial year starts 1 April: Jan–Mar belong to the FY that began last April.
+const fyStartYear = (d) => (d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1);
+const fyLabel = (d = new Date()) => { const y = fyStartYear(d); return `FY ${y}-${String((y + 1) % 100).padStart(2, '0')}`; };
+
 function rangeForPreset(preset) {
   const today = new Date();
-  const fmt = d => d.toISOString().slice(0, 10);
+  // LOCAL date — toISOString() is UTC, which turned local midnight into the
+  // previous day (MTD began on the last day of last month, "7 d" spanned 8).
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const start = new Date(today); start.setHours(0,0,0,0);
   switch (preset) {
     case 'today':   return { from: fmt(today), to: fmt(today) };
@@ -38,8 +44,8 @@ function rangeForPreset(preset) {
     case 'mtd':     { return { from: fmt(new Date(today.getFullYear(), today.getMonth(), 1)), to: fmt(today) }; }
     case 'qtd':     { const q = Math.floor(today.getMonth() / 3) * 3; return { from: fmt(new Date(today.getFullYear(), q, 1)), to: fmt(today) }; }
     case 'ytd':     { return { from: fmt(new Date(today.getFullYear(), 0, 1)), to: fmt(today) }; }
-    case 'cy':      return { from: '2025-01-01', to: fmt(today) };  // calendar year → today
-    case 'fy':      return { from: '2025-04-01', to: fmt(today) };  // Indian FY 2025-26 → today
+    case 'cy':      return { from: fmt(new Date(today.getFullYear(), 0, 1)), to: fmt(today) };  // calendar year → today
+    case 'fy':      return { from: fmt(new Date(fyStartYear(today), 3, 1)), to: fmt(today) };  // Indian FY (Apr–Mar) → today
     default:        return null;
   }
 }
@@ -51,7 +57,7 @@ const DATE_PRESETS = [
   { key: 'mtd',     label: 'MTD' },
   { key: 'qtd',     label: 'QTD' },
   { key: 'ytd',     label: 'YTD' },
-  { key: 'fy',      label: 'FY 2025-26' },
+  { key: 'fy',      label: fyLabel() },
 ];
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });

@@ -64,6 +64,9 @@ const STATE_ZONE_MAP = {
   'NAGALAND': 'EAST', 'ARUNACHAL PRADESH': 'EAST', 'SIKKIM': 'EAST',
   // CENTRAL
   'MADHYA PRADESH': 'CENTRAL', 'CHHATTISGARH': 'CENTRAL',
+  // ERP spellings seen in AIgetParty
+  'ORISSA': 'EAST', 'CHATTISGARH': 'CENTRAL', 'HIMACHL PRADESH': 'NORTH',
+  'JAMMU & KASHMIR': 'NORTH', 'UTTRANCHAL': 'NORTH',
 };
 
 // ─── GGroupName → location type ───────────────────────────────────────────────
@@ -153,7 +156,8 @@ async function upsertRow(pgClient, row, zoneCache, lastMovementCache) {
       zoneId = zoneCache.get(zoneName);
     } else {
       const zr = await pgClient.query(
-        `SELECT id FROM zones WHERE name = $1 LIMIT 1`,
+        // STATE_ZONE_MAP yields zone CODES ('WEST'); zones.name is 'West India'.
+        `SELECT id FROM zones WHERE code = $1 OR name = $1 ORDER BY (code = $1) DESC LIMIT 1`,
         [zoneName]
       );
       zoneId = zr.rows[0]?.id || null;
@@ -184,7 +188,8 @@ async function upsertRow(pgClient, row, zoneCache, lastMovementCache) {
       gstin         = EXCLUDED.gstin,
       is_active     = true,
       shop_closed   = EXCLUDED.shop_closed,
-      closed_on     = EXCLUDED.closed_on,
+      -- keep a known closure date if this run could not derive one; clear it on reopen
+      closed_on     = CASE WHEN EXCLUDED.shop_closed THEN COALESCE(EXCLUDED.closed_on, locations.closed_on) ELSE NULL END,
       updated_at    = NOW()
     RETURNING (xmax = 0) AS is_new
   `, [
