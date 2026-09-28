@@ -35,7 +35,7 @@ async function seedUsersOnly() {
   console.log('   viewer@spykar.com  / Admin@123  (VIEWER)');
   console.log('✅ Zones seeded: NORTH, SOUTH, EAST, WEST, CENTRAL');
   console.log('');
-  console.log('Now add constraints then run FULL sync from dashboard.');
+  console.log('Next: load the masters (load_party_master.js, load_item_master.js), then run the FULL sync.');
   process.exit(0);
 }
 
