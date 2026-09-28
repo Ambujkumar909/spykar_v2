@@ -202,7 +202,7 @@ function expectedRollup(ledger) {
 // ─── main ────────────────────────────────────────────────────────────────────
 (async () => {
   const t0 = Date.now();
-  const admin = new Client({ host: process.env.PG_HOST, port: parseInt(process.env.PG_PORT) || 5432, database: MAIN_DB,
+  const admin = new Client({ host: process.env.PG_HOST, port: parseInt(process.env.PG_PORT) || 5432, database: 'postgres',  // maintenance DB: works even before the app DB exists
     user: process.env.PG_USER, password: process.env.PG_PASSWORD, ssl: process.env.PG_SSL === 'true' ? { rejectUnauthorized: false } : false });
   await admin.connect();
   console.log(`Creating throwaway database ${TEST_DB} (real schema + migrations)…`);

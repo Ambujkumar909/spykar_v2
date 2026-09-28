@@ -306,12 +306,12 @@ async function getFillRate(req, res, next) {
         SELECT
           l.type AS location_type,
           COUNT(*)::int AS total_dispatches,
-          COUNT(*) FILTER (WHERE do.status = 'DELIVERED')::int AS delivered,
-          ROUND(COUNT(*) FILTER (WHERE do.status = 'DELIVERED') * 100.0 / NULLIF(COUNT(*), 0), 1) AS fill_rate_pct,
-          AVG(EXTRACT(EPOCH FROM (do.delivered_at - do.dispatched_at)) / 3600)::int AS avg_delivery_hours
-        FROM dispatch_orders do
-        JOIN locations l ON l.id = do.to_location_id
-        WHERE do.dispatched_at >= (
+          COUNT(*) FILTER (WHERE dso.status = 'DELIVERED')::int AS delivered,
+          ROUND(COUNT(*) FILTER (WHERE dso.status = 'DELIVERED') * 100.0 / NULLIF(COUNT(*), 0), 1) AS fill_rate_pct,
+          AVG(EXTRACT(EPOCH FROM (dso.delivered_at - dso.dispatched_at)) / 3600)::int AS avg_delivery_hours
+        FROM dispatch_orders dso
+        JOIN locations l ON l.id = dso.to_location_id
+        WHERE dso.dispatched_at >= (
             SELECT MAX(dispatched_at) FROM dispatch_orders
           ) - ($1 || ' days')::interval
         GROUP BY l.type

@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const crypto = require('crypto');
-const { query } = require('../config/database');
+const { query, pool } = require('../config/database');
 const logger = require('../config/logger');
 const { AppError } = require('../middleware/errorHandler');
 
@@ -63,7 +63,6 @@ function activeProvider() {
 // changes so stale entries are invalidated automatically.
 const CACHE_VERSION = 'v5';
 const CACHE_PREFIX = `ai:${CACHE_VERSION}:q:`;
-const CACHE_LOOSE_PREFIX = `ai:${CACHE_VERSION}:l:`;   // semantic cache
 const SQL_RESULT_PREFIX = `ai:${CACHE_VERSION}:r:`;    // sql → rows cache
 const SESSION_PREFIX = 'ai:sess:';
 const CACHE_TTL = 300;                    // 5 min query cache
@@ -107,7 +106,12 @@ async function rDel(key) {
 }
 
 // ─── Security guards ─────────────────────────────────────────────────────────
-const FORBIDDEN_SQL = /\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|CREATE|REPLACE|EXEC|EXECUTE|COPY|VACUUM)\b/i;
+const FORBIDDEN_SQL = /\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|CREATE|REPLACE|EXEC|EXECUTE|COPY|VACUUM|INTO|LOCK|CALL|DO)\b/i;
+// Secrets / session tables and server-control functions the AI must never
+// touch. Defence in depth: the real boundary is runSqlWithTimeout (read-only
+// transaction, server-side timeout, single statement, restricted role).
+// U& (unicode-escaped identifiers) is refused so a name can't be disguised.
+const FORBIDDEN_OBJECTS = /\b(users|refresh_tokens|ai_query_log|_migrations|pg_authid|pg_shadow|pg_user|pg_roles|pg_stat_activity|pg_sleep\w*|pg_terminate_backend|pg_cancel_backend|pg_\w*advisory\w*|pg_read\w*|pg_ls_\w*|pg_stat_file|lo_\w+|dblink\w*|set_config|pg_reload_conf|pg_rotate_logfile|pg_notify)\b|U&/i;
 const PROMPT_INJECTION = /(ignore (all |the )?(previous|above|prior)|disregard (all |the )?(previous|prior)|system prompt|you are now|forget (your|all)|reveal your prompt|print your instructions)/i;
 
 // ─── Normalization & hashing ─────────────────────────────────────────────────
@@ -117,13 +121,6 @@ function normalizeStrict(q) {
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-}
-function normalizeLoose(q) {
-  // Collapse numbers and dates so "top 5 / top 10" hit same loose bucket
-  return normalizeStrict(q)
-    .replace(/\b\d{4}-\d{2}-\d{2}\b/g, '<date>')
-    .replace(/\b\d+\b/g, '<n>')
-    .replace(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/gi, '<mon>');
 }
 function hashKey(parts) {
   return crypto.createHash('sha1').update(parts.join('|')).digest('hex').slice(0, 24);
@@ -1097,12 +1094,53 @@ function friendly(err) {
 }
 
 // ─── runSqlWithTimeout ───────────────────────────────────────────────────────
-async function runSqlWithTimeout(sql, ms) {
-  const exec = query(sql);
-  const timer = new Promise((_, rej) => setTimeout(() => rej(new Error('SQL timeout')), ms));
-  const result = await Promise.race([exec, timer]);
-  return result.rows || [];
+// The ONLY place model-written SQL executes. Its safety does not rest on the
+// keyword checks:
+//   • READ ONLY transaction → no DML/DDL, no SELECT INTO, no setval, always
+//     rolled back.
+//   • SET LOCAL statement_timeout → the SERVER cancels a runaway query (the old
+//     JS timer only stopped waiting; the query kept a pool connection for 40s).
+//   • queryMode 'extended' → exactly one statement per call ("…; LOCK …" fails).
+//   • wrapped as SELECT * FROM (<sql>) … LIMIT n → the row cap holds even when
+//     the model put its own LIMIT inside a subquery.
+//   • SET LOCAL ROLE spykar_ai when that role exists (migration 025): SELECT
+//     on business tables only, none on users / refresh_tokens / ai_query_log.
+let aiRoleReady = null;
+async function aiRoleAvailable() {
+  if (aiRoleReady === null) {
+    try {
+      const r = await query(`SELECT pg_has_role(current_user, 'spykar_ai', 'MEMBER') AS ok`);
+      aiRoleReady = r.rows[0].ok === true;
+    } catch { aiRoleReady = false; }   // role not created yet
+    if (!aiRoleReady) logger.warn('AI SQL runs WITHOUT the restricted spykar_ai role — run migration 025 as a superuser (see its header).');
+  }
+  return aiRoleReady;
 }
+async function runSqlWithTimeout(sql, ms) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN READ ONLY');
+    await client.query(`SET LOCAL statement_timeout = ${parseInt(ms, 10)}`);
+    if (await aiRoleAvailable()) await client.query('SET LOCAL ROLE spykar_ai');
+    const r = await client.query({ text: `SELECT * FROM (${sql}) ai_q LIMIT ${MAX_ROWS}`, queryMode: 'extended' });
+    return r.rows || [];
+  } finally {
+    await client.query('ROLLBACK').catch(() => {});
+    client.release();
+  }
+}
+// Static gate in front of runSqlWithTimeout: one read statement, nothing on
+// the secrets/server-control lists. Trailing semicolons are dropped; any other
+// ';' would start a second statement and is refused.
+function safeAiSql(raw) {
+  const sql = String(raw || '').trim().replace(/;\s*$/, '').trim();
+  if (!/^(SELECT|WITH)\b/i.test(sql)) throw new AppError('Only read queries are allowed.', 400);
+  if (sql.includes(';') || FORBIDDEN_SQL.test(sql) || FORBIDDEN_OBJECTS.test(sql)) {
+    throw new AppError('Query blocked for security reasons.', 403);
+  }
+  return sql;
+}
+const isTimeout = (e) => e?.code === '57014' || /statement timeout|canceling statement/i.test(e?.message || '');
 
 // ─── Cached SQL execution (cross-user reuse) ─────────────────────────────────
 async function runSqlCached(sql) {
@@ -1112,9 +1150,8 @@ async function runSqlCached(sql) {
     try { return JSON.parse(hit); } catch { /* corrupted */ }
   }
   const rows = await runSqlWithTimeout(sql, SQL_TIMEOUT_MS);
-  const capped = rows.length > MAX_ROWS ? rows.slice(0, MAX_ROWS) : rows;
-  rSet(k, JSON.stringify(capped), SQL_RESULT_TTL).catch(() => {});
-  return capped;
+  rSet(k, JSON.stringify(rows), SQL_RESULT_TTL).catch(() => {});
+  return rows;
 }
 
 // ─── Audit log (non-blocking) ────────────────────────────────────────────────
@@ -1150,13 +1187,15 @@ async function queryInventory(req, res, next) {
     // STAGE 1: Language (rule-based, free)
     const lang = detectLanguageFast(sanitizedQ);
 
-    // STAGE 2: Cache lookups (parallel: exact, loose-semantic, memory)
+    // STAGE 2: Cache lookups (exact question only). A follow-up ("what about
+    // last month?") depends on the conversation, not on its own text, so it is
+    // never answered from — or written to — the cache. The old "loose" cache
+    // folded every number/date/month into a placeholder, so "top 5" returned
+    // a cached "top 10" and one date returned another date's figures; removed.
     const strictKey = CACHE_PREFIX + hashKey([normalizeStrict(sanitizedQ), lang, userId || 'anon']);
-    const looseKey = CACHE_LOOSE_PREFIX + hashKey([normalizeLoose(sanitizedQ), lang]);
 
-    const [strictHit, looseHit, memory] = await Promise.all([
-      rGet(strictKey),
-      rGet(looseKey),
+    const [strictHit, memory] = await Promise.all([
+      followUp ? null : rGet(strictKey),
       loadMemory(userId),
     ]);
 
@@ -1164,16 +1203,6 @@ async function queryInventory(req, res, next) {
       try {
         const cached = JSON.parse(strictHit);
         cached.cached = true;
-        cached.processingMs = Date.now() - t0;
-        return res.json({ success: true, data: cached });
-      } catch { /* corrupted */ }
-    }
-    // Loose-semantic hit only valid for non-followup queries (avoids
-    // returning a stale answer when user is iterating in a session).
-    if (looseHit && !isFollowUp(sanitizedQ)) {
-      try {
-        const cached = JSON.parse(looseHit);
-        cached.cached = 'semantic';
         cached.processingMs = Date.now() - t0;
         return res.json({ success: true, data: cached });
       } catch { /* corrupted */ }
@@ -1247,17 +1276,7 @@ async function queryInventory(req, res, next) {
       throw new AppError('Could not formulate a query. Please rephrase.', 422);
     }
 
-    let sql = parsed.sql.trim();
-    const upper = sql.toUpperCase();
-    if (!upper.startsWith('SELECT') && !upper.startsWith('WITH')) {
-      throw new AppError('Only read queries are allowed.', 400);
-    }
-    if (FORBIDDEN_SQL.test(sql)) {
-      throw new AppError('Query blocked for security reasons.', 403);
-    }
-    if (!/\bLIMIT\s+\d+/i.test(sql)) {
-      sql = sql.replace(/;?\s*$/, ` LIMIT ${MAX_ROWS}`);
-    }
+    let sql = safeAiSql(parsed.sql);
 
     // Execute (cached cross-user) with self-heal retry
     let rows;
@@ -1265,13 +1284,12 @@ async function queryInventory(req, res, next) {
       rows = await runSqlCached(sql);
     } catch (e1) {
       logger.warn('SQL attempt 1 failed:', e1.message);
+      // A timeout is not a syntax problem: "healing" it just runs a second
+      // heavy query.
+      if (isTimeout(e1)) throw new AppError(friendly(e1), 422);
       try {
         const healed = await selfHealSql(sql, e1.message, englishQ);
-        const sql2 = (healed?.sql || '').trim();
-        if (!sql2 || !/^(SELECT|WITH)\b/i.test(sql2) || FORBIDDEN_SQL.test(sql2)) {
-          throw new Error('Self-heal output failed safety check');
-        }
-        sql = sql2;
+        sql = safeAiSql(healed?.sql);
         rows = await runSqlCached(sql);
         parsed = healed;
       } catch (e2) {
@@ -1339,8 +1357,7 @@ async function queryInventory(req, res, next) {
     };
 
     // Cache writes (non-blocking) + memory update
-    rSet(strictKey, JSON.stringify({ ...data, cached: false }), CACHE_TTL).catch(() => {});
-    rSet(looseKey, JSON.stringify({ ...data, cached: false }), CACHE_TTL).catch(() => {});
+    if (!followUp) rSet(strictKey, JSON.stringify({ ...data, cached: false }), CACHE_TTL).catch(() => {});
     const newMem = memory || { recent: [] };
     newMem.recent = [...(newMem.recent || []).slice(-4), { q: sanitizedQ, cols: Object.keys(rows[0] || {}).join(',') }];
     newMem.lang = lang;
@@ -1400,4 +1417,5 @@ module.exports = {
   getSuggestedQueries,
   getHistory,
   clearMemory,
+  _internal: { safeAiSql, runSqlWithTimeout },   // src/scripts/verify_ai_sql.js
 };
