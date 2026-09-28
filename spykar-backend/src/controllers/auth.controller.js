@@ -2,9 +2,13 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { query, transaction } = require('../config/database');
-const { set, del, TTL } = require('../config/cache');
 const logger = require('../config/logger');
 const { AppError } = require('../middleware/errorHandler');
+const { revokeAccessToken } = require('../middleware/auth');
+
+// Compared against when the email is unknown, so a miss costs the same bcrypt
+// time as a hit (no account enumeration by timing).
+const DUMMY_HASH = bcrypt.hashSync('no-such-user-placeholder', 12);
 
 const ACCESS_TOKEN_EXPIRY = process.env.JWT_EXPIRY || '15m';
 const REFRESH_TOKEN_EXPIRY = process.env.JWT_REFRESH_EXPIRY || '7d';
@@ -32,12 +36,10 @@ async function login(req, res, next) {
 
     const user = result.rows[0];
 
-    if (!user || !user.is_active) {
-      throw new AppError('Invalid credentials.', 401);
-    }
-
-    const passwordValid = await bcrypt.compare(password, user.password_hash);
-    if (!passwordValid) {
+    // Always run one bcrypt compare, so the response time doesn't reveal
+    // whether the email is an account.
+    const passwordValid = await bcrypt.compare(String(password), user?.password_hash || DUMMY_HASH);
+    if (!user || !user.is_active || !passwordValid) {
       throw new AppError('Invalid credentials.', 401);
     }
 
@@ -85,35 +87,29 @@ async function login(req, res, next) {
 async function refresh(req, res, next) {
   try {
     const { refreshToken } = req.body;
-    const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    const tokenHash = crypto.createHash('sha256').update(String(refreshToken)).digest('hex');
 
-    const result = await query(
-      `SELECT rt.id, rt.user_id, rt.expires_at, u.name, u.email, u.role, u.is_active
-       FROM refresh_tokens rt
-       JOIN users u ON u.id = rt.user_id
-       WHERE rt.token_hash = $1`,
-      [tokenHash]
-    );
-
-    const record = result.rows[0];
-
-    if (!record || !record.is_active || new Date(record.expires_at) < new Date()) {
-      throw new AppError('Invalid or expired refresh token.', 401);
-    }
-
-    // Rotate: delete old, issue new
-    const newAccessToken = generateAccessToken(record.user_id, record.role);
+    // Rotate atomically: whoever's DELETE removes the row wins. Two requests
+    // replaying the same token can no longer both succeed and fork a session.
     const newRefreshToken = generateRefreshToken();
     const newHash = crypto.createHash('sha256').update(newRefreshToken).digest('hex');
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_MS);
-
-    await transaction(async (client) => {
-      await client.query('DELETE FROM refresh_tokens WHERE id = $1', [record.id]);
+    const record = await transaction(async (client) => {
+      const del = await client.query(
+        `DELETE FROM refresh_tokens rt USING users u
+          WHERE rt.token_hash = $1 AND u.id = rt.user_id AND u.is_active AND rt.expires_at > NOW()
+          RETURNING rt.user_id, u.role`,
+        [tokenHash]
+      );
+      if (!del.rows.length) return null;
       await client.query(
         'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
-        [record.user_id, newHash, expiresAt]
+        [del.rows[0].user_id, newHash, expiresAt]
       );
+      return del.rows[0];
     });
+    if (!record) throw new AppError('Invalid or expired refresh token.', 401);
+    const newAccessToken = generateAccessToken(record.user_id, record.role);
 
     res.json({
       success: true,
@@ -134,9 +130,7 @@ async function logout(req, res, next) {
     // Blacklist the current access token until its natural expiry
     const decoded = jwt.decode(req.token);
     const ttl = decoded.exp - Math.floor(Date.now() / 1000);
-    if (ttl > 0) {
-      await set(`blacklist:${req.token}`, '1', ttl);
-    }
+    if (ttl > 0) revokeAccessToken(req.token, ttl);
 
     // Delete all refresh tokens for this user (logout all devices) or just current
     await query('DELETE FROM refresh_tokens WHERE user_id = $1', [req.user.id]);
@@ -171,11 +165,16 @@ async function changePassword(req, res, next) {
       [req.user.id]
     );
 
-    const valid = await bcrypt.compare(currentPassword, result.rows[0].password_hash);
+    const valid = await bcrypt.compare(String(currentPassword), result.rows[0].password_hash);
     if (!valid) throw new AppError('Current password is incorrect.', 400);
 
+    // A password change must end every existing session (a stolen refresh
+    // token used to keep working), like the admin reset already does.
     const newHash = await bcrypt.hash(newPassword, 12);
-    await query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, req.user.id]);
+    await transaction(async (client) => {
+      await client.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [newHash, req.user.id]);
+      await client.query('DELETE FROM refresh_tokens WHERE user_id = $1', [req.user.id]);
+    });
 
     logger.info(`Password changed for user: ${req.user.email}`);
     res.json({ success: true, message: 'Password updated successfully.' });
@@ -247,6 +246,9 @@ async function listUsers(req, res, next) {
 async function createUser(req, res, next) {
   try {
     const { name, email, password, role } = req.body;
+    if (role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      throw new AppError('Only a SUPER_ADMIN can create a SUPER_ADMIN.', 403);
+    }
 
     const existing = await query('SELECT id FROM users WHERE email = $1', [email]);
     if (existing.rows.length) {
@@ -271,6 +273,16 @@ async function updateUser(req, res, next) {
   try {
     const { id } = req.params;
     const { name, role, is_active } = req.body;
+
+    const target = await query('SELECT role FROM users WHERE id = $1', [id]);
+    if (!target.rows.length) throw new AppError('User not found.', 404);
+    if (req.user.role !== 'SUPER_ADMIN' && (target.rows[0].role === 'SUPER_ADMIN' || role === 'SUPER_ADMIN')) {
+      throw new AppError('Only a SUPER_ADMIN can change a SUPER_ADMIN or grant that role.', 403);
+    }
+    if (id === req.user.id && ((role != null && role !== req.user.role) || is_active === false)) {
+      throw new AppError('You cannot change your own role or deactivate your own account.', 400);
+    }
+
     const updates = [];
     const params = [];
 

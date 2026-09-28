@@ -24,6 +24,10 @@ function errorHandler(err, req, res, next) {
   } else if (err.code === '23502') {
     statusCode = 400;
     message = `Required field missing: ${err.column}`;
+  } else if (['22P02', '22007', '22008', '22003', '22023'].includes(err.code)) {
+    // invalid text representation / datetime / out of range: a bad input value
+    statusCode = 400;
+    message = 'Invalid parameter value.';
   }
 
   // Log server errors
@@ -35,6 +39,12 @@ function errorHandler(err, req, res, next) {
       method: req.method,
       user: req.user?.email,
     });
+  }
+
+  // In production a genuine server fault never echoes its internal message
+  // (SQL text, column names, library errors) back to the browser.
+  if (statusCode >= 500 && !err.isOperational && process.env.NODE_ENV === 'production') {
+    message = 'Internal Server Error';
   }
 
   res.status(statusCode).json({

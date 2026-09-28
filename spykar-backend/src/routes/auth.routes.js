@@ -1,5 +1,5 @@
 const express = require('express');
-const { body, param } = require('express-validator');
+const { body, param, query } = require('express-validator');
 const router = express.Router();
 const userRouter = express.Router();
 const authController = require('../controllers/auth.controller');
@@ -10,7 +10,7 @@ const { validate } = require('../middleware/validate');
 router.post('/login',
   [
     body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
-    body('password').isLength({ min: 6 }).withMessage('Password min 6 characters'),
+    body('password').isString().isLength({ min: 6 }).withMessage('Password min 6 characters'),
   ],
   validate,
   authController.login
@@ -18,7 +18,7 @@ router.post('/login',
 
 // POST /api/v1/auth/refresh
 router.post('/refresh',
-  [body('refreshToken').notEmpty().withMessage('Refresh token required')],
+  [body('refreshToken').isString().notEmpty().withMessage('Refresh token required')],
   validate,
   authController.refresh
 );
@@ -33,7 +33,7 @@ router.get('/me', authenticate, authController.me);
 router.patch('/password',
   authenticate,
   [
-    body('currentPassword').notEmpty().withMessage('Current password is required'),
+    body('currentPassword').isString().notEmpty().withMessage('Current password is required'),
     body('newPassword').isLength({ min: 8 }).matches(/^(?=.*[A-Z])(?=.*\d)/).withMessage('New password must be at least 8 characters with one uppercase letter and one number'),
   ],
   validate,
@@ -43,6 +43,13 @@ router.patch('/password',
 userRouter.get('/',
   authenticate,
   authorize('SUPER_ADMIN', 'ADMIN'),
+  [
+    query('page').optional().isInt({ min: 1 }).toInt(),
+    query('limit').optional().isInt({ min: 1, max: 500 }).toInt(),
+    query('search').optional().isString(),
+    query('role').optional().isString(),
+  ],
+  validate,
   authController.listUsers
 );
 
@@ -63,6 +70,7 @@ userRouter.patch('/:id',
   authenticate,
   authorize('SUPER_ADMIN', 'ADMIN'),
   [
+    param('id').isUUID().withMessage('Invalid user id'),
     body('name').optional().trim().isLength({ min: 2 }),
     body('role').optional().isIn(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'VIEWER']),
     body('is_active').optional().isBoolean(),
@@ -74,6 +82,8 @@ userRouter.patch('/:id',
 userRouter.patch('/:id/toggle',
   authenticate,
   authorize('SUPER_ADMIN'),
+  [param('id').isUUID().withMessage('Invalid user id')],
+  validate,
   authController.toggleUser
 );
 

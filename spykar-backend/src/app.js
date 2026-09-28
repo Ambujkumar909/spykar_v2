@@ -44,7 +44,7 @@ app.use((req, res, next) => {
 // ─── Security & Performance Middleware ────────────────────────────────────────
 app.use(helmet());
 app.use(compression());
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'];
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',').map((s) => s.trim()).filter(Boolean);
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl, Postman)
@@ -132,7 +132,11 @@ app.get('/health/deep', async (req, res) => {
 // ─── API Routes ────────────────────────────────────────────────────────────────
 const API_V1 = '/api/v1';
 
-app.use(`${API_V1}/auth`, authLimiter, authRouter);
+// The strict limiter guards password guessing only. It used to cover the whole
+// /auth router, so ~30 page loads (/me) or token refreshes per 15 min from one
+// office IP got a 429 — which the frontend treated as a dead session.
+app.use(`${API_V1}/auth/login`, authLimiter);
+app.use(`${API_V1}/auth`, authRouter);
 app.use(`${API_V1}/users`, userRouter);
 app.use(`${API_V1}/inventory`, inventoryRoutes);
 app.use(`${API_V1}/distributors`, distributorRoutes);

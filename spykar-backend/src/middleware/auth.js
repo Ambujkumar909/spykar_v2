@@ -1,6 +1,21 @@
 const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
-const { get } = require('../config/cache');
+
+// Logged-out access tokens, until they would have expired anyway. Kept OUT of
+// the response cache on purpose: that cache is flushed after every sync
+// (4×/day), which silently re-validated logged-out tokens.
+// ponytail: in-process only — a restart forgets them; access tokens live 15 min.
+const revoked = new Map();   // token -> expiresAtMs
+function revokeAccessToken(token, ttlSec) {
+  revoked.set(token, Date.now() + ttlSec * 1000);
+  if (revoked.size > 5000) for (const [t, exp] of revoked) if (exp <= Date.now()) revoked.delete(t);
+}
+function isRevoked(token) {
+  const exp = revoked.get(token);
+  if (exp === undefined) return false;
+  if (exp <= Date.now()) { revoked.delete(token); return false; }
+  return true;
+}
 const logger = require('../config/logger');
 const { AppError } = require('./errorHandler');
 
@@ -18,8 +33,7 @@ async function authenticate(req, res, next) {
     const token = authHeader.split(' ')[1];
 
     // Check if token is blacklisted (logged out)
-    const blacklisted = await get(`blacklist:${token}`);
-    if (blacklisted) {
+    if (isRevoked(token)) {
       throw new AppError('Token has been invalidated. Please log in again.', 401);
     }
 
@@ -82,6 +96,7 @@ async function optionalAuth(req, res, next) {
 
   try {
     const token = authHeader.split(' ')[1];
+    if (isRevoked(token)) return next();
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const result = await query(
       'SELECT id, name, email, role FROM users WHERE id = $1 AND is_active = true',
@@ -95,4 +110,4 @@ async function optionalAuth(req, res, next) {
   next();
 }
 
-module.exports = { authenticate, authorize, optionalAuth };
+module.exports = { authenticate, authorize, optionalAuth, revokeAccessToken };

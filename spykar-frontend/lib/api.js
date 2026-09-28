@@ -79,8 +79,24 @@ api.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return api(originalRequest);
       } catch (refreshError) {
+        // Two tabs share one cookie jar: if the other tab rotated the refresh
+        // token first, ours is now spent (401) but its fresh tokens are already
+        // in the cookies. Use those instead of logging both tabs out.
+        if (refreshError.response?.status === 401) {
+          await new Promise((r) => setTimeout(r, 800));
+          const rotated = Cookies.get('refreshToken');
+          const current = Cookies.get('accessToken');
+          if (rotated && rotated !== refreshToken && current) {
+            api.defaults.headers.common.Authorization = `Bearer ${current}`;
+            processQueue(null, current);
+            originalRequest.headers.Authorization = `Bearer ${current}`;
+            return api(originalRequest);
+          }
+        }
         processQueue(refreshError, null);
-        clearAuth();
+        // Only a rejected refresh token ends the session; a network blip or a
+        // 5xx during refresh leaves the cookies for the next attempt.
+        if (refreshError.response?.status === 401) clearAuth();
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

@@ -56,16 +56,16 @@ function getPool() {
 
 async function connectDatabase() {
   const client = await getPool().connect();
-  await client.query('SELECT 1');
-  client.release();
+  try { await client.query('SELECT 1'); } finally { client.release(); }
   return true;
 }
 
 async function checkDatabase() {
   const client = await getPool().connect();
-  const result = await client.query('SELECT NOW() as now, current_database() as db');
-  client.release();
-  return result.rows[0];
+  try {
+    const result = await client.query('SELECT NOW() as now, current_database() as db');
+    return result.rows[0];
+  } finally { client.release(); }
 }
 
 /**

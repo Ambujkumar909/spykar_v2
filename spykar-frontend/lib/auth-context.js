@@ -62,10 +62,12 @@ export function AuthProvider({ children }) {
         setUser(res.data.data);
         writeCachedUser(res.data.data);
       })
-      .catch(() => {
-        // Reaching here means even the refresh attempt failed — the session is
-        // truly dead. Clear everything so we don't keep an optimistic user on
-        // screen for a logged-out person.
+      .catch((err) => {
+        // Only a 401 means the session is dead (the interceptor already tried a
+        // refresh). A network error, timeout, 5xx or 429 — e.g. the API
+        // restarting while the user reloads — must NOT throw away a valid
+        // 7-day session; keep the optimistic user and let the next call retry.
+        if (err?.response?.status !== 401) return;
         Cookies.remove('accessToken');
         Cookies.remove('refreshToken');
         writeCachedUser(null);
