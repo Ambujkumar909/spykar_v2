@@ -7,6 +7,7 @@ import FilterChips from '../components/filters/FilterChips';
 import PremiumKpi from '../components/ui/PremiumKpi';
 import NetworkPulse from '../components/network/NetworkPulse';
 import { useFilters } from '../lib/useFilters';
+import LoadError from '../components/ui/LoadError';
 import { locationService, analyticsService } from '../lib/services';
 import { useAlerts } from '../lib/useAlerts';
 import { getCached, setCached, isFresh } from '../lib/dashboardCache';
@@ -926,6 +927,7 @@ export default function NetworkPage() {
 
   // Server-side filters — driven by AllLocationsTable
   const [tableFilters, setTableFilters] = useState({ sort_by: 'total_stock', page: 1 });
+  const [tableFailed, setTableFailed] = useState(false);   // retries exhausted, nothing cached for these filters
   const [topByStock, setTopByStock] = useState(null);   // { sig, data }: page 1 of sort_by=total_stock for filter set `sig`
 
   // Pareto drill-down — set when user clicks a tier in the Concentration
@@ -965,6 +967,7 @@ export default function NetworkPage() {
 
   const fetchTableData = useCallback(async (filters = {}, { force = false } = {}) => {
     const isTopByStock = (filters.sort_by || 'total_stock') === 'total_stock' && (filters.page || 1) === 1 && !filters.search;
+    setTableFailed(false);
     const tableKey = `net:table:v4:${filters.sort_by || 'total_stock'}|${filters.page || 1}|m${filters.mode||'active'}|gn${filters.group_name||''}|st${filters.state||''}|ct${filters.city||''}|sc${filters.store_code||''}|q${filters.search||''}|cat${filters.category||''}|g${filters.gender||''}|sp${filters.sub_product||''}|pr${filters.product||''}|sty${filters.style||''}|sh${filters.shade||''}|cl${filters.color||''}|sz${filters.size||''}|se${filters.season||''}`;
     const cached = getCached(tableKey);
     if (cached) {
@@ -1039,6 +1042,10 @@ export default function NetworkPage() {
       if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED' || err?.message === 'canceled') {
         return;
       }
+      // Nothing cached for THESE filters → the rows on screen belong to other
+      // filters; show the calm inline state instead of passing them off as
+      // this selection. (A cached copy, if any, was already painted above.)
+      if (!cached) setTableFailed(true);
       notifyApiError(err, 'Failed to load locations');
     } finally {
       setTableLoading(false);
@@ -1219,6 +1226,9 @@ export default function NetworkPage() {
           stable even if the table conditionally renders during refetch. */}
       <div ref={allLocationsRef} style={{ scrollMarginTop: 16 }}>
         <SectionTitle icon={Globe} label="All Locations — Full Network" />
+        {tableFailed ? (
+          <LoadError label="Couldn't load stores for this selection" onRetry={() => fetchTableData(tableFilters, { force: true })} minHeight={260} />
+        ) : (
         <AllLocationsTable
           locations={locations}
           pagination={pagination}
@@ -1231,6 +1241,7 @@ export default function NetworkPage() {
           onClearParetoPick={clearParetoPick}
           resetKey={v2FiltersJson}
         />
+        )}
       </div>
 
       <style>{`

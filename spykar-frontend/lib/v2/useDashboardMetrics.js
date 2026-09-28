@@ -14,7 +14,7 @@
 // shown to users as accurate history — purely a visual "is it trending"
 // pulse until the backend adds /analytics/sales/daily-series in Phase 4.
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { analyticsService, inventoryService, syncService } from '../services';
 import { getCached, setCached, isFresh } from '../dashboardCache';
 import { pctDelta } from './format';
@@ -97,6 +97,9 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
   const [data, setData]       = useState(() => getCached(cacheKey) ?? null);
   const [loading, setLoading] = useState(() => !getCached(cacheKey));
   const [error, setError]     = useState(null);
+  const [nonce, setNonce]     = useState(0);        // bumped by reload() (the Retry button)
+  const forceRef = useRef(false);                    // one-shot: skip the fresh-cache shortcut once
+  const reload = useCallback(() => { forceRef.current = true; setNonce((n) => n + 1); }, []);
 
   useEffect(() => {
     if (!fromISO || !toISO) return;
@@ -140,7 +143,8 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
     // screen are already current. Skip the KPI refetch entirely; flipping
     // back to the dashboard costs zero network. isFresh() returns false after
     // a sync (Header feeds setDataVersion), so post-sync we still refresh.
-    if (cached && isFresh(cacheKey)) {
+    const forced = forceRef.current; forceRef.current = false;
+    if (cached && isFresh(cacheKey) && !forced) {
       return () => { alive = false; };
     }
 
@@ -308,9 +312,9 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
       });
 
     return () => { alive = false; };
-  }, [fromISO, toISO, mode, valuation, cacheKey]);
+  }, [fromISO, toISO, mode, valuation, cacheKey, nonce]);
 
-  return { data, loading, error };
+  return { data, loading, error, reload };
 }
 
 function formatINRCompact(v) {

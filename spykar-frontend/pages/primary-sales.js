@@ -16,6 +16,7 @@ import { useFilters } from '../lib/useFilters';
 import { FiltersProvider } from '../lib/FiltersContext';
 import { primarySalesService } from '../lib/services';
 import { notifyApiError } from '../lib/notifyApiError';
+import LoadError from '../components/ui/LoadError';
 import {
   Boxes, Warehouse, Package, IndianRupee, TrendingUp, TrendingDown, Receipt,
   ArrowLeftRight, Tag, Palette, Ruler, Shirt, Download, Activity, Layers,
@@ -226,15 +227,22 @@ export default function PrimarySalesPage() {
     return () => { a = false; };
   }, []);
 
+  // Retries exhausted → calm inline state (old numbers belong to another
+  // window/scope, so they are cleared rather than shown as this selection).
+  const [ovFailed, setOvFailed] = useState(false);
+  const [pivotFailed, setPivotFailed] = useState(false);
+  const [retryN, setRetryN] = useState(0);
+  const retry = useCallback(() => setRetryN((n) => n + 1), []);
+
   // overview
   useEffect(() => {
     let a = true; setOvLoading(true);
     primarySalesService.getOverview({ from: fromISO, to: toISO, ...scope })
-      .then((r) => { if (a) setOv(r.data?.data || null); })
-      .catch((e) => { if (a) notifyApiError(e, 'Failed to load primary sales'); })
+      .then((r) => { if (a) { setOv(r.data?.data || null); setOvFailed(false); } })
+      .catch((e) => { if (a) { setOv(null); setOvFailed(true); notifyApiError(e, 'Failed to load primary sales'); } })
       .finally(() => { if (a) setOvLoading(false); });
     return () => { a = false; };
-  }, [scopeKey, fromISO, toISO]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scopeKey, fromISO, toISO, retryN]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // lazy distinct-SKU KPI
   useEffect(() => {
@@ -250,11 +258,11 @@ export default function PrimarySalesPage() {
   useEffect(() => {
     let a = true; setPivotLoading(true);
     primarySalesService.getPivot({ group_by: viewBy, from: fromISO, to: toISO, ...scope })
-      .then((r) => { if (a) setPivot(r.data?.data || null); })
-      .catch((e) => { if (a) notifyApiError(e, 'Failed to load breakdown'); })
+      .then((r) => { if (a) { setPivot(r.data?.data || null); setPivotFailed(false); } })
+      .catch((e) => { if (a) { setPivot(null); setPivotFailed(true); notifyApiError(e, 'Failed to load breakdown'); } })
       .finally(() => { if (a) setPivotLoading(false); });
     return () => { a = false; };
-  }, [scopeKey, viewBy, fromISO, toISO]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scopeKey, viewBy, fromISO, toISO, retryN]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // explorer trend
   useEffect(() => {
@@ -444,7 +452,8 @@ export default function PrimarySalesPage() {
           </div>
         </div>
 
-        {emptyAll ? <Card style={{ marginTop: 16 }}><Empty label="No primary-sales movements in this date range" /></Card> : (
+        {ovFailed && !ovLoading ? <Card style={{ marginTop: 16 }}><LoadError label="Couldn't load primary sales for this selection" onRetry={retry} minHeight={220} /></Card>
+          : emptyAll ? <Card style={{ marginTop: 16 }}><Empty label="No primary-sales movements in this date range" /></Card> : (
         <>
         {/* ── KPI strip ── */}
         <div className="ps-kpis">
@@ -578,6 +587,7 @@ export default function PrimarySalesPage() {
                 </tr></thead>
                 <tbody>
                   {pivotLoading ? Array.from({ length: 12 }).map((_, i) => <tr key={i}><td colSpan={7}><Shim /></td></tr>)
+                    : pivotFailed ? <tr><td colSpan={7}><LoadError label="Couldn't load the breakdown" onRetry={retry} /></td></tr>
                     : pivotRows.length ? pivotRows.map((r, i) => (
                       <tr key={r.key || i} className={`clk ${drill && drill.value === r.key ? 'on' : ''}`}
                         onClick={() => onRowDrill(r)}>

@@ -32,6 +32,7 @@ import { useAuth } from '../lib/auth-context';
 import { useTheme } from '../lib/v2/useTheme';
 import { useTimeRange } from '../lib/v2/useTimeRange';
 import { useDashboardMetrics } from '../lib/v2/useDashboardMetrics';
+import LoadError from '../components/ui/LoadError';
 import { useKeyboardShortcuts } from '../lib/v2/useKeyboardShortcuts';
 import TopBar from '../components/dashboard-v2/TopBar';
 import NarrativeBanner from '../components/dashboard-v2/NarrativeBanner';
@@ -54,7 +55,7 @@ export default function Overview() {
   const [mode,      setMode]      = useState(DEFAULT_MODE);
   const [valuation, setValuation] = useState(DEFAULT_VALUATION);
 
-  const { data: metrics, loading: metricsLoading } = useDashboardMetrics({
+  const { data: metrics, loading: metricsLoading, error: metricsError, reload: reloadMetrics } = useDashboardMetrics({
     fromISO, toISO, mode, valuation,
   });
 
@@ -126,7 +127,11 @@ export default function Overview() {
                 className="v2-kpi-row"
                 style={{ display: 'grid', gap: 12 }}
               >
-                {metricsLoading ? (
+                {!metricsLoading && !metrics && metricsError ? (
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <LoadError label="Couldn't load the dashboard numbers" onRetry={reloadMetrics} />
+                  </div>
+                ) : metricsLoading ? (
                   <>
                     <KpiHeroCardSkeleton label="Net Sales"           icon={IndianRupee} />
                     <KpiHeroCardSkeleton label="Units Sold"          icon={Package} />

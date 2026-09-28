@@ -13,6 +13,7 @@ import { useFilters } from '../lib/useFilters';
 import { FiltersProvider } from '../lib/FiltersContext';
 import { stockAvailabilityService } from '../lib/services';
 import { notifyApiError } from '../lib/notifyApiError';
+import LoadError from '../components/ui/LoadError';
 import {
   Boxes, Layers, Store, Package, IndianRupee, TrendingUp, TrendingDown, CalendarDays,
   Map as MapIcon, Building2, Tag, Palette, Ruler, Download, ChevronRight, ArrowLeft,
@@ -102,6 +103,12 @@ export default function StockAvailabilityPage() {
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [pivot, setPivot] = useState(null);
   const [pivotLoading, setPivotLoading] = useState(true);
+  // Retries exhausted → the calm inline state. Old values belong to another
+  // date/scope, so they are cleared rather than shown as this selection.
+  const [summaryFailed, setSummaryFailed] = useState(false);
+  const [pivotFailed, setPivotFailed] = useState(false);
+  const [retryN, setRetryN] = useState(0);
+  const retry = () => setRetryN((n) => n + 1);
   const [storeSel, setStoreSel] = useState(null);
   const [storeData, setStoreData] = useState(null);
   const [storeLoading, setStoreLoading] = useState(false);
@@ -165,20 +172,20 @@ export default function StockAvailabilityPage() {
   useEffect(() => {
     let a = true; setSummaryLoading(true);
     stockAvailabilityService.getSummary({ as_of: asOf, ...scope })
-      .then((s) => { if (a) setSummary(s.data?.data || null); })
-      .catch((e) => { if (a) notifyApiError(e, 'Failed to load stock summary'); })
+      .then((s) => { if (a) { setSummary(s.data?.data || null); setSummaryFailed(false); } })
+      .catch((e) => { if (a) { setSummary(null); setSummaryFailed(true); notifyApiError(e, 'Failed to load stock summary'); } })
       .finally(() => { if (a) setSummaryLoading(false); });
     return () => { a = false; };
-  }, [asOf, scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [asOf, scopeKey, retryN]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let a = true; setPivotLoading(true);
     stockAvailabilityService.getPivot({ group_by: viewBy, as_of: asOf, ...scope })
-      .then((p) => { if (a) setPivot(p.data?.data || null); })
-      .catch((e) => { if (a) notifyApiError(e, 'Failed to load breakdown'); })
+      .then((p) => { if (a) { setPivot(p.data?.data || null); setPivotFailed(false); } })
+      .catch((e) => { if (a) { setPivot(null); setPivotFailed(true); notifyApiError(e, 'Failed to load breakdown'); } })
       .finally(() => { if (a) setPivotLoading(false); });
     return () => { a = false; };
-  }, [viewBy, asOf, scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [viewBy, asOf, scopeKey, retryN]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!storeSel) { setStoreData(null); return; }
@@ -349,7 +356,8 @@ export default function StockAvailabilityPage() {
           <div className="sa-hero-glow" />
           <div style={{ position: 'relative' }}>
             <div className="sa-eyebrow"><Boxes size={12} /> Stock on hand · {prettyDate(summary?.as_of || asOf)}</div>
-            {summaryLoading ? <div className="sx-shimmer" style={{ height: 60, width: '55%', borderRadius: 10 }} /> : (
+            {summaryFailed && !summaryLoading ? <LoadError label="Couldn't load stock for this date" onRetry={retry} minHeight={80} />
+              : summaryLoading ? <div className="sx-shimmer" style={{ height: 60, width: '55%', borderRadius: 10 }} /> : (
               <div className="sa-hero-num">
                 {heroVal}
                 {delta != null && (
@@ -440,6 +448,7 @@ export default function StockAvailabilityPage() {
                   </tr></thead>
                   <tbody>
                     {pivotLoading ? Array.from({ length: 10 }).map((_, i) => <tr key={i}><td colSpan={7}><div className="sx-shimmer" style={{ height: 14, borderRadius: 4 }} /></td></tr>)
+                      : pivotFailed ? <tr><td colSpan={7}><LoadError label="Couldn't load the breakdown" onRetry={retry} /></td></tr>
                       : sortedRows.length ? sortedRows.map((r, i) => {
                         const clickable = viewBy === 'store' || !!lensKeyFor;
                         const active = lensKeyFor && (Array.isArray(lens[lensKeyFor]) ? lens[lensKeyFor].includes(r.key) : lens[lensKeyFor] === r.key);

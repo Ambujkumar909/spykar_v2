@@ -15,6 +15,7 @@ import TimeRangeControl from '../components/dashboard-v2/TimeRangeControl';
 import { analyticsService, syncService } from '../lib/services';
 import { getCached, setCached, isFresh, clearCached } from '../lib/dashboardCache';
 import toast from 'react-hot-toast';
+import LoadError from '../components/ui/LoadError';
 import { notifyApiError } from '../lib/notifyApiError';
 import {
   TrendingUp, TrendingDown, ShoppingBag, RotateCcw,
@@ -902,6 +903,7 @@ export default function SalesAnalyticsPage() {
   //                  themselves on the server (mega-CTE is expensive).
   const [data, setData]             = useState(() => getCached(cacheKey) ?? null);
   const [loading, setLoading]       = useState(() => !getCached(cacheKey));
+  const [loadFailed, setLoadFailed] = useState(false);   // retries exhausted AND nothing to show
   const [refreshing, setRefreshing] = useState(false);
   // Mirror `data` into a ref so `fetch` can read it WITHOUT listing `data` as a
   // dependency. Listing `data` made `fetch` change identity on every data
@@ -916,6 +918,7 @@ export default function SalesAnalyticsPage() {
   const fetch = useCallback(async () => {
     const issuedFor = cacheKey;
     const prevData = dataRef.current;   // restored if the heavy call fails (see catch)
+    setLoadFailed(false);
     setRefreshing(true);
     if (!dataRef.current && !getCached(issuedFor)) setLoading(true);
 
@@ -1027,6 +1030,8 @@ export default function SalesAnalyticsPage() {
         // Never leave the half-merged state (new KPIs over old tables) on
         // screen: fall back to the last complete payload.
         setData((cur) => (cur && cur.__slimFor === issuedFor ? prevData : cur));
+        // Older data on screen → keep it quietly. Nothing at all → inline state.
+        if (!prevData) setLoadFailed(true);
       }
       notifyApiError(err, 'Failed to load sales analytics');
     } finally {
@@ -1474,7 +1479,9 @@ export default function SalesAnalyticsPage() {
         </div>
       )}
 
+      {loadFailed && !data && <LoadError label="Couldn't load sales for this selection" onRetry={() => fetch()} minHeight={320} />}
       <div style={{
+        display: loadFailed && !data ? 'none' : undefined,   // no misleading "No data" sections under the error
         opacity: refreshing && data ? 0.55 : 1,
         transition: 'opacity 200ms ease',
         pointerEvents: refreshing && data ? 'none' : 'auto',

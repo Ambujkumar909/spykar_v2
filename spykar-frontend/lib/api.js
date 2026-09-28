@@ -103,6 +103,22 @@ api.interceptors.response.use(
       }
     }
 
+    // Quiet automatic retry for transient failures of READ requests: no
+    // response (network blip, API restarting), a gateway error, or a timeout.
+    // Two retries with a growing wait before the caller ever sees a failure,
+    // so a one-off blip never reaches the screen. A timed-out heavy query is
+    // usually still running on the server and cached by the time we retry.
+    const cfg = error.config;
+    const canceled = axios.isCancel?.(error) || error.code === 'ERR_CANCELED' || cfg?.signal?.aborted;
+    const transient = !error.response || [502, 503, 504].includes(error.response.status) || error.code === 'ECONNABORTED';
+    if (cfg && !canceled && transient && (cfg.method || 'get').toLowerCase() === 'get') {
+      cfg.__retries = (cfg.__retries || 0) + 1;
+      if (cfg.__retries <= 2) {
+        await new Promise((r) => setTimeout(r, cfg.__retries === 1 ? 1500 : 4000));
+        if (!cfg.signal?.aborted) return api(cfg);
+      }
+    }
+
     return Promise.reject(error);
   }
 );
