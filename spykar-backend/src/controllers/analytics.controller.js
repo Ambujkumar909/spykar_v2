@@ -37,7 +37,7 @@ async function getNetworkOverview(req, res, next) {
           COALESCE(SUM(i.qty_on_hand), 0)::int AS total_stock,
           COALESCE(SUM(i.qty_available), 0)::int AS available,
           ROUND(COALESCE(SUM(i.qty_on_hand * s.mrp), 0), 2) AS stock_value,
-          COUNT(*) FILTER (WHERE
+          COUNT(*) FILTER (WHERE l.shop_closed = false AND   -- alerts: open stores only
             i.qty_on_hand <= CASE WHEN i.safety_stock > 0 THEN i.safety_stock
                                   ELSE GREATEST(5, ROUND(COALESCE(v.adv,1)*14)) END
           )::int AS alerts
@@ -284,7 +284,7 @@ async function getZoneHeatmap(req, res, next) {
           COUNT(DISTINCT l.id)::int AS location_count,
           COALESCE(SUM(i.qty_on_hand), 0)::int AS total_stock,
           ROUND(COALESCE(SUM(i.qty_on_hand * s.mrp), 0), 2) AS stock_value,
-          COUNT(*) FILTER (WHERE
+          COUNT(*) FILTER (WHERE l.shop_closed = false AND   -- alerts: open stores only
             i.qty_on_hand <= CASE WHEN i.safety_stock > 0 THEN i.safety_stock
                                   ELSE GREATEST(5, ROUND(COALESCE(v.adv,1)*14)) END
           )::int AS alerts

@@ -38,7 +38,7 @@ async function getExecutiveSummary(req, res, next) {
           COALESCE(SUM(i.qty_available), 0)::int AS available_stock,
           COALESCE(SUM(i.qty_in_transit), 0)::int AS in_transit,
           COALESCE(SUM(i.qty_on_hand * s.mrp), 0)::numeric AS stock_value,
-          COUNT(i.location_id) FILTER (WHERE
+          COUNT(i.location_id) FILTER (WHERE l.shop_closed = false AND   -- alerts: open stores only
             i.qty_on_hand <= CASE WHEN i.safety_stock > 0 THEN i.safety_stock
                                   ELSE GREATEST(5, ROUND(COALESCE(v.adv,1)*14)) END
           )::int AS low_stock_alerts,
@@ -405,12 +405,10 @@ async function getSkuInventory(req, res, next) {
 // 026), the same definition every other out-of-stock number reads. Those
 // positions join the snapshot rows as zero-stock positions before
 // classification.
-function alertsModeFilter(mode) {
-  return mode === 'inactive'
-    ? 'AND l.is_active = true AND s.is_active = true AND l.shop_closed = true'
-    : mode === 'all'
-      ? 'AND l.is_active = true AND s.is_active = true'
-      : 'AND l.is_active = true AND s.is_active = true AND l.shop_closed = false';
+// Owner's rule: alerts are for OPEN stores only, whatever the mode lens says —
+// a closed store has nothing to replenish. `mode` still scopes the cache key.
+function alertsModeFilter(_mode) {
+  return 'AND l.is_active = true AND s.is_active = true AND l.shop_closed = false';
 }
 function alertsBaseSQL(activeFilter) {
   return `
