@@ -17,7 +17,9 @@ export default function TodayVsLY({ data, loading, isDark }) {
     // No per-series `type` field: that triggers "mixed chart" mode which
     // makes fill.opacity bleed into stroke opacity and hides the lines.
     const todayPts = (data || []).map((d, i) => ({ x: i, y: d.today || 0 }));
-    const lyPts    = (data || []).map((d, i) => ({ x: i, y: d.ly ?? 0 }))
+    // Keep missing LY points out (d.ly ?? 0 drew a false ₹0 line and made the
+    // null filter dead code).
+    const lyPts    = (data || []).map((d, i) => ({ x: i, y: d.ly }))
                       .filter(p => p.y != null);
     return [
       { name: 'This period',      data: todayPts },

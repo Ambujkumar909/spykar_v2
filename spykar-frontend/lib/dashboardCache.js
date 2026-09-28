@@ -108,7 +108,10 @@ function evictOldest(tier) {
   const entries = [];
   for (let i = 0; i < store.length; i++) {
     const k = store.key(i);
-    if (!k || !k.startsWith(SS_PREFIX)) continue;
+    // Never evict the data-version marker: it has no ts, so it sorted first and
+    // was dropped under quota pressure — resetting the version to 0 and letting
+    // pre-sync cached data count as fresh again.
+    if (!k || !k.startsWith(SS_PREFIX) || k === 'dashcache:__dataVersion') continue;
     try {
       const v = JSON.parse(store.getItem(k));
       entries.push({ k, ts: v?.ts || 0 });

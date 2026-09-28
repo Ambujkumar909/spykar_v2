@@ -33,15 +33,21 @@ const SCALAR_DIMS = new Set([
   'asOfDate',      // YYYY-MM-DD (time-travel)
   'tax',           // 'mrp' | 'gross' | 'net'
   'sale',          // 'sale' | 'return' | 'net'
-  'date_from', 'date_to',
   'sort_by', 'sort_dir',
   'page', 'limit',
   'search',
 ]);
 
+// Time-range params belong to useTimeRange, not to the filter state. The
+// dashboard map hands off ?preset=&date_from=&date_to= to /sales; decoding them
+// here turned them into removable chips ("preset: mtd") that did nothing, went
+// stale when the time pill changed, and inflated the active-filter count.
+const TIME_RANGE_KEYS = new Set(['preset', 'date_from', 'date_to']);
+
 function decode(qs) {
   const out = {};
   Object.keys(qs).forEach(k => {
+    if (TIME_RANGE_KEYS.has(k)) return;
     const v = qs[k];
     // Defensive: null/undefined/empty string are all treated as "not set"
     // so a stray null in router.query (rare but possible after manual
@@ -103,11 +109,19 @@ export function useFilters({ defaults = {}, persist = [] } = {}) {
       ) {
         delete next[key];
       }
-      // Cascade narrowing: clearing State auto-clears City; etc.
-      if (key === 'state')        delete next.city;
-      if (key === 'gender_name')  { delete next.sub_product; delete next.style; }
-      if (key === 'sub_product')  delete next.style;
-      if (key === 'group_name')   delete next.store_code;
+      // Cascade narrowing — only when a parent value was REMOVED or cleared
+      // (that is what can orphan a child pick). It used to fire on every change,
+      // so adding a second State wiped the City the user had already chosen.
+      const asArr = (v) => (v == null || v === '' ? [] : Array.isArray(v) ? v : [v]);
+      const prevVals = asArr(prev[key]);
+      const nextVals = asArr(next[key]);
+      const narrowed = prevVals.some((x) => !nextVals.includes(x));
+      if (narrowed) {
+        if (key === 'state')        delete next.city;
+        if (key === 'gender_name')  { delete next.sub_product; delete next.style; }
+        if (key === 'sub_product')  delete next.style;
+        if (key === 'group_name')   delete next.store_code;
+      }
       syncToUrl(next);
       return next;
     });

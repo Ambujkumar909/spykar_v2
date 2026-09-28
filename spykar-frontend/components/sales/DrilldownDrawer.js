@@ -26,19 +26,20 @@ import { getCached, setCached, isFresh, dedupedFetch } from '../../lib/dashboard
 
 // ── Number formatters (Indian convention) ────────────────────────────────
 const fmtNum = (n) => Number(n || 0).toLocaleString('en-IN');
+// Abbreviate on |v| and prefix the sign (negatives were printed unabbreviated).
 const fmtCr  = (n) => {
-  const v = Number(n || 0);
-  if (v >= 10_000_000) return `₹${(v/10_000_000).toFixed(2)} Cr`;
-  if (v >= 100_000)    return `₹${(v/100_000).toFixed(2)} L`;
-  if (v >= 1_000)      return `₹${(v/1_000).toFixed(1)}K`;
-  return `₹${v.toLocaleString('en-IN')}`;
+  const v = Number(n || 0); const sg = v < 0 ? '−' : ''; const a = Math.abs(v);
+  if (a >= 10_000_000) return `${sg}₹${(a/10_000_000).toFixed(2)} Cr`;
+  if (a >= 100_000)    return `${sg}₹${(a/100_000).toFixed(2)} L`;
+  if (a >= 1_000)      return `${sg}₹${(a/1_000).toFixed(1)}K`;
+  return `${sg}₹${a.toLocaleString('en-IN')}`;
 };
 const fmtL = (n) => {
-  const v = Number(n || 0);
-  if (v >= 10_000_000) return (v/10_000_000).toFixed(2) + ' Cr';
-  if (v >= 100_000)    return (v/100_000).toFixed(2) + 'L';
-  if (v >= 1_000)      return (v/1_000).toFixed(1) + 'K';
-  return v.toLocaleString('en-IN');
+  const v = Number(n || 0); const sg = v < 0 ? '−' : ''; const a = Math.abs(v);
+  if (a >= 10_000_000) return sg + (a/10_000_000).toFixed(2) + ' Cr';
+  if (a >= 100_000)    return sg + (a/100_000).toFixed(2) + 'L';
+  if (a >= 1_000)      return sg + (a/1_000).toFixed(1) + 'K';
+  return sg + a.toLocaleString('en-IN');
 };
 
 // Build the cache key. The `filters` param IS already the exact querystring

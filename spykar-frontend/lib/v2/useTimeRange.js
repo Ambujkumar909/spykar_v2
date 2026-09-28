@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 
 // Single source of truth for the time-window every v2 component reads.
 // Six presets + custom.  fromISO/toISO are the only fields downstream
@@ -70,9 +70,19 @@ export function useTimeRange(initialPreset = 'mtd') {
   const [customFrom, setCustomFrom] = useState(null);
   const [customTo, setCustomTo]     = useState(null);
 
+  // "Today" must roll over while the tab stays open: a dashboard left open
+  // overnight kept yesterday's window (and on the 1st, last month's MTD).
+  const [day, setDay] = useState(() => fmt(anchorToday()));
+  useEffect(() => {
+    const check = () => { const d = fmt(anchorToday()); setDay((prev) => (prev === d ? prev : d)); };
+    const t = setInterval(check, 60_000);
+    document.addEventListener('visibilitychange', check);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', check); };
+  }, []);
+
   const range = useMemo(
     () => rangeFor(preset, customFrom, customTo),
-    [preset, customFrom, customTo]
+    [preset, customFrom, customTo, day] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Smart setPreset: when switching TO 'custom', seed customFrom/customTo

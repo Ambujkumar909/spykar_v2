@@ -25,13 +25,12 @@ const COMMANDS = [
   { id: 'go-locations',    section: 'Navigate', label: 'Locations',         hint: 'Per-store deep-dive',          keys: 'g l', path: '/locations' },
   { id: 'go-distributors', section: 'Navigate', label: 'Distributors',      hint: 'Channel partners',             keys: 'g d', path: '/distributors' },
   { id: 'go-alerts',       section: 'Navigate', label: 'Stock Alerts',      hint: 'Low/out-of-stock SKUs',        keys: 'g a', path: '/alerts' },
-  { id: 'go-movements',    section: 'Navigate', label: 'Movements',         hint: 'Sales & return ledger',        keys: 'g m', path: '/movements' },
   { id: 'go-ai',           section: 'Navigate', label: 'AI Query',          hint: 'Ask anything in plain English',keys: 'g q', path: '/ai-query' },
   { id: 'go-sync',         section: 'Navigate', label: 'Sync',              hint: 'ETL status & logs',            keys: 'g y', path: '/sync' },
   { id: 'go-users',        section: 'Navigate', label: 'Users',             hint: 'Admin: roles & access',        keys: 'g u', path: '/users' },
 
-  { id: 'filter-mens',     section: 'Quick filters', label: 'Filter: MENS only',         hint: 'Shows men\'s SKUs everywhere',     keys: '',     path: '/network?gender=MENS' },
-  { id: 'filter-womens',   section: 'Quick filters', label: 'Filter: WOMENS only',       hint: 'Shows women\'s SKUs everywhere',   keys: '',     path: '/network?gender=WOMENS' },
+  { id: 'filter-mens',     section: 'Quick filters', label: 'Filter: MENS only',         hint: 'Shows men\'s SKUs everywhere',     keys: '',     path: '/network?gender_name=MENS' },
+  { id: 'filter-womens',   section: 'Quick filters', label: 'Filter: WOMENS only',       hint: 'Shows women\'s SKUs everywhere',   keys: '',     path: '/network?gender_name=WOMENS' },
   { id: 'filter-denim',    section: 'Quick filters', label: 'Filter: Denim only',        hint: 'Jeans + denim across stores',      keys: '',     path: '/network?category=denim' },
   { id: 'filter-tshirts',  section: 'Quick filters', label: 'Filter: T-Shirts only',     hint: 'T-shirt category',                 keys: '',     path: '/network?category=t-shirt' },
   { id: 'filter-mh',       section: 'Quick filters', label: 'Maharashtra stores',        hint: 'All stores in MH',                 keys: '',     path: '/network?state=MAHARASHTRA' },
@@ -100,7 +99,12 @@ export default function CommandPalette() {
       localStorage.setItem('cmdk:recent', JSON.stringify(next));
     } catch {}
     setOpen(false);
-    if (cmd.path) router.push(cmd.path);
+    // Quick filters need a full navigation: useFilters reads the URL once on
+    // mount, so a client-side push to the page you're already on was ignored.
+    if (cmd.path) {
+      if (cmd.section === 'Quick filters') window.location.assign(cmd.path);
+      else router.push(cmd.path);
+    }
   };
 
   // Keyboard navigation in the list

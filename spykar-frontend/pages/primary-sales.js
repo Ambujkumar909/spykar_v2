@@ -193,6 +193,12 @@ export default function PrimarySalesPage() {
 
   // Switching View-by clears any active drill (re-slicing from scratch).
   const changeViewBy = useCallback((k) => { setViewBy(k); setDrill(null); }, []);
+  // A drill is applied LAST in `scope`, so it silently beat the matching
+  // control: drill on W1, pick W2 in the dropdown → every number stayed W1.
+  // Changing a control clears a drill on the same dimension.
+  const changeWarehouse = useCallback((v) => { setWarehouse(v); setDrill((d) => (d?.dim === 'warehouse' ? null : d)); }, []);
+  const changeTxnType   = useCallback((v) => { setTxnType(v);   setDrill((d) => (d?.dim === 'type' ? null : d)); }, []);
+  useEffect(() => { setDrill((d) => (d && d.dim !== 'warehouse' && d.dim !== 'type' ? null : d)); }, [lensKey]);   // a Lens change does the same for SKU-attribute drills
   // Click any row → drill to that member (toggle off if already active).
   const onRowDrill = useCallback((r) => {
     setDrill((d) => (d && d.value === r.key ? null : { dim: viewBy, value: r.key, label: r.label }));
@@ -364,8 +370,8 @@ export default function PrimarySalesPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 18 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <HeaderField label="Measure" value={measure} onChange={setMeasure} options={MEASURE_OPTIONS} minWidth={92} />
-        <HeaderField label="Warehouse" value={warehouse} onChange={setWarehouse} options={wOpts} minWidth={130} />
-        <HeaderField label="Type" value={txnType} onChange={setTxnType} options={tOpts} minWidth={88} />
+        <HeaderField label="Warehouse" value={warehouse} onChange={changeWarehouse} options={wOpts} minWidth={130} />
+        <HeaderField label="Type" value={txnType} onChange={changeTxnType} options={tOpts} minWidth={88} />
         {preset === 'custom' && (
           <span style={capsuleSty}>
             <span style={capLblSty}>Custom</span>

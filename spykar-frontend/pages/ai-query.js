@@ -86,8 +86,12 @@ export default function AiQuery() {
   // Build chart from result rows if numeric columns exist
   const rows    = result?.rows || [];
   const cols    = rows.length ? Object.keys(rows[0]) : [];
-  const numCols = cols.filter(c => typeof rows[0]?.[c] === 'number');
-  const strCols = cols.filter(c => typeof rows[0]?.[c] === 'string');
+  // Postgres COUNT/SUM/NUMERIC arrive as strings from node-pg ('1234.50'), so a
+  // typeof === 'number' test never found a numeric column: no chart for any
+  // "top N by total" answer. A column is numeric when every value parses.
+  const isNumLike = (v) => typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)));
+  const numCols = cols.filter(c => rows.every(r => r[c] == null || isNumLike(r[c])) && rows.some(r => r[c] != null));
+  const strCols = cols.filter(c => !numCols.includes(c) && typeof rows[0]?.[c] === 'string');
   const canChart = numCols.length >= 1 && strCols.length >= 1 && rows.length > 1;
 
   const chartOptions = canChart ? {
@@ -265,12 +269,12 @@ export default function AiQuery() {
                             <tr key={i}>
                               {cols.map(c => (
                                 <td key={c} style={{
-                                  color: typeof row[c] === 'number' ? 'var(--accent-primary)' : '',
-                                  fontWeight: typeof row[c] === 'number' ? 600 : '',
+                                  color: numCols.includes(c) ? 'var(--accent-primary)' : '',
+                                  fontWeight: numCols.includes(c) ? 600 : '',
                                   fontFamily: String(row[c])?.match(/^[A-Z]{2,}-/) ? 'monospace' : '',
                                   fontSize: String(row[c])?.match(/^[A-Z]{2,}-/) ? 12 : '',
                                 }}>
-                                  {typeof row[c] === 'number' ? formatNumber(row[c]) : (row[c] ?? '—')}
+                                  {numCols.includes(c) && row[c] != null ? formatNumber(Number(row[c])) : (row[c] ?? '—')}
                                 </td>
                               ))}
                             </tr>

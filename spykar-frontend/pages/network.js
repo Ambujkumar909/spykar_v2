@@ -426,7 +426,10 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
       setSizeData(cached.size);
       setCityOpts(cached.cities);
       setLoading(false);
-      if (isFresh(key)) return; // fresh hit → no refetch
+      // Fresh hit → no refetch. Clear the dim too: a superseded fetch's finally
+      // skips the reset (the active key moved on), which left the colour/size
+      // charts stuck at 55% opacity after switching to a cached combo.
+      if (isFresh(key)) { setRefreshing(false); return; }
       // stale cached entry → background revalidate, KEEP UI populated
     }
 
@@ -645,6 +648,13 @@ function StockBreakdownSection({ stateOptions, v2Filters = {} }) {
 // ── All Locations Table — server-side pagination ───────────────────────────
 const PAGE_SIZE_LOCS = 25;
 
+// Filter-set identity for the top-by-stock cache: everything except the
+// table's own sort / page / search.
+function filterSig(f = {}) {
+  const { sort_by, page, search, ...rest } = f; // eslint-disable-line no-unused-vars
+  return JSON.stringify(Object.keys(rest).sort().reduce((o, k) => { if (rest[k] != null && rest[k] !== '') o[k] = rest[k]; return o; }, {}));
+}
+
 function AllLocationsTable({
   locations, pagination, groups,
   stateOptions, cityOptions,
@@ -652,6 +662,7 @@ function AllLocationsTable({
   onFilterChange,
   paretoPick = null,           // { tier: 50|80|90, n: <count> } | null
   onClearParetoPick = null,
+  resetKey = '',               // changes when the filter bar changes → back to page 1
 }) {
   // State/City/Channel are owned by the v2 FilterBar at the top of the
   // page — no local UI for them here. They still exist as empty-string
@@ -664,6 +675,10 @@ function AllLocationsTable({
   const [category, setCategory] = useState('');
   const [sortBy,   setSortBy]   = useState('total_stock');
   const [page,     setPage]     = useState(1);
+  // The parent fetches page 1 on every filter-bar change; the local page state
+  // used to survive it, so rows 1–25 showed numbered 101–125 with page 5 lit
+  // and "Next" jumped to page 6.
+  useEffect(() => { setPage(1); }, [resetKey]);
   // Suppress lint for unused-but-needed-by-payload setters.
   void stateOptions; void cityOptions; void groups;
 
@@ -681,15 +696,18 @@ function AllLocationsTable({
   // DESC (which IS the default) AND no extra filter has narrowed the
   // dataset. If the user changes any of those, auto-clear so the rail
   // never points at the wrong rows. Pure client-side; no fetch.
+  // The Pareto tiers rank stores by stock VALUE (networkPulse: ORDER BY value),
+  // so the highlight is only true on a value-DESC sort. It used to gate on the
+  // units sort and lit the wrong stores.
   const hasFilter = !!(search || state || city || channel || category);
-  const sortIsStockDesc = sortBy === 'total_stock';
+  const sortIsValueDesc = sortBy === 'total_value';
+  // Picking a tier switches the table to the value sort, page 1.
+  useEffect(() => { if (paretoPick) { setSortBy('total_value'); setPage(1); } }, [paretoPick]);
+  // A later manual sort change or table filter clears the highlight.
   useEffect(() => {
-    if (paretoPick && (!sortIsStockDesc || hasFilter)) onClearParetoPick?.();
-  }, [paretoPick, sortIsStockDesc, hasFilter, onClearParetoPick]);
-
-  // Snap to page 1 when a Pareto highlight is requested — top N rows live
-  // on the first pages of a stock-DESC sort.
-  useEffect(() => { if (paretoPick) setPage(1); }, [paretoPick]);
+    if (paretoPick && sortBy !== 'total_value' && sortBy !== 'total_stock') onClearParetoPick?.();
+    if (paretoPick && hasFilter) onClearParetoPick?.();
+  }, [paretoPick, sortBy, hasFilter, onClearParetoPick]);
 
   const totalRecords = Number(pagination?.total || 0);
   const totalPages   = Number(pagination?.totalPages || 1);
@@ -802,7 +820,7 @@ function AllLocationsTable({
                   // ONLY when sort is total_stock DESC + no extra filter
                   // (the parent auto-clears paretoPick otherwise so this
                   // condition is mostly defensive).
-                  const inPareto  = !!paretoPick && globalIdx < paretoPick.n && sortIsStockDesc && !hasFilter;
+                  const inPareto  = !!paretoPick && globalIdx < paretoPick.n && sortIsValueDesc && !hasFilter;
                   const baseBg    = inPareto
                     ? 'linear-gradient(90deg, rgba(192,57,43,0.06), rgba(192,57,43,0.02) 60%)'
                     : isTop3 ? 'rgba(239,68,68,0.06)' : i % 2 === 0 ? 'transparent' : 'var(--row-stripe)';
@@ -908,6 +926,7 @@ export default function NetworkPage() {
 
   // Server-side filters — driven by AllLocationsTable
   const [tableFilters, setTableFilters] = useState({ sort_by: 'total_stock', page: 1 });
+  const [topByStock, setTopByStock] = useState(null);   // { sig, data }: page 1 of sort_by=total_stock for filter set `sig`
 
   // Pareto drill-down — set when user clicks a tier in the Concentration
   // Reveal. Holds { tier: 50|80|90, n: <store-count> }. The All Locations
@@ -929,42 +948,11 @@ export default function NetworkPage() {
   }, []);
   const clearParetoPick = useCallback(() => setParetoPick(null), []);
 
-  // Fetch summary + groupSummary (drives ChannelBreakdownSection +
-  // NetworkChartsSection + StockBreakdownSection state list).
-  // Now accepts the full v2 filter set so the legacy chart sections also
-  // narrow with every dropdown pick — the WHOLE page speaks one filter.
-  const fetchSummaryData = useCallback(async (filters = {}) => {
-    if (!getCached('net:sum:summary')) setSummaryLoading(true);
-    try {
-      const res = await locationService.list({
-        page: 1, limit: PAGE_SIZE_LOCS, sort_by: 'total_stock',
-        mode:        filters.mode        || 'active',
-        state:       filters.state       || undefined,
-        city:        filters.city        || undefined,
-        group_name:  filters.group_name  || undefined,
-        store_code:  filters.store_code  || undefined,
-        gender:      filters.gender      || undefined,
-        sub_product: filters.sub_product || undefined,
-        product:     filters.product     || undefined,
-        style:       filters.style       || undefined,
-        shade:       filters.shade       || undefined,
-        color:       filters.color       || undefined,
-        size:        filters.size        || undefined,
-        season:      filters.season      || undefined,
-        category:    filters.category    || undefined,
-      });
-      const groups  = res.data.groups    || [];
-      const summary = res.data.summary   || null;
-      const states  = res.data.states    || [];
-      setGroupSummary(groups);     setCached('net:sum:groups',  groups);
-      setNetworkSummary(summary);  setCached('net:sum:summary', summary);
-      setStateOptions(states);     setCached('net:sum:states',  states);
-    } catch (err) {
-      notifyApiError(err, 'Failed to load network summary');
-    } finally {
-      setSummaryLoading(false);
-    }
-  }, []);
+  // (fetchSummaryData removed: it re-fetched /locations WITHOUT the current
+  // filters and without a stale-response guard, so the Refresh button — or a
+  // load from a filtered link — overwrote Channel Breakdown / Stock by Channel
+  // with all-India totals while the table stayed filtered. fetchTableData
+  // already takes summary, groups and states from the same filtered response.)
 
   // Fetch table rows AND piggy-back the summary/groups/states from the same
   // /locations response. Eliminates the redundant fetchSummaryData call that
@@ -975,11 +963,13 @@ export default function NetworkPage() {
   // a fast filter sequence shouldn't queue 4 redundant /locations scans.
   const tableFetchRef = useRef(null);
 
-  const fetchTableData = useCallback(async (filters = {}) => {
+  const fetchTableData = useCallback(async (filters = {}, { force = false } = {}) => {
+    const isTopByStock = (filters.sort_by || 'total_stock') === 'total_stock' && (filters.page || 1) === 1 && !filters.search;
     const tableKey = `net:table:v4:${filters.sort_by || 'total_stock'}|${filters.page || 1}|m${filters.mode||'active'}|gn${filters.group_name||''}|st${filters.state||''}|ct${filters.city||''}|sc${filters.store_code||''}|q${filters.search||''}|cat${filters.category||''}|g${filters.gender||''}|sp${filters.sub_product||''}|pr${filters.product||''}|sty${filters.style||''}|sh${filters.shade||''}|cl${filters.color||''}|sz${filters.size||''}|se${filters.season||''}`;
     const cached = getCached(tableKey);
     if (cached) {
       setLocations(cached.data);
+      if (isTopByStock) setTopByStock({ sig: filterSig(filters), data: cached.data });
       setPagination(cached.pagination);
       setCityOptions(cached.cities);
       setFilteredGroups(cached.groups);
@@ -992,7 +982,7 @@ export default function NetworkPage() {
       setCached('net:table:pagination', cached.pagination);
       setCached('net:table:cities',     cached.cities);
       setCached('net:table:groups',     cached.groups);
-      if (isFresh(tableKey)) { setTableLoading(false); return; }
+      if (!force && isFresh(tableKey)) { setTableLoading(false); return; }
     } else {
       setTableLoading(true);
     }
@@ -1023,6 +1013,10 @@ export default function NetworkPage() {
       };
       const res = await locationService.list(params, { signal: ac.signal });
       const data       = res.data.data        || [];
+      // The "Top 10 Stores — By Stock" chart used whatever 25 rows the table
+      // showed, so sorting by name or paging changed the chart. Remember the
+      // true top-by-stock page for the current filter set instead.
+      if (isTopByStock) setTopByStock({ sig: filterSig(filters), data });
       const pag        = res.data.pagination  || null;
       const cities     = res.data.cities      || [];
       const groupsR    = res.data.groups      || [];
@@ -1053,13 +1047,8 @@ export default function NetworkPage() {
 
   // Initial load — both in parallel, skipped if cache is fresh
   useEffect(() => {
-    if (isFresh('net:sum:summary')) {
-      setSummaryLoading(false);
-    } else {
-      fetchSummaryData();
-    }
     fetchTableData({ sort_by: 'total_stock' });
-  }, [fetchSummaryData, fetchTableData]);
+  }, [fetchTableData]);
 
   // ── v2 FilterBar → re-fetch EVERYTHING on the page ──────────────────────
   // When the universal filter bar changes, refetch BOTH summary (KPIs +
@@ -1199,7 +1188,7 @@ export default function NetworkPage() {
 
       {/* ── Refresh — refreshes both summary and table ── */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
-        <button onClick={() => { fetchSummaryData(); fetchTableData(tableFilters); }} disabled={summaryLoading || tableLoading}
+        <button onClick={() => { fetchTableData(tableFilters, { force: true }); }} disabled={summaryLoading || tableLoading}
           style={{ display: 'flex', alignItems: 'center', gap: 6, border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 800, color: T.primary, background: 'var(--bg-elevated)', cursor: (summaryLoading || tableLoading) ? 'default' : 'pointer', opacity: (summaryLoading || tableLoading) ? 0.6 : 1 }}>
           <RefreshCw size={13} style={{ animation: (summaryLoading || tableLoading) ? 'spin 1s linear infinite' : 'none' }} strokeWidth={2.5} />
           Refresh
@@ -1215,7 +1204,9 @@ export default function NetworkPage() {
       {/* ── Network Charts ── (title hugs its charts at the same 18px gap the
           other section titles use — no extra wrapper margin) */}
       <SectionTitle icon={BarChart2} label="Network Analytics — Stock Distribution" />
-      <NetworkChartsSection groups={groupSummary} filteredGroups={filteredGroups} locations={locations} loading={summaryLoading} />
+      <NetworkChartsSection groups={groupSummary} filteredGroups={filteredGroups}
+        locations={topByStock && topByStock.sig === filterSig(tableFilters) ? topByStock.data : locations}
+        loading={summaryLoading} />
 
       {/* ── Colour & Size Stock Distribution — narrows with v2 filter bar ── */}
       <StockBreakdownSection stateOptions={stateOptions} v2Filters={v2Filters} />
@@ -1238,6 +1229,7 @@ export default function NetworkPage() {
           onFilterChange={handleFilterChange}
           paretoPick={paretoPick}
           onClearParetoPick={clearParetoPick}
+          resetKey={v2FiltersJson}
         />
       </div>
 

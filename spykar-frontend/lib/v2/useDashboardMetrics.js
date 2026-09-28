@@ -34,6 +34,10 @@ function shiftYear(iso, years) {
 // points so all KPI sparklines have a comparable scale on the x-axis.
 function realSparkline(daily, field, limit = 30) {
   if (!Array.isArray(daily) || daily.length === 0) return [];
+  // The slim summary's daily rows carry only the gross family (sales_value,
+  // sales_qty, return_*). For the Ex-GST / GST / MRP / Discount lenses the
+  // field is absent and the sparkline was flat zeros — show the gross trend.
+  if (!(field in daily[0])) field = 'sales_value';
   const slice = daily.slice(-limit);
   // Cumulative for sales-rate KPIs — non-cumulative for headline value.  Per
   // KPI we just take the daily value; the sparkline renders its own scale.
@@ -101,9 +105,12 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
 
     // Paint cached data immediately; only show the skeleton when we truly have
     // nothing for this key yet.
+    // Nothing cached for THIS key: drop the previous key's payload. Keeping it
+    // showed (say) MTD numbers under the YTD label — and kept them there if the
+    // YTD request then failed.
     const cached = getCached(cacheKey);
     if (cached) { setData(cached); setLoading(false); }
-    else        { setLoading(true); }
+    else        { setData(null); setLoading(true); }
 
     const lyFrom = shiftYear(fromISO, 1);
     const lyTo   = shiftYear(toISO, 1);
@@ -154,14 +161,28 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
       // useAlerts, and /inventory/ageing remains available).
       // Removed earlier: skuService.getTopMoving / getSlowMoving (SKU Pulse retired).
     ])
-      .then(([cur, ly, inv, sync]) => {
+      .then(async ([cur, ly, inv, sync]) => {
         if (!alive) return;
         const c = cur?.data?.data?.summary || {};
-        const lyS = ly?.data?.data?.summary || {};
+        const dailyCur = cur?.data?.data?.daily || [];
+        // Like-for-like: the current window only has data up to the last sync
+        // (syncs run 10:00/13:00/18:00/23:00), but the LY window always has the
+        // full period. Before the first sync "Today" read ₹0 and "▼100% vs LY",
+        // and every MTD/YTD was biased down by up to a day. Compare only up to
+        // the last day that actually has data; nothing yet → no delta ("—").
+        const lastDay = dailyCur.length ? String(dailyCur[dailyCur.length - 1].date).slice(0, 10) : null;
+        const comparable = !!lastDay;
+        if (lastDay && lastDay < toISO) {
+          ly = await analyticsService.getSalesSummary({
+            date_from: lyFrom, date_to: shiftYear(lastDay, 1), mode, ttl_override: 86400,
+          }).catch(() => null);
+          if (!alive) return;
+        }
+        const lyS = comparable ? (ly?.data?.data?.summary || {}) : {};
+        const dLy = (a, b) => (comparable && ly ? pctDelta(a, b) : null);
         const stock = cur?.data?.data?.stock_snapshot || {};
         const totals = inv?.data?.data?.totals || {};
-        const dailyCur = cur?.data?.data?.daily || [];
-        const dailyLy  = ly?.data?.data?.daily || [];
+        const dailyLy  = comparable ? (ly?.data?.data?.daily || []) : [];
         const byChannel = cur?.data?.data?.by_channel || [];
 
         const netValue   = pickNet(c, valuation);
@@ -189,7 +210,7 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
         const kpis = {
           netSales: {
             value: netValue,
-            delta: pctDelta(netValue, lyNet),
+            delta: dLy(netValue, lyNet),
             spark: realSparkline(dailyCur, salesField),
             footnote: c.units_sold > 0
               ? `avg ₹${Math.round(netValue / Math.max(1, c.units_sold)).toLocaleString('en-IN')} per unit`
@@ -197,7 +218,7 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
           },
           unitsSold: {
             value: unitsSold,
-            delta: pctDelta(unitsSold, lyUnits),
+            delta: dLy(unitsSold, lyUnits),
             spark: realSparkline(dailyCur, 'sales_qty'),
             footnote: c.return_units > 0
               ? `${Number(c.return_units).toLocaleString('en-IN')} returned`
@@ -217,8 +238,11 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
           },
           returnRate: {
             // Lower is better for return rate — caller uses inverseHealthFromDelta.
+            // The card shows this delta in percentage POINTS ("pp"), so it is
+            // the difference of the two rates — pctDelta gave a relative change
+            // (5% vs 4% showed "▲ 25.0pp" instead of 1.0pp).
             value: returnRate,
-            delta: pctDelta(returnRate, lyReturn),
+            delta: comparable && ly && lyS.units_sold > 0 ? returnRate - lyReturn : null,
             spark: returnRateSparkline(dailyCur),
             footnote: c.return_units > 0
               ? `${Number(c.return_units).toLocaleString('en-IN')} returns · ${formatINRCompact(c.return_value)}`
@@ -230,17 +254,18 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
         // consumer (Needs Attention) is disabled, so getAgeing is no longer
         // fetched. AgingWaterfall renders its own "Available soon" placeholder.
 
-        // Today vs LY: align by day index so one curve is "today's pace" and
-        // the other is "same-day-LY pace".  Cumulative so the line is monotone.
-        let cumCur = 0, cumLy = 0;
-        const todayVsLy = dailyCur.map((d, i) => {
+        // Today vs LY, cumulative. Aligned by CALENDAR date (d → same day last
+        // year), not by array index: either window can skip a day with no
+        // movements, which shifted the whole LY curve.
+        const lySorted = [...dailyLy].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        let cumCur = 0, cumLy = 0, j = 0;
+        const todayVsLy = dailyCur.map((d) => {
           cumCur += Number(d.sales_value || 0);
-          cumLy  += Number(dailyLy[i]?.sales_value || 0);
-          return {
-            date: d.date,
-            today: cumCur,
-            ly:    dailyLy[i] ? cumLy : null,
-          };
+          const lyDay = shiftYear(String(d.date).slice(0, 10), 1);
+          while (j < lySorted.length && String(lySorted[j].date).slice(0, 10) <= lyDay) {
+            cumLy += Number(lySorted[j].sales_value || 0); j++;
+          }
+          return { date: d.date, today: cumCur, ly: lySorted.length ? cumLy : null };
         });
 
         // Channel mix (no real "category" field in schema — channel is the

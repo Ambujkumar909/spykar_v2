@@ -533,8 +533,10 @@ export default function AiChatbot() {
       const arr = res?.data?.data;
       if (Array.isArray(arr) && arr.length > 0) {
         const norm = arr.map(item => {
-          const q = typeof item === 'string' ? item : (item?.question || item?.q || '');
-          return typeof q === 'string' && q.trim() ? { cat: 'Suggested', q: q.trim() } : null;
+          // The API returns { category, query } — reading only question/q threw
+          // every server suggestion away.
+          const q = typeof item === 'string' ? item : (item?.query || item?.question || item?.q || '');
+          return typeof q === 'string' && q.trim() ? { cat: item?.category || 'Suggested', q: q.trim() } : null;
         }).filter(Boolean);
         if (norm.length > 0) setSuggestions([...norm, ...SUGGESTIONS]);
       }

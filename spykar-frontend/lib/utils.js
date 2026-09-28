@@ -1,19 +1,23 @@
 // ─── Number formatting ────────────────────────────────────────────────────────
 
+// Both abbreviate on |n| and prefix the sign: negatives (net returns) used to
+// fall through every threshold and print unabbreviated.
 export function formatNumber(n) {
   if (n == null) return '—';
-  if (n >= 10_000_000) return `${(n / 10_000_000).toFixed(1)}Cr`;
-  if (n >= 100_000)    return `${(n / 100_000).toFixed(1)}L`;
-  if (n >= 1_000)      return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString('en-IN');
+  n = Number(n); const sg = n < 0 ? '−' : ''; const a = Math.abs(n);
+  if (a >= 10_000_000) return `${sg}${(a / 10_000_000).toFixed(1)}Cr`;
+  if (a >= 100_000)    return `${sg}${(a / 100_000).toFixed(1)}L`;
+  if (a >= 1_000)      return `${sg}${(a / 1_000).toFixed(1)}K`;
+  return sg + a.toLocaleString('en-IN');
 }
 
 export function formatCurrency(n) {
   if (n == null) return '—';
-  if (n >= 10_000_000) return `₹${(n / 10_000_000).toFixed(2)}Cr`;
-  if (n >= 100_000)    return `₹${(n / 100_000).toFixed(2)}L`;
-  if (n >= 1_000)      return `₹${(n / 1_000).toFixed(1)}K`;
-  return `₹${Number(n).toLocaleString('en-IN')}`;
+  n = Number(n); const sg = n < 0 ? '−' : ''; const a = Math.abs(n);
+  if (a >= 10_000_000) return `${sg}₹${(a / 10_000_000).toFixed(2)}Cr`;
+  if (a >= 100_000)    return `${sg}₹${(a / 100_000).toFixed(2)}L`;
+  if (a >= 1_000)      return `${sg}₹${(a / 1_000).toFixed(1)}K`;
+  return `${sg}₹${a.toLocaleString('en-IN')}`;
 }
 
 export function formatPct(n) {

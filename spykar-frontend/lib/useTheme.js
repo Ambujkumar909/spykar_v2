@@ -11,6 +11,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 
 const STORAGE_KEY = 'spykar-theme';   // 'dark' | 'light'
+// Every useTheme() call used to keep its own state: the Header toggle updated
+// the Header and <html>, while charts (isDark palettes) and the toaster kept the
+// old theme until the page remounted. A change is now broadcast to all hook
+// instances in this tab (EVT) and to other tabs (the 'storage' event).
+const EVT = 'spykar-theme-change';
 
 function readInitial() {
   if (typeof window === 'undefined') return 'dark';
@@ -52,7 +57,16 @@ export function useTheme() {
     }
     window.localStorage.setItem(STORAGE_KEY, theme);
     applyClass(theme);
+    window.dispatchEvent(new CustomEvent(EVT, { detail: theme }));   // others adopt it; same value → no-op
   }, [theme]);
+
+  useEffect(() => {
+    const onEvt = (e) => { if (e.detail === 'dark' || e.detail === 'light') setTheme(e.detail); };
+    const onStorage = (e) => { if (e.key === STORAGE_KEY && (e.newValue === 'dark' || e.newValue === 'light')) setTheme(e.newValue); };
+    window.addEventListener(EVT, onEvt);
+    window.addEventListener('storage', onStorage);
+    return () => { window.removeEventListener(EVT, onEvt); window.removeEventListener('storage', onStorage); };
+  }, []);
 
   const toggle = useCallback(() => setTheme(t => (t === 'dark' ? 'light' : 'dark')), []);
 

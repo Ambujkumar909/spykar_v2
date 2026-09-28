@@ -97,9 +97,10 @@ function fmtL(n) {
 function fmtCr(n) {
   if (!n && n !== 0) return '—';
   n = Number(n);
-  if (n >= 10000000) return '₹' + (n / 10000000).toFixed(2) + ' Cr';
-  if (n >= 100000)   return '₹' + (n / 100000).toFixed(1) + 'L';
-  return '₹' + n.toLocaleString('en-IN');
+  const sg = n < 0 ? '−' : ''; const a = Math.abs(n);   // abbreviate negatives too
+  if (a >= 10000000) return sg + '₹' + (a / 10000000).toFixed(2) + ' Cr';
+  if (a >= 100000)   return sg + '₹' + (a / 100000).toFixed(1) + 'L';
+  return sg + '₹' + a.toLocaleString('en-IN');
 }
 function fmtNum(n) {
   if (!n && n !== 0) return '0';
@@ -914,6 +915,7 @@ export default function SalesAnalyticsPage() {
 
   const fetch = useCallback(async () => {
     const issuedFor = cacheKey;
+    const prevData = dataRef.current;   // restored if the heavy call fails (see catch)
     setRefreshing(true);
     if (!dataRef.current && !getCached(issuedFor)) setLoading(true);
 
@@ -996,9 +998,14 @@ export default function SalesAnalyticsPage() {
           // ApexCharts throws "parser Error" on the inconsistent datetime
           // series. Charts and channel mix wait for heavy; KPIs render
           // immediately from slim. Best of both worlds.
+          // __slimFor marks a SUMMARY-ONLY payload: every other section still
+          // holds the previous range. The dim-clear effect below must not treat
+          // it as the finished result (it did: KPIs showed the new range while
+          // every table/chart showed the old one, undimmed).
           setData(prev => ({
             ...(prev || {}),
             summary,
+            __slimFor: issuedFor,
           }));
           setLoading(false);
         })
@@ -1015,7 +1022,12 @@ export default function SalesAnalyticsPage() {
       setLoading(false);
     } catch (err) {
       if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED' || err?.message === 'canceled') return;
-      if (activeKeyRef.current === issuedFor) setLoading(false);
+      if (activeKeyRef.current === issuedFor) {
+        setLoading(false);
+        // Never leave the half-merged state (new KPIs over old tables) on
+        // screen: fall back to the last complete payload.
+        setData((cur) => (cur && cur.__slimFor === issuedFor ? prevData : cur));
+      }
       notifyApiError(err, 'Failed to load sales analytics');
     } finally {
       if (activeKeyRef.current === issuedFor) setRefreshing(false);
@@ -1053,7 +1065,7 @@ export default function SalesAnalyticsPage() {
   // cacheKey via a ref so we don't accidentally clear during a still-stale
   // payload window.
   useEffect(() => {
-    if (data) setRefreshing(false);
+    if (data && !data.__slimFor) setRefreshing(false);   // a summary-only merge is not done yet
   }, [data]);
 
   // Mode-toggle prefetch removed (cold-load fix #A).  Eagerly fetching the
@@ -1355,7 +1367,7 @@ export default function SalesAnalyticsPage() {
       },
       series: [{ name: 'Monthly Revenue', data: rows.map(r => Number(r.sales_value)) }],
     };
-  }, [data?.by_month]);
+  }, [dataLens?.by_month]);   // reads dataLens (valuation-aware): keyed on data it went stale on a Valuation switch
 
   const hasFilters = colorName || size || locationId || category || preset !== 'mtd' || v2Active > 0;
 

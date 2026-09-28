@@ -1,53 +1,28 @@
-// ─── notifyApiError — one-line replacement for `toast.error('Failed to …')` ─
-// Filters out the noise that pollutes user-visible toasts:
+// ─── notifyApiError — background data-load failures ──────────────────────────
+// Product rule: a failing or slow BACKGROUND request (a chart, a table, a KPI
+// refresh) must never flash an error toast in the corner — it disturbs the
+// experience. Such failures are logged to the console only; the widget shows
+// its own empty/loading state and the next navigation or sync retries.
 //
-//   • axios canceled / aborted requests          (navigation races, StrictMode)
-//   • request timeouts that retry & succeed      (transient)
-//   • 401 Unauthorized                            (AuthProvider handles redirect)
-//   • duplicate toasts within DEDUPE_WINDOW_MS    (so a refetch loop shows once)
+// Failures the user caused directly (wrong password, "create user" rejected,
+// sync trigger refused) are NOT routed here — those pages answer the user's
+// own action explicitly.
 //
-// Usage:
-//   try { ... }
-//   catch (err) { notifyApiError(err, 'Failed to load sales analytics'); }
-//
-// Anything genuinely user-actionable (5xx, network down, unexpected) still
-// surfaces — but only once per message per 6 s.
-
-import toast from 'react-hot-toast';
-
-const DEDUPE_WINDOW_MS = 6000;
-const lastShown = new Map(); // message → timestamp
+// Canceled requests (navigation races, StrictMode, AbortController) and auth
+// errors (handled by the AuthProvider) are ignored entirely.
 
 function isCanceled(err) {
   if (!err) return false;
-  // axios v1 sets `code: 'ERR_CANCELED'` and `name: 'CanceledError'`.
   if (err.code === 'ERR_CANCELED' || err.name === 'CanceledError') return true;
-  // AbortController-driven cancellations.
   if (err.name === 'AbortError') return true;
-  // axios timeout that the response interceptor already retried.
-  if (err.code === 'ECONNABORTED') return true;
   return false;
 }
 
-function isAuthError(err) {
-  return err?.response?.status === 401 || err?.response?.status === 403;
-}
-
 export function notifyApiError(err, fallbackMessage) {
-  // Silent for benign errors — they're not user-facing failures.
-  if (isCanceled(err) || isAuthError(err)) return;
-
-  // Prefer the server's own message when it sent one.
-  const msg = err?.response?.data?.message || fallbackMessage;
-  if (!msg) return;
-
-  // Dedupe: same message within 6 s is suppressed (and the previous toast
-  // stays on screen, so the user still sees one).
-  const now = Date.now();
-  const prev = lastShown.get(msg);
-  if (prev && now - prev < DEDUPE_WINDOW_MS) return;
-  lastShown.set(msg, now);
-
-  // Stable id so react-hot-toast replaces in place rather than stacking.
-  toast.error(msg, { id: `api-err:${msg}` });
+  if (isCanceled(err)) return;
+  const status = err?.response?.status;
+  if (status === 401 || status === 403) return;
+  const msg = err?.response?.data?.message || fallbackMessage || 'Request failed';
+  // eslint-disable-next-line no-console
+  console.warn(`[api] ${msg}`, err?.code === 'ECONNABORTED' ? '(timed out)' : (status || err?.message || ''));
 }

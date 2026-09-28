@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   UserCog,
   Shield,
@@ -16,6 +16,7 @@ import { authService } from '../lib/services';
 import { useAuth } from '../lib/auth-context';
 import { formatDateTime, formatNumber } from '../lib/utils';
 import toast from 'react-hot-toast';
+import { notifyApiError } from '../lib/notifyApiError';
 
 const ROLE_OPTIONS = ['ADMIN', 'MANAGER', 'VIEWER'];
 
@@ -56,7 +57,11 @@ export default function UsersPage() {
   const [resetPw, setResetPw] = useState('');
   const [resetting, setResetting] = useState(false);
 
+  // Every keystroke in the search box refetches; a slower, OLDER response used
+  // to land last and overwrite the list with an old search term's results.
+  const fetchSeq = useRef(0);
   const fetchUsers = useCallback(async () => {
+    const seq = ++fetchSeq.current;
     setLoading(true);
     try {
       const res = await authService.listUsers({
@@ -64,11 +69,12 @@ export default function UsersPage() {
         role: roleFilter || undefined,
         limit: 100,
       });
+      if (seq !== fetchSeq.current) return;
       setUsers((res.data.data || []).filter((entry) => entry.role !== 'SUPER_ADMIN'));
     } catch (err) {
-      toast.error(err?.response?.data?.message || 'Failed to load users');
+      if (seq === fetchSeq.current) notifyApiError(err, 'Failed to load users');   // background load: console only
     } finally {
-      setLoading(false);
+      if (seq === fetchSeq.current) setLoading(false);
     }
   }, [search, roleFilter]);
 
@@ -121,11 +127,15 @@ export default function UsersPage() {
 
     setSubmitting(true);
     try {
-      await authService.updateUser(editUser.id, {
-        name: editForm.name,
-        role: editForm.role,
-        is_active: editForm.is_active,
-      });
+      // Send only what changed. is_active is a SUPER_ADMIN decision (the backend
+      // refuses it from an ADMIN, and nobody may deactivate themselves), so an
+      // untouched checkbox must not be sent along with a name edit.
+      const patch = {};
+      if (editForm.name !== editUser.name) patch.name = editForm.name;
+      if (editForm.role !== editUser.role) patch.role = editForm.role;
+      if (editForm.is_active !== editUser.is_active) patch.is_active = editForm.is_active;
+      if (!Object.keys(patch).length) { closeModals(); return; }
+      await authService.updateUser(editUser.id, patch);
       toast.success('User updated successfully');
       closeModals();
       fetchUsers();
@@ -382,7 +392,7 @@ export default function UsersPage() {
                 </div>
               </div>
 
-              {editUser && (
+              {editUser && user?.role === 'SUPER_ADMIN' && editUser.id !== user?.id && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)', fontSize: 13 }}>
                   <input
                     type="checkbox"

@@ -34,11 +34,11 @@ const T = {
 
 // Match the parent page's currency formatter so figures render consistently.
 function fmtCr(n) {
-  const v = Number(n || 0);
-  if (v >= 10_000_000) return `₹${(v / 10_000_000).toFixed(2)} Cr`;
-  if (v >= 100_000)    return `₹${(v / 100_000).toFixed(2)} L`;
-  if (v >= 1000)       return `₹${(v / 1000).toFixed(1)}K`;
-  return `₹${v.toLocaleString('en-IN')}`;
+  const v = Number(n || 0); const sg = v < 0 ? '−' : ''; const a = Math.abs(v);   // abbreviate negatives too
+  if (a >= 10_000_000) return `${sg}₹${(a / 10_000_000).toFixed(2)} Cr`;
+  if (a >= 100_000)    return `${sg}₹${(a / 100_000).toFixed(2)} L`;
+  if (a >= 1000)       return `${sg}₹${(a / 1000).toFixed(1)}K`;
+  return `${sg}₹${a.toLocaleString('en-IN')}`;
 }
 function fmtNum(n) { return Number(n || 0).toLocaleString('en-IN'); }
 function fmtDate(s) {
