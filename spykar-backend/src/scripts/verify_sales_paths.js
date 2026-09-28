@@ -1,8 +1,8 @@
 // Sales analytics consistency on a fresh DB with seeded movements:
 //   • rollup fast path == live path, for every mode (active / inactive / all)
 //   • archived stores (is_active=false) never count, on either path
-//   • city / state filters match exactly (no "Navi Mumbai" in "Mumbai")
-//   • category totals include sales of since-deactivated SKUs
+//   • city / state filters match as a PART ("Mumbai" includes Navi Mumbai — owner rule)
+//   • sales/returns count only SKUs in the ACTIVE master (owner rule), everywhere
 //   • a missing / array mode behaves as 'active'
 // Run: node src/scripts/verify_sales_paths.js
 'use strict';
@@ -58,8 +58,8 @@ const ok = (c, m) => { console.log(`${c ? 'PASS' : 'FAIL'}  ${m}`); if (!c) fail
   const truth = (modeSql) => expect(`
     SELECT COALESCE(SUM(ABS(m.qty_change)) FILTER (WHERE m.movement_type='SALE'),0)::int AS sold,
            COALESCE(SUM(ABS(m.qty_change)) FILTER (WHERE m.movement_type='RETURN'),0)::int AS returned
-      FROM inventory_movements m JOIN locations l ON l.id = m.location_id
-     WHERE l.is_active ${modeSql} AND m.moved_at >= '2026-06-01' AND m.moved_at < '2026-07-01'`);
+      FROM inventory_movements m JOIN locations l ON l.id = m.location_id JOIN skus s ON s.id = m.sku_id
+     WHERE l.is_active AND s.is_active ${modeSql} AND m.moved_at >= '2026-06-01' AND m.moved_at < '2026-07-01'`);
 
   const win = { date_from: '2026-06-01', date_to: '2026-06-30' };
   for (const [mode, modeSql] of [['active', 'AND NOT l.shop_closed'], ['inactive', 'AND l.shop_closed'], ['all', '']]) {
@@ -71,7 +71,7 @@ const ok = (c, m) => { console.log(`${c ? 'PASS' : 'FAIL'}  ${m}`); if (!c) fail
     const fs = S(fast), ls = S(live);
     const soldKey = Object.keys(fs).find((k) => /units_sold|sales_qty|total_units/.test(k));
     ok(!!soldKey, `[${mode}] summary exposes units sold (${soldKey})`);
-    ok(Number(fs[soldKey]) === t.sold && Number(ls[soldKey]) === t.sold, `[${mode}] fast path ${fs[soldKey]} == live path ${ls[soldKey]} == truth ${t.sold} (archived store excluded)`);
+    ok(Number(fs[soldKey]) === t.sold && Number(ls[soldKey]) === t.sold, `[${mode}] fast path ${fs[soldKey]} == live path ${ls[soldKey]} == truth ${t.sold} (archived store + retired SKU excluded)`);
     const keys = Object.keys(fs).filter((k) => typeof fs[k] === 'number');
     const diff = keys.filter((k) => Math.abs(Number(fs[k]) - Number(ls[k])) > 1);
     ok(diff.length === 0, `[${mode}] every numeric summary field agrees between paths${diff.length ? ' — differs: ' + diff.map((k) => `${k} ${fs[k]}≠${ls[k]}`).join(', ') : ''}`);
@@ -79,16 +79,16 @@ const ok = (c, m) => { console.log(`${c ? 'PASS' : 'FAIL'}  ${m}`); if (!c) fail
 
   cache.clear();
   const mum = S(await call({ ...win, mode: 'all', city: 'Mumbai' }));
-  const tMum = await expect(`SELECT SUM(ABS(m.qty_change))::int AS sold FROM inventory_movements m JOIN locations l ON l.id=m.location_id
-    WHERE m.movement_type='SALE' AND l.is_active AND l.city='Mumbai'`);
+  const tMum = await expect(`SELECT SUM(ABS(m.qty_change))::int AS sold FROM inventory_movements m JOIN locations l ON l.id=m.location_id JOIN skus s ON s.id=m.sku_id
+    WHERE m.movement_type='SALE' AND l.is_active AND s.is_active AND l.city ILIKE '%Mumbai%'`);
   const soldKey = Object.keys(mum).find((k) => /units_sold|sales_qty|total_units/.test(k));
-  ok(Number(mum[soldKey]) === tMum.sold, `city=Mumbai is exact: ${mum[soldKey]} == ${tMum.sold} (Navi Mumbai not included)`);
+  ok(Number(mum[soldKey]) === tMum.sold, `city=Mumbai matches as a part: ${mum[soldKey]} == ${tMum.sold} (Navi Mumbai included)`);
 
   cache.clear();
   const denim = S(await call({ ...win, mode: 'all', category: 'DENIM' }));
   const tDen = await expect(`SELECT SUM(ABS(m.qty_change))::int AS sold FROM inventory_movements m JOIN locations l ON l.id=m.location_id JOIN skus s ON s.id=m.sku_id
-    WHERE m.movement_type='SALE' AND l.is_active AND s.category_norm='DENIM'`);
-  ok(Number(denim[soldKey]) === tDen.sold, `category=DENIM includes the deactivated DENIM SKU: ${denim[soldKey]} == ${tDen.sold}`);
+    WHERE m.movement_type='SALE' AND l.is_active AND s.is_active AND s.category_norm='DENIM'`);
+  ok(Number(denim[soldKey]) === tDen.sold, `category=DENIM counts only active master SKUs: ${denim[soldKey]} == ${tDen.sold}`);
 
   cache.clear();
   const noMode = S(await call({ ...win }));

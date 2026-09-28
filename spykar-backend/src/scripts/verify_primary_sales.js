@@ -187,9 +187,15 @@ function expectedLedger(rows, { mappable }) {
   }
   return out;
 }
+// Owner rule: the rollups (every Primary Sales number) count only SKUs in the
+// ACTIVE master. The ledger itself still stores everything.
+// Seeding: items 0-139 are active unless index % 11 === 0; S15 later adds
+// items 140-144 to the master as active.
+const isActiveItem = (itno) => { const i = ITEMS.indexOf(ITEM.get(itno)); return (i >= 140 && i <= 144) || i % 11 !== 0; };
 function expectedRollup(ledger) {
   const g = new Map();
   for (const r of ledger.values()) {
+    if (!isActiveItem(r.ITNO)) continue;
     const it = ITEM.get(r.ITNO); const price = r.TRPR !== 0 ? r.TRPR : it.mrp; const cost = r.PUPR !== 0 ? r.PUPR : (it.cost ?? 0);
     const k = `${r.TRDT}|${r.WHLO}|${r.ITNO}|${r.TTYP}`;
     const a = g.get(k) || { qty: 0, gross: 0, gabs: 0, cost: 0, txns: 0 };
@@ -281,6 +287,7 @@ function expectedRollup(ledger) {
     check(`${label}: warehouse-grain folds every sku-grain row exactly once`, String(whRoll.sku_rows) === String(roll.rows) && String(whRoll.txns) === String(roll.txns));
     const whJs = new Map();
     for (const g of exp.values()) {
+      if (!isActiveItem(g.ITNO)) continue;
       const it = ITEM.get(g.ITNO); const price = g.TRPR !== 0 ? g.TRPR : it.mrp;
       const k = `${g.TRDT}|${g.WHLO}|${g.TTYP}|DENIM`; const a = whJs.get(k) || { gabs: 0, txns: 0 }; a.gabs += Math.abs(g.TRQT * price); a.txns++; whJs.set(k, a);
     }
@@ -525,7 +532,7 @@ function expectedRollup(ledger) {
   check('overview throughput == Σ|qty×price| of the source', Math.abs(ov.data.kpis.throughput - gabs) <= 1, `${ov.data.kpis.throughput} vs ${gabs.toFixed(2)}`);
   check('overview txns == source row count', ov.data.kpis.txns === txns);
   const sc = await call(ctrl.getSkuCount, { from: FIRST_DAY, to: LAST_DAY });
-  check('/sku-count distinct SKUs == source distinct SKUs (lazy KPI; /overview leaves it null)', sc.data.sku_count === new Set([...exp.values()].map((g) => g.ITNO)).size && ov.data.kpis.sku_count === null, `${sc.data.sku_count}`);
+  check('/sku-count distinct SKUs == source distinct SKUs (lazy KPI; /overview leaves it null)', sc.data.sku_count === new Set([...exp.values()].filter((g) => isActiveItem(g.ITNO)).map((g) => g.ITNO)).size && ov.data.kpis.sku_count === null, `${sc.data.sku_count}`);
   {
     // Every group-by dimension, on both sources, must total to the same source numbers.
     for (const dim of ['warehouse', 'type', 'category', 'colour', 'size', 'product']) {
@@ -538,7 +545,7 @@ function expectedRollup(ledger) {
     void sizeOf; void bySize;
     const s28 = (await query(`SELECT upper(coalesce(infor_item_code, style_variant)) itno FROM skus WHERE size = '28'`)).rows.map((r) => r.itno);
     const set28 = new Set(s28);
-    const exp28 = [...exp.values()].filter((g) => set28.has(g.ITNO)).length;
+    const exp28 = [...exp.values()].filter((g) => set28.has(g.ITNO) && isActiveItem(g.ITNO)).length;
     const ov28 = await call(ctrl.getOverview, { from: FIRST_DAY, to: LAST_DAY, size: '28' });
     check('overview with a SKU-only Lens filter (size=28) == source', ov28.data.kpis.txns === exp28, `${ov28.data.kpis.txns} vs ${exp28}`);
     const ovCat = await call(ctrl.getOverview, { from: FIRST_DAY, to: LAST_DAY, category: 'DENIM' });

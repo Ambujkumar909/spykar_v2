@@ -405,7 +405,7 @@ const rollupSelect = (whereExtra = '') => `
          SUM(m.trqt * COALESCE(NULLIF(m.pupr,0), s.cost_price, 0))::numeric(22,2) AS cost,
          COUNT(*)::int                                                            AS txns
     FROM primary_sales_movements m
-    JOIN skus s ON s.id = m.sku_id
+    JOIN skus s ON s.id = m.sku_id AND s.is_active = true   -- active SKU master only
    WHERE m.trdt IS NOT NULL ${whereExtra}
    GROUP BY m.trdt, m.warehouse_id, m.sku_id, m.ttyp`;
 

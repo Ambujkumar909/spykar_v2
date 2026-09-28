@@ -38,7 +38,6 @@ async function getNetworkOverview(req, res, next) {
           COALESCE(SUM(i.qty_available), 0)::int AS available,
           ROUND(COALESCE(SUM(i.qty_on_hand * s.mrp), 0), 2) AS stock_value,
           COUNT(*) FILTER (WHERE
-            i.qty_on_hand = 0 OR
             i.qty_on_hand <= CASE WHEN i.safety_stock > 0 THEN i.safety_stock
                                   ELSE GREATEST(5, ROUND(COALESCE(v.adv,1)*14)) END
           )::int AS alerts
@@ -129,8 +128,8 @@ async function getSizeDistribution(req, res, next) {
       };
       if (location_type) { params.push(location_type); conditions.push(`l.type = $${params.length}`); }
       if (zone_id)       { params.push(zone_id);        conditions.push(`l.zone_id = $${params.length}`); }
-      const stP = multiEq('l.state', states); if (stP) conditions.push(stP);
-      const ctP = multiEq('l.city',  cities); if (ctP) conditions.push(ctP);
+      const stP = multiIlike('l.state', states); if (stP) conditions.push(stP);
+      const ctP = multiIlike('l.city',  cities); if (ctP) conditions.push(ctP);
       const gpP = multiEq(`COALESCE(l.group_name, l.type::text)`, groups); if (gpP) conditions.push(gpP);
       const scP = multiEq('l.code', storeCodes); if (scP) conditions.push(scP);
       // 3-mode lens
@@ -210,8 +209,8 @@ async function getColorDistribution(req, res, next) {
         params.push(arr.map(v => v.toUpperCase())); return `UPPER(${col}::text) = ANY($${params.length}::text[])`;
       };
       if (location_type) { params.push(location_type); locConditions.push(`l.type = $${params.length}`); }
-      const stP = multiEq('l.state', states); if (stP) locConditions.push(stP);
-      const ctP = multiEq('l.city',  cities); if (ctP) locConditions.push(ctP);
+      const stP = multiIlike('l.state', states); if (stP) locConditions.push(stP);
+      const ctP = multiIlike('l.city',  cities); if (ctP) locConditions.push(ctP);
       const gpP = multiEq(`COALESCE(l.group_name, l.type::text)`, groups); if (gpP) locConditions.push(gpP);
       const scP = multiEq('l.code', storeCodes); if (scP) locConditions.push(scP);
       const m = modeOf(mode);
@@ -286,7 +285,6 @@ async function getZoneHeatmap(req, res, next) {
           COALESCE(SUM(i.qty_on_hand), 0)::int AS total_stock,
           ROUND(COALESCE(SUM(i.qty_on_hand * s.mrp), 0), 2) AS stock_value,
           COUNT(*) FILTER (WHERE
-            i.qty_on_hand = 0 OR
             i.qty_on_hand <= CASE WHEN i.safety_stock > 0 THEN i.safety_stock
                                   ELSE GREATEST(5, ROUND(COALESCE(v.adv,1)*14)) END
           )::int AS alerts
@@ -373,12 +371,12 @@ async function getSalesAnalytics(req, res, next) {
     // v20: bumped after fixing the rollup-reader off-by-one that excluded the
     // final day of every window (made the "Today" preset return zero). Old v19
     // slots hold those wrong zero/undercounted responses — bump forces a refetch.
-    const cacheKey = `analytics:sales:v20:${date_from||''}:${date_to||todayISO()}:${color_name||''}:${size||''}:${location_id||''}:${states.join('|')}:${cities.join('|')}:${groups.join('|')}:${storeCodes.join('|')}:${catKey||''}:g${skuGenders.join('|')}:sp${skuSubProds.join('|')}:pr${skuProducts.join('|')}:st${skuStyles.join('|')}:sh${skuShades.join('|')}:cl${skuColors.join('|')}:sz${skuSizes.join('|')}:sn${skuSeasons.join('|')}:m${mode}`;
+    const cacheKey = `analytics:sales:v21:${date_from||''}:${date_to||todayISO()}:${color_name||''}:${size||''}:${location_id||''}:${states.join('|')}:${cities.join('|')}:${groups.join('|')}:${storeCodes.join('|')}:${catKey||''}:g${skuGenders.join('|')}:sp${skuSubProds.join('|')}:pr${skuProducts.join('|')}:st${skuStyles.join('|')}:sh${skuShades.join('|')}:cl${skuColors.join('|')}:sz${skuSizes.join('|')}:sn${skuSeasons.join('|')}:m${mode}`;
 
     const data = await getOrSet(cacheKey, async () => {
     // is_active baseline, like the slim summary, heatmap and eligible-store
     // count: a store archived by the party master must not count as active.
-    const conditions = ['l.is_active = true'];
+    const conditions = ['l.is_active = true', 's.is_active = true'];   // active stores; SKUs in the active master only
     const params     = [];
 
     // Multi-value predicate helpers
@@ -422,8 +420,8 @@ async function getSalesAnalytics(req, res, next) {
       conditions.push(`m.location_id = $${params.length}`);
       locConditions.push(`l.id = $${params.length}::uuid`);
     }
-    const stP = multiEq('l.state',  states); if (stP) { conditions.push(stP); locConditions.push(stP); }
-    const ctP = multiEq('l.city',   cities); if (ctP) { conditions.push(ctP); locConditions.push(ctP); }
+    const stP = multiIlike('l.state',  states); if (stP) { conditions.push(stP); locConditions.push(stP); }
+    const ctP = multiIlike('l.city',   cities); if (ctP) { conditions.push(ctP); locConditions.push(ctP); }
     const gpP = multiEq(`COALESCE(l.group_name, l.type::text)`, groups); if (gpP) { conditions.push(gpP); locConditions.push(gpP); }
     const scP = multiEq('l.code', storeCodes); if (scP) { conditions.push(scP); locConditions.push(scP); }
     // 3-mode lens — 'active' = open today; 'inactive' = closed; 'all' = any.
@@ -780,8 +778,8 @@ async function getSalesAnalytics(req, res, next) {
       return `UPPER(${col}::text) = ANY($${stockParams.length}::text[])`;
     };
     // Location-side
-    const _ss = stockMEq('l.state', states);  if (_ss) stockConds.push(_ss);
-    const _sc = stockMEq('l.city',  cities);  if (_sc) stockConds.push(_sc);
+    const _ss = stockML('l.state', states);  if (_ss) stockConds.push(_ss);
+    const _sc = stockML('l.city',  cities);  if (_sc) stockConds.push(_sc);
     const _sg = stockMEq(`COALESCE(l.group_name, l.type::text)`, groups); if (_sg) stockConds.push(_sg);
     const _sx = stockMEq('l.code', storeCodes); if (_sx) stockConds.push(_sx);
     const _sm = modeOf(mode);
@@ -851,8 +849,8 @@ async function getSalesAnalytics(req, res, next) {
       return `UPPER(${col}::text) = ANY($${elParams.length}::text[])`;
     };
     if (location_id) { elParams.push(location_id); elConds.push(`l.id = $${elParams.length}::uuid`); }
-    const _stP = _elEq('l.state',  states);  if (_stP) elConds.push(_stP);
-    const _ctP = _elEq('l.city',   cities);  if (_ctP) elConds.push(_ctP);
+    const _stP = _elIlike('l.state',  states);  if (_stP) elConds.push(_stP);
+    const _ctP = _elIlike('l.city',   cities);  if (_ctP) elConds.push(_ctP);
     const _gpP = _elEq(`COALESCE(l.group_name, l.type::text)`, groups); if (_gpP) elConds.push(_gpP);
     const _scP = _elEq('l.code', storeCodes); if (_scP) elConds.push(_scP);
     const _emode = modeOf(mode);
@@ -1014,10 +1012,10 @@ async function getSalesDrilldown(req, res, next) {
     const skuSizes   = multi(sizeMulti);
     const skuSeasons = multi(season);
 
-    const cacheKey = `analytics:sales:drill:v3:${type}:${id}:${date_from||''}:${date_to||todayISO()}:${color_name||''}:${size||''}:${location_id||''}:${states.join('|')}:${cities.join('|')}:${groups.join('|')}:${storeCodes.join('|')}:${catKey||''}:g${skuGenders.join('|')}:sp${skuSubProds.join('|')}:pr${skuProducts.join('|')}:st${skuStyles.join('|')}:sh${skuShades.join('|')}:cl${skuColors.join('|')}:sz${skuSizes.join('|')}:sn${skuSeasons.join('|')}:m${mode}`;
+    const cacheKey = `analytics:sales:drill:v4:${type}:${id}:${date_from||''}:${date_to||todayISO()}:${color_name||''}:${size||''}:${location_id||''}:${states.join('|')}:${cities.join('|')}:${groups.join('|')}:${storeCodes.join('|')}:${catKey||''}:g${skuGenders.join('|')}:sp${skuSubProds.join('|')}:pr${skuProducts.join('|')}:st${skuStyles.join('|')}:sh${skuShades.join('|')}:cl${skuColors.join('|')}:sz${skuSizes.join('|')}:sn${skuSeasons.join('|')}:m${mode}`;
 
     const data = await getOrSet(cacheKey, async () => {
-      const conditions = ['l.is_active = true'];
+      const conditions = ['l.is_active = true', 's.is_active = true'];   // active stores; SKUs in the active master only
       const params     = [];
 
       // Same predicate helpers as getSalesAnalytics — case-insensitive multi.
@@ -1052,8 +1050,8 @@ async function getSalesDrilldown(req, res, next) {
       }
       if (location_id)  { params.push(location_id);  conditions.push(`m.location_id = $${params.length}`); }
 
-      const stP = multiEq('l.state',  states);  if (stP) conditions.push(stP);
-      const ctP = multiEq('l.city',   cities);  if (ctP) conditions.push(ctP);
+      const stP = multiIlike('l.state',  states);  if (stP) conditions.push(stP);
+      const ctP = multiIlike('l.city',   cities);  if (ctP) conditions.push(ctP);
       const gpP = multiEq(`COALESCE(l.group_name, l.type::text)`, groups); if (gpP) conditions.push(gpP);
       const scP = multiEq('l.code', storeCodes); if (scP) conditions.push(scP);
 
@@ -1496,7 +1494,7 @@ async function getOverviewCrossPivot(req, res, next) {
             i.sku_id,
             SUM(i.qty_on_hand)::int AS total_stock,
             COUNT(DISTINCT l.id) FILTER (WHERE i.qty_on_hand > 0)::int AS stores_carrying,
-            COUNT(DISTINCT l.id) FILTER (WHERE i.qty_on_hand = 0)::int AS stores_oos,
+            (SELECT COUNT(*)::int FROM v_oos_positions o WHERE o.sku_id = i.sku_id) AS stores_oos,   -- stores carrying it at 0 now
             (
               SELECT COALESCE(json_agg(json_build_object(
                 'location_id', sub.location_id,
@@ -1671,7 +1669,7 @@ async function getOverviewCrossPivot(req, res, next) {
 async function getStateHeatmap(req, res, next) {
   try {
     const { date_from, date_to, mode = 'active' } = req.query;
-    const cacheKey = `analytics:state-heatmap:${date_from || ''}:${date_to || todayISO()}:${mode}`;
+    const cacheKey = `analytics:state-heatmap:v2:${date_from || ''}:${date_to || todayISO()}:${mode}`;
 
     // Match the same store-lifecycle semantics used by the main sales endpoint:
     // active = open stores, inactive = closed stores, all = both, all within
@@ -1700,6 +1698,7 @@ async function getStateHeatmap(req, res, next) {
             COUNT(DISTINCT l.id)::int AS store_count
           FROM inventory_movements m
           JOIN locations l ON l.id = m.location_id
+          JOIN skus s      ON s.id = m.sku_id AND s.is_active = true   -- active SKU master only
           WHERE m.movement_type IN ('SALE', 'RETURN')
             AND l.state IS NOT NULL
             ${dateClause}
@@ -1747,7 +1746,7 @@ async function getSalesSummary(req, res, next) {
     // v3: payload now carries the ex_gst / gst / mrp lens values so the
     // dashboard can re-pivot revenue without a second round-trip.  Bump the
     // cache key so old v2 entries don't shadow the new fields.
-    const cacheKey = `analytics:sales-summary:v3:${date_from || ''}:${date_to || todayISO()}:m${mode}`;
+    const cacheKey = `analytics:sales-summary:v4:${date_from || ''}:${date_to || todayISO()}:m${mode}`;
 
     const data = await getOrSet(cacheKey, async () => {
       const from = date_from || '2024-04-01';
@@ -1796,7 +1795,7 @@ async function getSalesSummary(req, res, next) {
             l.type AS location_type
           FROM inventory_movements m
           JOIN locations l ON l.id = m.location_id
-          JOIN skus s      ON s.id = m.sku_id
+          JOIN skus s      ON s.id = m.sku_id AND s.is_active = true   -- active SKU master only
           WHERE m.moved_at >= $1::date
             AND m.moved_at <  $2::date + interval '1 day'
             AND m.movement_type IN ('SALE','RETURN')

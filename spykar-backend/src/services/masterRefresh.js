@@ -64,7 +64,7 @@ async function salesRollupFingerprint() {
   const r = await query(`
     SELECT md5(
       COALESCE((SELECT string_agg(concat_ws('|', id, is_active, shop_closed, name, code, external_id, group_name, type, city, state), ',' ORDER BY id) FROM locations), '') ||
-      COALESCE((SELECT string_agg(concat_ws('|', id, sku_code, product_name, fit_type, color_code, color_name, size, mrp, cost_price, gst_rate), ',' ORDER BY id) FROM skus), '')
+      COALESCE((SELECT string_agg(concat_ws('|', id, is_active, sku_code, product_name, fit_type, color_code, color_name, size, mrp, cost_price, gst_rate), ',' ORDER BY id) FROM skus), '')
     ) AS fp`);
   return r.rows[0].fp;
 }

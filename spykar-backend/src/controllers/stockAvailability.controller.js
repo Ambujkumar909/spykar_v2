@@ -98,8 +98,15 @@ function buildScope(q, params) {
     params.push(arr); conds.push(`${col} = ANY($${params.length})`);
   };
 
-  if (q.state)    addCI('l.state', q.state);
-  if (q.city)     addCI('l.city', q.city);
+  // City/state match as a PART (owner rule: 'Mumbai' includes Navi Mumbai),
+  // like the Sales and Network pages.
+  const addPart = (col, val) => {
+    const arr = split(val).map((s) => `%${s.toLowerCase()}%`);
+    if (!arr.length) return;
+    params.push(arr); conds.push(`lower(${col}) LIKE ANY($${params.length})`);
+  };
+  if (q.state)    addPart('l.state', q.state);
+  if (q.city)     addPart('l.city', q.city);
   if (q.channel || q.group_name) addEq('l.group_name', q.channel || q.group_name);
   if (q.store || q.store_code)   addEq('l.code', q.store || q.store_code);
   if (q.location_id) { params.push(q.location_id); conds.push(`l.id = $${params.length}::uuid`); } // drill by store UUID

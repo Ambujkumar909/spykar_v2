@@ -796,6 +796,18 @@ async function syncStockSnapshot(erpPool, lookupMaps, asOfDate, stats, options =
       }
     }
 
+    // ── 4b. Remember every (store, SKU) the ERP lists in today's stock feed,
+    //       zero-qty bins included: these are the positions a store carries,
+    //       and v_oos_positions (migration 026) calls one out of stock when it
+    //       has no positive stock. Additive; a failure must not fail the stage.
+    try {
+      const pos = await pgClient.query(`
+        INSERT INTO stock_positions (location_id, sku_id)
+        SELECT DISTINCT location_id, sku_id FROM stg_stock
+        ON CONFLICT DO NOTHING`);
+      if (pos.rowCount) logger.info(`[STOCK] ${pos.rowCount.toLocaleString()} new carried position(s) recorded`);
+    } catch (e) { logger.warn(`[STOCK] could not record carried positions (non-fatal): ${e.message}`); }
+
     // ── 5. Free staging — keep the table around (DDL is expensive) ──────────
     await pgClient.query('TRUNCATE stg_stock');
 
@@ -1248,7 +1260,7 @@ async function syncPrimarySales(stats, masterResult = null) {
 
   // Prices / categories changed in the SKU master → the rollups bake those in
   // → rebuild them (off-lock side tables + millisecond swap; readers never wait).
-  if (masterResult && masterResult.skuPriceChanged) {
+  if (masterResult && (masterResult.skuPriceChanged || masterResult.skuMapChanged)) {
     try {
       const n = await primarySales.rebuildRollup();
       logger.info(`[PRIMARY] ✅ rollup rebuilt after SKU price/category change: ${n.toLocaleString()} rows`);
@@ -1442,6 +1454,15 @@ async function runDeltaSync(syncType = 'DELTA') {
         if (stats.chunkFailures) {
           throw new Error(`${stats.chunkFailures} monthly sales/returns chunk(s) failed after retries — history is incomplete; re-run the sync`);
         }
+        // A store that sold or returned a SKU carries it (see v_oos_positions).
+        try {
+          const pos = await query(`
+            INSERT INTO stock_positions (location_id, sku_id)
+            SELECT DISTINCT location_id, sku_id FROM inventory_movements
+             WHERE movement_type IN ('SALE', 'RETURN') AND moved_at >= $1
+            ON CONFLICT DO NOTHING`, [salesFrom]);
+          if (pos.rowCount) logger.info(`[MOVE] ${pos.rowCount.toLocaleString()} new carried position(s) from sales/returns`);
+        } catch (e) { logger.warn(`[MOVE] could not record carried positions (non-fatal): ${e.message}`); }
 
         // STAGE 3.5: refresh the Phase-1 sales rollups (srd_store / srd_sku) so
         // the /analytics/sales fast path serves fresh data. FULL → full rebuild;

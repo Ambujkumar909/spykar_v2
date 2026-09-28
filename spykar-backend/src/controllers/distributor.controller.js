@@ -43,7 +43,7 @@ async function list(req, res, next) {
             COALESCE(SUM(i.qty_in_transit), 0)::int        AS in_transit,
             ROUND(COALESCE(SUM(i.qty_on_hand * s.mrp), 0), 2) AS stock_value,
             COUNT(DISTINCT i.sku_id)::int                  AS sku_count,
-            COUNT(*) FILTER (WHERE i.qty_on_hand = 0)::int AS low_stock_alerts,
+            (SELECT COUNT(*)::int FROM v_oos_positions o WHERE o.location_id = l.id) AS low_stock_alerts,   -- out-of-stock carried SKUs
             MAX(i.updated_at) AS last_updated
             ${baseFrom}
           GROUP BY l.id, l.code, l.name, l.group_name, l.city, l.state, l.pincode, l.contact_name, l.contact_phone
@@ -195,7 +195,7 @@ async function getInventory(req, res, next) {
       SELECT s.sku_code, s.product_name, s.color_code, s.color_name, s.size, s.mrp,
              i.qty_on_hand, i.qty_available, i.qty_reserved, i.qty_in_transit, i.safety_stock,
              ROUND(i.qty_on_hand * s.mrp, 2) AS stock_value,
-             CASE WHEN i.qty_on_hand = 0 THEN true ELSE false END AS is_below_safety
+             (i.qty_on_hand <= GREATEST(i.safety_stock, 5)) AS is_below_safety
       FROM inventory_snapshot i
       JOIN skus s ON s.id = i.sku_id
       WHERE ${conditions.join(' AND ')}

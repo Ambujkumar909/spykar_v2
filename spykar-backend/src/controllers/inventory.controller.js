@@ -17,7 +17,7 @@ async function getExecutiveSummary(req, res, next) {
     const modeClause = mode === 'active'   ? 'AND l.shop_closed = false'
                      : mode === 'inactive' ? 'AND l.shop_closed = true'
                      : '';
-    const data = await getOrSet(`inventory:executive-summary:v2:${mode}`, async () => {
+    const data = await getOrSet(`inventory:executive-summary:v3:${mode}`, async () => {
       // Per-location-type breakdown
       const typeBreakdown = await query(`
         WITH vel AS (
@@ -39,7 +39,6 @@ async function getExecutiveSummary(req, res, next) {
           COALESCE(SUM(i.qty_in_transit), 0)::int AS in_transit,
           COALESCE(SUM(i.qty_on_hand * s.mrp), 0)::numeric AS stock_value,
           COUNT(i.location_id) FILTER (WHERE
-            i.qty_on_hand = 0 OR
             i.qty_on_hand <= CASE WHEN i.safety_stock > 0 THEN i.safety_stock
                                   ELSE GREATEST(5, ROUND(COALESCE(v.adv,1)*14)) END
           )::int AS low_stock_alerts,
@@ -91,7 +90,6 @@ async function getExecutiveSummary(req, res, next) {
           COUNT(DISTINCT l.id)::int                      AS active_locations,
           COUNT(DISTINCT i.sku_id)::int                  AS active_skus,
           COUNT(*) FILTER (WHERE
-            i.qty_on_hand = 0 OR
             i.qty_on_hand <= CASE WHEN i.safety_stock > 0 THEN i.safety_stock
                                   ELSE GREATEST(5, ROUND(COALESCE(v.adv,1)*14)) END
           )::int AS total_alerts
@@ -131,8 +129,7 @@ async function getExecutiveSummary(req, res, next) {
         JOIN locations l ON l.id = i.location_id
         JOIN skus s ON s.id = i.sku_id
         LEFT JOIN vel v ON v.location_id = i.location_id AND v.sku_id = i.sku_id
-        WHERE (i.qty_on_hand = 0 OR
-               i.qty_on_hand <= CASE WHEN i.safety_stock > 0 THEN i.safety_stock
+        WHERE (i.qty_on_hand <= CASE WHEN i.safety_stock > 0 THEN i.safety_stock
                                      ELSE GREATEST(5, ROUND(COALESCE(v.adv,1)*14)) END)
           AND l.is_active = true AND s.is_active = true
           ${modeClause}
@@ -149,10 +146,41 @@ async function getExecutiveSummary(req, res, next) {
         LIMIT 1
       `);
 
+      // Out-of-stock positions (in the master, carried, 0 now) have no
+      // snapshot row, so the queries above can only count LOW stock. Add them
+      // from the one shared definition (v_oos_positions, migration 026).
+      const [oosByType, oosRows] = await Promise.all([
+        query(`
+          SELECT COALESCE(l.group_name, l.type::TEXT) AS location_type, COUNT(*)::int AS n
+            FROM v_oos_positions o JOIN locations l ON l.id = o.location_id
+           WHERE l.type != 'WAREHOUSE' AND NULLIF(TRIM(COALESCE(l.group_name, '')), '') IS NOT NULL ${modeClause}
+           GROUP BY 1`),
+        query(`
+          SELECT l.name AS location_name, l.type AS location_type,
+                 s.sku_code, s.product_name, s.color_name, s.size,
+                 0 AS qty_on_hand, NULL::int AS safety_stock, 100.0 AS shortfall_pct,
+                 COUNT(*) OVER ()::int AS total_oos
+            FROM v_oos_positions o
+            JOIN locations l ON l.id = o.location_id
+            JOIN skus s ON s.id = o.sku_id
+           WHERE TRUE ${modeClause}
+           ORDER BY l.name, s.sku_code
+           LIMIT 10`),
+      ]);
+      const oosMap = new Map(oosByType.rows.map((r) => [r.location_type, r.n]));
+      const byLocationType = typeBreakdown.rows.map((r) => ({
+        ...r,
+        out_of_stock: oosMap.get(r.location_type) || 0,
+        low_stock_alerts: (r.low_stock_alerts || 0) + (oosMap.get(r.location_type) || 0),
+      }));
+      const totalOos = oosRows.rows[0]?.total_oos || 0;
+      const totalsRow = { ...totals.rows[0], out_of_stock: totalOos, total_alerts: (totals.rows[0]?.total_alerts || 0) + totalOos };
+      const criticalAlerts = [...oosRows.rows.map(({ total_oos, ...r }) => r), ...alerts.rows].slice(0, 10);   // eslint-disable-line no-unused-vars
+
       return {
-        totals: totals.rows[0],
-        byLocationType: typeBreakdown.rows,
-        criticalAlerts: alerts.rows,
+        totals: totalsRow,
+        byLocationType,
+        criticalAlerts,
         lastSync: lastSync.rows[0] || null,
         generatedAt: new Date().toISOString(),
       };
@@ -188,7 +216,7 @@ async function getSnapshot(req, res, next) {
     if (sku_code)       { params.push(`%${sku_code}%`);conditions.push(`s.sku_code ILIKE $${params.length}`); }
     if (min_qty != null){ params.push(min_qty);        conditions.push(`i.qty_on_hand >= $${params.length}`); }
     if (max_qty != null){ params.push(max_qty);        conditions.push(`i.qty_on_hand <= $${params.length}`); }
-    if (below_safety)   { conditions.push('i.qty_on_hand = 0'); }
+    if (below_safety)   { conditions.push('i.qty_on_hand <= GREATEST(i.safety_stock, 5)'); }   // rows are > 0; = 0 never matched
 
     const whereClause = conditions.join(' AND ');
     const allowedSorts = { qty_on_hand: 'i.qty_on_hand', qty_available: 'i.qty_available', stock_value: 'i.qty_on_hand * s.mrp', location_name: 'l.name' };
@@ -206,7 +234,7 @@ async function getSnapshot(req, res, next) {
           i.qty_on_hand, i.qty_reserved, i.qty_in_transit, i.qty_available,
           i.safety_stock, i.reorder_point,
           ROUND(i.qty_on_hand * s.mrp, 2) AS stock_value,
-          CASE WHEN i.qty_on_hand = 0 THEN true ELSE false END AS is_below_safety,
+          (i.qty_on_hand <= GREATEST(i.safety_stock, 5)) AS is_below_safety,
           i.last_movement_at, i.updated_at
         FROM inventory_snapshot i
         JOIN locations l ON l.id = i.location_id
@@ -249,7 +277,7 @@ async function exportSnapshot(req, res, next) {
     if (zone_id)        { params.push(zone_id);       conditions.push(`l.zone_id = $${params.length}`); }
     if (size)           { params.push(size);           conditions.push(`s.size = $${params.length}`); }
     if (color_code)     { params.push(color_code);     conditions.push(`s.color_code = $${params.length}`); }
-    if (below_safety)   { conditions.push('i.qty_on_hand = 0'); }
+    if (below_safety)   { conditions.push('i.qty_on_hand <= GREATEST(i.safety_stock, 5)'); }   // rows are > 0; = 0 never matched
 
     const result = await query(`
       SELECT l.code, l.name, l.type, l.city, l.state, z.name AS zone,
@@ -302,7 +330,7 @@ async function getLocationInventory(req, res, next) {
         SELECT s.sku_code, s.product_name, s.color_code, s.color_name, s.size,
                s.fit_type, s.mrp, i.qty_on_hand, i.qty_available, i.qty_reserved,
                i.qty_in_transit, i.safety_stock, ROUND(i.qty_on_hand * s.mrp, 2) AS stock_value,
-               CASE WHEN i.qty_on_hand = 0 THEN true ELSE false END AS is_below_safety,
+               (i.qty_on_hand <= GREATEST(i.safety_stock, 5)) AS is_below_safety,
                i.last_movement_at
         FROM inventory_snapshot i
         JOIN skus s ON s.id = i.sku_id
@@ -371,11 +399,12 @@ async function getSkuInventory(req, res, next) {
 
 // ─── One definition of a stock alert (shared by /alerts and /alerts/summary) ─
 // inventory_snapshot only ever holds POSITIVE stock: the sync deletes a
-// position when it sells out. So `qty_on_hand = 0` never matched and "Out of
-// stock" was always 0. A stock-out is a MISSING row: a (store, SKU) that sold
-// in the last OOS_WINDOW_DAYS of data and has no stock row now. Those are added
-// to the snapshot rows as zero-stock positions before classification.
-const OOS_WINDOW_DAYS = 30;
+// position when it sells out, so `qty_on_hand = 0` never matched and "Out of
+// stock" was always 0. OUT OF STOCK (owner's rule) = the SKU is in the master,
+// the store carries it, and its stock is 0 now — v_oos_positions (migration
+// 026), the same definition every other out-of-stock number reads. Those
+// positions join the snapshot rows as zero-stock positions before
+// classification.
 function alertsModeFilter(mode) {
   return mode === 'inactive'
     ? 'AND l.is_active = true AND s.is_active = true AND l.shop_closed = true'
@@ -406,11 +435,7 @@ function alertsBaseSQL(activeFilter) {
       SELECT i.location_id, i.sku_id, i.qty_on_hand, i.safety_stock, i.reorder_point
         FROM inventory_snapshot i
       UNION ALL
-      SELECT v.location_id, v.sku_id, 0, 0, 0
-        FROM velocity v
-       WHERE v.last_sold_at >= (SELECT t FROM data_end) - INTERVAL '${OOS_WINDOW_DAYS} days'
-         AND NOT EXISTS (SELECT 1 FROM inventory_snapshot i
-                          WHERE i.location_id = v.location_id AND i.sku_id = v.sku_id AND i.qty_on_hand > 0)
+      SELECT o.location_id, o.sku_id, 0, 0, 0 FROM v_oos_positions o
     ),
     thresholds AS (
       SELECT
