@@ -157,10 +157,14 @@ async function resolveCategorySkuIds(raw, query, getOrSet) {
   // value = one cache slot, reused across single- and multi-select.
   const idLists = await Promise.all(keys.map(key =>
     getOrSet(
-      `category:sku-ids:v3:${key}`,
+      `category:sku-ids:v4:${key}`,
       async () => {
+        // ALL skus, not just active: this list filters SALES history too, and a
+        // SKU deactivated later still owns its past sales (with is_active here
+        // the categories no longer summed to the unfiltered total). Callers
+        // that want only live SKUs add s.is_active themselves.
         const r = await query(
-          `SELECT id FROM skus WHERE is_active = true AND UPPER(category_norm) = $1`,
+          `SELECT id FROM skus WHERE UPPER(category_norm) = $1`,
           [key]
         );
         return r.rows.map(x => x.id);

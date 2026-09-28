@@ -206,7 +206,11 @@ async function loadOneDate(erpPool, lookupMaps, snapshotDate) {
     const storeCode    = String(col(row, 'Storecode', 'STORECODE', 'storecode') || '').trim().toUpperCase();
     const barcode      = String(col(row, 'barcode',   'BARCODE',   'Barcode')   || '').trim().toUpperCase();
     const styleVariant = String(col(row, 'InforItemCode', 'INFORITEMCODE', 'style_variant') || '').trim().toUpperCase();
-    const qty          = Math.max(0, parseInt(col(row, 'qty', 'QTY', 'Qty') || 0));
+    // SIGNED per bin, netted per (loc, sku) below and kept only when > 0 —
+    // exactly how the live stock sync (HAVING SUM(qty) > 0) and the daily
+    // archive treat it. Clamping each bin to 0 first overstated any position
+    // with a negative bin, and zero rows were stored.
+    const qty          = parseInt(col(row, 'qty', 'QTY', 'Qty') || 0, 10) || 0;
 
     if (!storeCode || (!barcode && !styleVariant)) { lookupMisses++; continue; }
 
@@ -225,7 +229,7 @@ async function loadOneDate(erpPool, lookupMaps, snapshotDate) {
     qtyByKey.set(key, (qtyByKey.get(key) || 0) + qty);
   }
 
-  const resolved = [...qtyByKey.entries()].map(([k, qty]) => {
+  const resolved = [...qtyByKey.entries()].filter(([, qty]) => qty > 0).map(([k, qty]) => {
     const [locationId, skuId] = k.split(':');
     return [locationId, skuId, qty];
   });
@@ -414,7 +418,9 @@ async function retryFailedDates() {
   const first  = dates[0];
   const last   = dates[dates.length - 1];
   logger.info(`[BACKFILL] Retrying ${dates.length} FAILED dates: ${first} → ${last}`);
-  return backfillStockHistory(first, last, { force: true });
+  // Not force: SUCCESS dates in between are skipped (force re-loaded them
+  // all, ~5 min each); FAILED and never-attempted ones are loaded.
+  return backfillStockHistory(first, last, { force: false });
 }
 
 module.exports = {

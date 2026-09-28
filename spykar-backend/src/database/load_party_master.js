@@ -247,7 +247,10 @@ async function main() {
     console.log(`Fetched ${rows.length} rows`);
 
     if (rows.length === 0) {
-      console.log('No rows returned. Exiting.');
+      // Zero stores is an ERP problem, never a real master. Non-zero exit so
+      // the scheduled refresh records a failure and retries next sync.
+      console.error('No rows returned by AIgetParty — nothing changed.');
+      process.exitCode = 1;
       return;
     }
 
@@ -300,7 +303,7 @@ async function main() {
     // Upsert into PostgreSQL
     const pg       = await pgPool.connect();
     const zoneCache = new Map();
-    let newCount = 0, updCount = 0, skipCount = 0, closedCount = 0;
+    let newCount = 0, updCount = 0, skipCount = 0, closedCount = 0, errCount = 0;
 
     try {
       for (let i = 0; i < rows.length; i++) {
@@ -313,6 +316,7 @@ async function main() {
         } catch (err) {
           console.error(`\nRow ${i} error:`, err.message);
           skipCount++;
+          errCount++;
         }
 
         if ((i + 1) % 250 === 0 || i === rows.length - 1) {
@@ -357,6 +361,9 @@ async function main() {
     console.log(`  Closed     : ${closedCount}`);
     console.log(`  Active     : ${(newCount + updCount) - closedCount}`);
     console.log('─'.repeat(60));
+    // Rows that failed to save: report a failure so the refresh retries
+    // instead of recording success and waiting three days.
+    if (errCount) { console.error(`${errCount} row(s) failed to save`); process.exitCode = 1; }
 
   } finally {
     if (erpPool) await erpPool.close().catch(() => {});

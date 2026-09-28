@@ -88,8 +88,8 @@ async function getNetworkPulse(req, res, next) {
       ];
       const params = [];
 
-      const stP = multiIlike('l.state', states, params); if (stP) conditions.push(stP);
-      const ctP = multiIlike('l.city',  cities, params); if (ctP) conditions.push(ctP);
+      const stP = multiEq('l.state', states, params); if (stP) conditions.push(stP);
+      const ctP = multiEq('l.city',  cities, params); if (ctP) conditions.push(ctP);
       const gpP = multiEq(`COALESCE(l.group_name, l.type::text)`, groupNames, params); if (gpP) conditions.push(gpP);
       const scP = multiEq('l.code', storeCodes, params); if (scP) conditions.push(scP);
 

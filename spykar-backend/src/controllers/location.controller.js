@@ -78,8 +78,8 @@ async function list(req, res, next) {
 
     if (type) { params.push(type); conditions.push(`l.type = $${params.length}`); }
     // v2 multi-select predicates
-    const cityPred  = multiIlike('l.city',  cities, params); if (cityPred)  conditions.push(cityPred);
-    const statePred = multiIlike('l.state', states, params); if (statePred) conditions.push(statePred);
+    const cityPred  = multiEq('l.city',  cities, params); if (cityPred)  conditions.push(cityPred);
+    const statePred = multiEq('l.state', states, params); if (statePred) conditions.push(statePred);
     const groupPred = multiEq(`COALESCE(l.group_name, l.type::text)`, groupNames, params); if (groupPred) conditions.push(groupPred);
     const codePred  = multiEq('l.code', storeCodes, params); if (codePred)  conditions.push(codePred);
     if (search) { params.push(`%${search}%`); conditions.push(`(l.name ILIKE $${params.length} OR l.code ILIKE $${params.length} OR l.city ILIKE $${params.length} OR l.state ILIKE $${params.length})`); }
@@ -150,7 +150,7 @@ async function list(req, res, next) {
 
     const cityOptionConditions = [...optionConditions];
     const cityOptionParams = [...optionParams];
-    const cityStatePred = multiIlike('l.state', states, cityOptionParams); if (cityStatePred) cityOptionConditions.push(cityStatePred);
+    const cityStatePred = multiEq('l.state', states, cityOptionParams); if (cityStatePred) cityOptionConditions.push(cityStatePred);
 
     const cacheKey = `locations:list:v5:${type||'all'}:${cities.join('|')||'all'}:${states.join('|')||'all'}:${groupNames.join('|')||'all'}:${storeCodes.join('|')||'all'}:${search||''}:p${pageNum}:l${limitNum}:s${sort_by||'default'}:${catKey||''}:g${skuGenders.join('|')}:sp${skuSubProds.join('|')}:pr${skuProducts.join('|')}:st${skuStyles.join('|')}:sh${skuShades.join('|')}:cl${skuColors.join('|')}:sz${skuSizes.join('|')}:sn${skuSeasons.join('|')}:m${mode}`;
     const data = await getOrSet(cacheKey, async () => {

@@ -112,7 +112,7 @@ function buildFilters(f = {}, aliases = {}) {
   // Active, the dropdown should only list channels with active stores (2).
   // If Inactive, only channels with closed stores (6 here since every legacy
   // channel has at least one closed store).
-  const mode = (f.mode || 'active').toLowerCase();
+  const mode = String(Array.isArray(f.mode) ? f.mode[0] : (f.mode || 'active')).toLowerCase();   // ?mode=a&mode=b arrives as an array
   if (mode === 'active') {
     locationConditions.push(`${l}.shop_closed = false`);
     hasLocationFilters = true;

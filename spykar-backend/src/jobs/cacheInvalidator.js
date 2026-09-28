@@ -18,12 +18,16 @@ const POLL_INTERVAL_MS = parseInt(process.env.CACHE_INVALIDATOR_INTERVAL_MS) || 
 let lastSeenCompletedAt = null; // ms epoch of the newest SUCCESS we've acted on
 
 async function checkAndFlush() {
+  // FAILED counts too: a sync that committed stock/movements and then failed
+  // at a later stage still changed the data under the 24h caches.
   const res = await query(
-    `SELECT MAX(completed_at) AS last FROM sync_logs WHERE status = 'SUCCESS'`
+    `SELECT MAX(completed_at) AS last FROM sync_logs WHERE status IN ('SUCCESS', 'FAILED')`
   );
   const raw = res.rows[0] && res.rows[0].last;
-  const last = raw ? new Date(raw).getTime() : null;
-  if (!last) return;
+  // 0 = "no sync has ever finished" (fresh DB). The baseline then becomes 0,
+  // so the very first sync's completion flushes the empty responses cached
+  // before it — instead of silently becoming the baseline itself.
+  const last = raw ? new Date(raw).getTime() : 0;
 
   // First observation just seeds the baseline — don't flush a freshly-warmed
   // cache on boot for a sync that happened before we started.

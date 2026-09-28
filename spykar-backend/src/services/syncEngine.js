@@ -238,15 +238,22 @@ async function pooledChunks(tasks, concurrency = MAX_PARALLEL_CHUNKS) {
 
 // ─── SQL Server connection ────────────────────────────────────────────────────
 
+// A single failed connect used to send the whole sync down the "offline"
+// path. Retry a few times first — a VPN/network blip is the common case.
 async function tryConnectSqlServer() {
-  try {
-    const pool = await sql.connect(sqlServerConfig);
-    logger.info('SQL Server connected successfully');
-    return pool;
-  } catch (err) {
-    logger.warn(`SQL Server not reachable: ${err.message}`);
-    return null;
+  const tries = parseInt(process.env.MSSQL_CONNECT_RETRIES, 10) || 3;
+  for (let i = 1; i <= tries; i++) {
+    try {
+      const pool = await sql.connect(sqlServerConfig);
+      logger.info('SQL Server connected successfully');
+      return pool;
+    } catch (err) {
+      logger.warn(`SQL Server not reachable (attempt ${i}/${tries}): ${err.message}`);
+      try { await sql.close(); } catch (_) { /* reset the global pool before retrying */ }
+      if (i < tries) await new Promise((r) => setTimeout(r, 5000 * i));
+    }
   }
+  return null;
 }
 
 // ─── Flexible column reader ───────────────────────────────────────────────────
@@ -264,10 +271,16 @@ function col(row, ...names) {
 // ─── In-memory lookup maps ────────────────────────────────────────────────────
 // Built once per sync run — eliminates per-row PG queries (critical for 500k+ row loads)
 
-async function buildLookupMaps() {
+// includeInactive: sales/returns HISTORY must resolve archived stores and
+// deactivated SKUs too — a FULL truncates all movements, so an active-only map
+// silently deleted the history of every soft-archived store (which the party
+// master archives precisely to keep that history). Stock stays active-only.
+// Rows are ordered inactive-first so an active row wins any key collision.
+async function buildLookupMaps({ includeInactive = false } = {}) {
+  const where = includeInactive ? '' : 'WHERE is_active = true';
   const [locRows, skuRows] = await Promise.all([
-    query('SELECT id, code, external_id FROM locations WHERE is_active = true'),
-    query('SELECT id, external_id, style_variant FROM skus WHERE is_active = true'),
+    query(`SELECT id, code, external_id FROM locations ${where} ORDER BY is_active`),
+    query(`SELECT id, external_id, style_variant FROM skus ${where} ORDER BY is_active`),
   ]);
 
   const locationByCode    = new Map();
@@ -584,8 +597,13 @@ async function syncStockSnapshot(erpPool, lookupMaps, asOfDate, stats, options =
       await new Promise((resolve, reject) => {
         const onError = (err) => {
           // Surface either side's error to the retry envelope.
-          request.removeAllListeners();
-          copyStream.removeAllListeners();
+          // Keep a no-op 'error' listener on BOTH streams after detaching:
+          // destroy() makes pg-copy-streams emit one more 'error' (the
+          // backend's CopyFail reply), and an 'error' with no listener throws —
+          // it used to kill the whole sync process, so withRetry never retried.
+          request.removeAllListeners(); request.on('error', () => {});
+          copyStream.removeAllListeners(); copyStream.on('error', () => {});
+          try { request.cancel(); } catch (_) {}
           try { copyStream.destroy(err); } catch (_) {}
           reject(err);
         };
@@ -847,6 +865,7 @@ async function syncSalesChunked(erpPool, lookupMaps, fromDate, toDate, stats) {
   stats.fetched  += totalRows;
   stats.inserted += totalInserted;
   stats.failed   += failedChunks;
+  stats.chunkFailures = (stats.chunkFailures || 0) + failedChunks;
 
   logger.info(`[SALES] ✅ Done: ${totalInserted.toLocaleString()} inserted via COPY, ${failedChunks} chunks failed`);
 }
@@ -900,6 +919,7 @@ async function syncReturnsChunked(erpPool, lookupMaps, fromDate, toDate, stats) 
   stats.fetched  += totalRows;
   stats.inserted += totalInserted;
   stats.failed   += failedChunks;
+  stats.chunkFailures = (stats.chunkFailures || 0) + failedChunks;
 
   logger.info(`[RETURNS] ✅ Done: ${totalInserted.toLocaleString()} inserted via COPY, ${failedChunks} chunks failed`);
 }
@@ -993,8 +1013,11 @@ async function streamMovements({ erpPool, executeSp, movementType, direction, re
 
     await new Promise((resolve, reject) => {
       const onError = (err) => {
-        request.removeAllListeners();
-        copyStream.removeAllListeners();
+        // See the stock stream above: keep no-op 'error' listeners, or the
+        // CopyFail reply crashes the process instead of reaching withRetry.
+        request.removeAllListeners(); request.on('error', () => {});
+        copyStream.removeAllListeners(); copyStream.on('error', () => {});
+        try { request.cancel(); } catch (_) {}
         try { copyStream.destroy(err); } catch (_) {}
         reject(err);
       };
@@ -1156,6 +1179,16 @@ async function updateStockAgeing() {
       qty_91_180   = EXCLUDED.qty_91_180,
       qty_180_plus = EXCLUDED.qty_180_plus
   `);
+  // The upsert above only touches positions still in stock. A position that
+  // sold out since an earlier sync today kept its old row, and every reader
+  // sums all rows at MAX(ageing_date) — ageing was overstated vs stock.
+  const pruned = await ageClient.query(`
+    DELETE FROM stock_ageing a
+     WHERE a.ageing_date = CURRENT_DATE
+       AND NOT EXISTS (SELECT 1 FROM inventory_snapshot i
+                        WHERE i.location_id = a.location_id AND i.sku_id = a.sku_id AND i.qty_on_hand > 0)
+  `);
+  if (pruned.rowCount) logger.info(`[AGEING] Pruned ${pruned.rowCount.toLocaleString()} sold-out position(s) from today's ageing`);
 
   // Log the reference date used so it's auditable
   const refRow = await ageClient.query(`
@@ -1171,27 +1204,10 @@ async function updateStockAgeing() {
   }
 }
 
-// ─── Snapshot rebuild (ERP-unreachable fallback) ──────────────────────────────
-
-async function rebuildInventorySnapshot(stats) {
-  logger.info('[SNAPSHOT] Rebuilding from movement history (ERP unreachable)...');
-  await query(`
-    INSERT INTO inventory_snapshot (location_id, sku_id, qty_on_hand, last_movement_at)
-    SELECT
-      m.location_id,
-      m.sku_id,
-      GREATEST(0, SUM(m.qty_change)) AS qty_on_hand,
-      MAX(m.moved_at)                AS last_movement_at
-    FROM inventory_movements m
-    GROUP BY m.location_id, m.sku_id
-    ON CONFLICT (location_id, sku_id) DO UPDATE SET
-      qty_on_hand      = GREATEST(0, EXCLUDED.qty_on_hand),
-      last_movement_at = EXCLUDED.last_movement_at,
-      updated_at       = NOW()
-  `);
-  logger.info('[SNAPSHOT] Rebuilt from movements');
-  stats.updated++;
-}
+// (The old "ERP-unreachable fallback" rebuilt inventory_snapshot as
+// SUM(qty_change) over movements. Movements hold only SALE/RETURN — no
+// receipts — so that drove every store's stock to ~0 and reported SUCCESS.
+// It is gone: when the ERP is down the last good snapshot is kept as-is.)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STAGE 5 — Primary sales (MITTRA) delta  —  separate M3 feed, NON-FATAL
@@ -1359,8 +1375,12 @@ async function runDeltaSync(syncType = 'DELTA') {
     // fresh SKU/store master. Non-fatal; a failed or floor-guarded loader is
     // retried at the next sync (state in master_refresh_state). Kill switch:
     // SYNC_MASTER_REFRESH=false. Manual: npm run masters:refresh -- --force.
+    // Only in the night sync (MASTER_REFRESH_HOUR, default 23): the item
+    // loader ALTERs skus and a changed master triggers a full sales-rollup
+    // rebuild — both take locks the dashboard would queue behind in the day.
     let masterResult = null;
-    if (process.env.SYNC_MASTER_REFRESH !== 'false') {
+    const masterHour = Number.isInteger(parseInt(process.env.MASTER_REFRESH_HOUR, 10)) ? parseInt(process.env.MASTER_REFRESH_HOUR, 10) : 23;
+    if (process.env.SYNC_MASTER_REFRESH !== 'false' && new Date().getHours() === masterHour) {
       try {
         masterResult = await masterRefresh.refreshMastersIfDue();
         if (masterResult.skipped) logger.info(`[MASTER] refresh not due (next ${masterResult.nextDueAt ? masterResult.nextDueAt.toISOString() : 'now'})`);
@@ -1393,20 +1413,34 @@ async function runDeltaSync(syncType = 'DELTA') {
         if (fullRebuild) {
           await clearSyncedMovements();
           await dropMovementsSecondaryIndexes();
+        } else {
+          // Self-heal: a FULL that was killed mid-load (power cut, OOM, kill)
+          // leaves these dropped. The DDL is IF NOT EXISTS, so when they are
+          // present this is a catalog lookup and nothing more.
+          await rebuildMovementsSecondaryIndexes();
         }
 
-        // STAGE 2: Sales history (chunked by month)
-        await syncSalesChunked(pool, lookupMaps, salesFrom, salesTo, stats);
-
-        // STAGE 3: Return history (chunked by month)
-        await syncReturnsChunked(pool, lookupMaps, salesFrom, salesTo, stats);
-
-        // FULL only: rebuild the 9 secondary indexes in parallel over the now-
-        // fully-loaded table (one bulk sort each, not millions of per-row b-tree
-        // hits), then refresh planner stats so the dashboard plans optimally.
-        if (fullRebuild) {
-          await rebuildMovementsSecondaryIndexes();
-          await query('ANALYZE inventory_movements');
+        // STAGE 2 + 3: Sales and return history (chunked by month). The
+        // secondary indexes are rebuilt in a finally: a stage that throws must
+        // never leave a FULL-synced table without its indexes (DELTA never
+        // recreates them, so every dashboard query would crawl until the next
+        // FULL).
+        try {
+          const historyMaps = await buildLookupMaps({ includeInactive: true });
+          await syncSalesChunked(pool, historyMaps, salesFrom, salesTo, stats);
+          await syncReturnsChunked(pool, historyMaps, salesFrom, salesTo, stats);
+        } finally {
+          if (fullRebuild) {
+            await rebuildMovementsSecondaryIndexes();
+            await query('ANALYZE inventory_movements');
+          }
+        }
+        // A month that exhausted its retries is MISSING from movements (on a
+        // FULL it was truncated first). That used to be logged and the run
+        // reported SUCCESS. Fail the sync so it is visible and gets re-run;
+        // rollups are skipped rather than built over a hole.
+        if (stats.chunkFailures) {
+          throw new Error(`${stats.chunkFailures} monthly sales/returns chunk(s) failed after retries — history is incomplete; re-run the sync`);
         }
 
         // STAGE 3.5: refresh the Phase-1 sales rollups (srd_store / srd_sku) so
@@ -1419,11 +1453,17 @@ async function runDeltaSync(syncType = 'DELTA') {
         try {
           const isoDate = (d) => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`; };
           const rc = await pgPool.connect();
+          guardClientErrors(rc, 'rollup');
+          // Full rebuild when a DELTA window refresh would leave older dates
+          // wrong: a FULL sync, a master change that touched a copied column,
+          // or empty rollups (fresh DB, or switched off after a failed refresh).
+          const srdEmpty = !(await rc.query('SELECT EXISTS (SELECT 1 FROM srd_store) AS e')).rows[0].e;
+          const needFull = fullRebuild || srdEmpty || !!(masterResult && masterResult.salesRollupStale);
           try {
             await rc.query('BEGIN');
-            if (fullRebuild) {
+            if (needFull) {
               const r = await rebuildSalesRollups(rc);
-              logger.info(`[ROLLUP] full rebuild: srd_store=${r.srd_store} srd_sku=${r.srd_sku} (${r.ms}ms)`);
+              logger.info(`[ROLLUP] full rebuild (${fullRebuild ? 'FULL sync' : srdEmpty ? 'rollups empty' : 'master data changed'}): srd_store=${r.srd_store} srd_sku=${r.srd_sku} (${r.ms}ms)`);
             } else {
               const r = await refreshSalesRollups(rc, isoDate(salesFrom), isoDate(salesTo));
               logger.info(`[ROLLUP] delta refresh ${r.window[0]}..${r.window[1]} (${r.ms}ms)`);
@@ -1432,23 +1472,27 @@ async function runDeltaSync(syncType = 'DELTA') {
           } catch (e) { await rc.query('ROLLBACK'); throw e; }
           finally { rc.release(); }
         } catch (rollupErr) {
-          logger.error(`[ROLLUP] refresh failed (non-fatal — live path still serves, retries next sync): ${rollupErr.message}`);
+          // The fast path would keep serving the stale rollups (it only checks
+          // that srd_store is non-empty). Empty them so every request takes the
+          // always-correct live path, and the next sync does a full rebuild.
+          logger.error(`[ROLLUP] refresh failed — rollups switched off until the next sync rebuilds them: ${rollupErr.message}`);
+          try { await query('TRUNCATE srd_store, srd_sku'); } catch (e2) { logger.error(`[ROLLUP] could not switch rollups off: ${e2.message}`); }
         }
 
       } finally {
         try { await pool.close(); } catch { /* ignore close errors */ }
       }
     } else {
-      // ERP unreachable — rebuild snapshot from existing movements
-      logger.warn('[PIPELINE] SQL Server unreachable — running offline snapshot rebuild');
-      await rebuildInventorySnapshot(stats);
+      // ERP unreachable: leave stock, movements and history exactly as they
+      // are. The independent M3 stage below still runs; the run ends FAILED.
+      logger.error('[PIPELINE] SQL Server unreachable — store data left untouched; this sync will be marked FAILED');
     }
 
     // STAGE 3.9: Capture-forward — archive today's freshly-synced snapshot into
     // inventory_daily_snapshot so the Stock Availability "as of date" history
     // accrues one exact, ERP-truthful day per sync (no extra ERP calls). Non-
     // fatal: a history-archive hiccup must never fail the core sync.
-    try {
+    if (pool) try {
       const { archiveCurrentSnapshot, toPgDate } = require('./historicalStockLoader');
       const n = await archiveCurrentSnapshot(toPgDate(runToday));
       logger.info(`[PIPELINE] Daily stock history archived: ${n.toLocaleString()} rows for ${toPgDate(runToday)}`);
@@ -1456,8 +1500,8 @@ async function runDeltaSync(syncType = 'DELTA') {
       logger.error(`[PIPELINE] Daily stock archive failed (non-fatal): ${archErr.message}`);
     }
 
-    // STAGE 4: Ageing (always runs — uses PG data only)
-    await updateStockAgeing();
+    // STAGE 4: Ageing (PG data only — pointless without a fresh snapshot)
+    if (pool) await updateStockAgeing();
 
     // STAGE 5: Primary sales (MITTRA) delta — independent M3 feed, non-fatal.
     // Runs after ageing so a primary-feed hiccup can't delay the core inventory
@@ -1482,7 +1526,8 @@ async function runDeltaSync(syncType = 'DELTA') {
 
     // ── Finalise sync log ─────────────────────────────────────────────────────
     const duration  = Date.now() - pipelineStart;
-    const source    = pool !== null ? 'SQL_SERVER' : 'LOCAL_REBUILD';
+    if (!pool) throw new Error('SQL Server (store ERP) unreachable after retries — store data unchanged');
+    const source    = 'SQL_SERVER';
 
     await query(`
       UPDATE sync_logs

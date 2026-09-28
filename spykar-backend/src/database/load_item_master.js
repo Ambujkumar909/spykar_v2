@@ -48,57 +48,10 @@ const pgPool = new Pool({
 
 // ─── Migration: ensure new columns exist ──────────────────────────────────────
 
-async function runMigration(client) {
-  console.log('  Applying column migrations...');
-  await client.query('DROP VIEW IF EXISTS v_inventory_full');
-  const cols = [
-    `ALTER TABLE skus ALTER COLUMN size TYPE VARCHAR(30)`,
-    `ALTER TABLE skus ADD COLUMN IF NOT EXISTS gender        VARCHAR(10)`,
-    `ALTER TABLE skus ALTER COLUMN gender TYPE VARCHAR(20)`,
-    `ALTER TABLE skus ADD COLUMN IF NOT EXISTS season        VARCHAR(50)`,
-    `ALTER TABLE skus ADD COLUMN IF NOT EXISTS style_code    VARCHAR(100)`,
-    `ALTER TABLE skus ADD COLUMN IF NOT EXISTS brand         VARCHAR(50)`,
-    `ALTER TABLE skus ADD COLUMN IF NOT EXISTS style_variant VARCHAR(60)`,
-    `CREATE INDEX IF NOT EXISTS idx_skus_style_variant
-       ON skus(style_variant) WHERE style_variant IS NOT NULL`,
-  ];
-  for (const ddl of cols) await client.query(ddl);
-  await client.query(`
-    CREATE OR REPLACE VIEW v_inventory_full AS
-    SELECT
-      i.id,
-      l.id           AS location_id,
-      l.code         AS location_code,
-      l.name         AS location_name,
-      l.type         AS location_type,
-      z.name         AS zone_name,
-      l.city,
-      l.state,
-      s.id           AS sku_id,
-      s.sku_code,
-      s.product_name,
-      s.color_code,
-      s.color_name,
-      s.size,
-      s.fit_type,
-      s.mrp,
-      i.qty_on_hand,
-      i.qty_reserved,
-      i.qty_in_transit,
-      i.qty_available,
-      i.safety_stock,
-      i.reorder_point,
-      CASE WHEN i.qty_on_hand <= i.safety_stock THEN true ELSE false END AS is_below_safety,
-      i.last_movement_at,
-      i.updated_at
-    FROM inventory_snapshot i
-    JOIN locations l ON l.id = i.location_id
-    LEFT JOIN zones z ON z.id = l.zone_id
-    JOIN skus s ON s.id = i.sku_id
-    WHERE l.is_active = true AND s.is_active = true
-  `);
-  console.log('  ✓ Columns ready');
-}
+// (runMigration used to DROP VIEW v_inventory_full and ALTER skus column types
+// on every run. Migrations 002/004 already do all of it once; repeating it in
+// the 3-day scheduled refresh took an ACCESS EXCLUSIVE lock on skus that every
+// dashboard query queued behind.)
 
 // ─── Flexible column reader — tries multiple casing variants ─────────────────
 function col(row, ...names) {
@@ -300,7 +253,6 @@ async function loadItemMaster() {
       }
     }
 
-    await runMigration(pgClient);
 
     // ── Fetch from SQL Server ─────────────────────────────────────────────────
     console.log('\nConnecting to SQL Server (PRIMARY source)...');

@@ -8,6 +8,15 @@ const analyticsController = require('../controllers/analytics.controller');
 
 router.use(authenticate);
 
+// Shared validators: a malformed date/uuid used to reach Postgres and come back
+// as a 500. strict ISO rejects impossible dates like 2026-02-30.
+const dateRange = [
+  query('date_from').optional().isISO8601({ strict: true }),
+  query('date_to').optional().isISO8601({ strict: true }),
+  query('mode').optional().isIn(['active', 'inactive', 'all']),
+  query('location_id').optional().isUUID(),
+];
+
 router.get('/network-overview', analyticsController.getNetworkOverview);
 
 router.get('/stock-trend', [
@@ -30,7 +39,7 @@ router.get('/fill-rate', [
   query('days').optional().isInt({ min: 7, max: 90 }).toInt(),
 ], validate, analyticsController.getFillRate);
 
-router.get('/sales', analyticsController.getSalesAnalytics);
+router.get('/sales', dateRange, validate, analyticsController.getSalesAnalytics);
 // v2 dashboard — slim sales endpoint (summary + daily + by_channel only).
 // ~125 ms cold vs 8 s for /analytics/sales.  Used by useDashboardMetrics.
 router.get('/sales/summary', [
@@ -41,8 +50,12 @@ router.get('/sales/summary', [
 ], validate, analyticsController.getSalesSummary);
 // Sales drilldown — store-level OR sku-level pivot (`?type=store|sku&id=…`).
 // Same v2 filter set composes; same 10-min Redis TTL via getOrSet.
-router.get('/sales/drilldown', analyticsController.getSalesDrilldown);
-router.get('/returns', analyticsController.getReturnsAnalytics);
+router.get('/sales/drilldown', [
+  ...dateRange,
+  query('type').isIn(['store', 'sku']),
+  query('id').isUUID(),
+], validate, analyticsController.getSalesDrilldown);
+router.get('/returns', dateRange, validate, analyticsController.getReturnsAnalytics);
 
 // Overview cross-pivot — joins sales (movement) and inventory (snapshot)
 // at the SKU+store grain in a single round-trip. Powers the Overview

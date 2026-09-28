@@ -70,7 +70,10 @@ function rowSource(dateWhere) {
     FROM inventory_movements m
     JOIN skus s      ON s.id = m.sku_id
     JOIN locations l ON l.id = m.location_id
-    WHERE m.movement_type IN ('SALE','RETURN')${dateWhere}`;
+    WHERE m.movement_type IN ('SALE','RETURN') AND l.is_active = true${dateWhere}`;
+  // is_active: the same baseline every live endpoint applies. Without it a
+  // store archived by the party master still counted as "active" on the fast
+  // path while the live path and the dashboard excluded it.
 }
 
 function storeInsertSQL(dateWhere) {

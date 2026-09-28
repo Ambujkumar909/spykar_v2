@@ -48,7 +48,14 @@ function getPool() {
       idle_in_transaction_session_timeout: 60000,
       ssl: process.env.PG_SSL === 'true' ? { rejectUnauthorized: false } : false,
     });
-    _pool.on('connect', () => logger.debug('New DB client connected'));
+    // Every client gets a permanent 'error' listener at creation. pg-pool only
+    // listens while a client is IDLE; a connection that drops while a client
+    // is checked out (mid-transaction, mid-COPY) emitted an unhandled 'error'
+    // and crashed the whole process — API or sync child alike.
+    _pool.on('connect', (client) => {
+      logger.debug('New DB client connected');
+      client.on('error', (err) => logger.error(`DB client error (connection lost): ${err.message}`));
+    });
     _pool.on('error',  (err) => logger.error('Unexpected DB pool error:', err));
   }
   return _pool;

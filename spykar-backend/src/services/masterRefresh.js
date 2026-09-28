@@ -57,6 +57,17 @@ async function skuFingerprints() {
       FROM skus`);
   return r.rows[0];
 }
+// Every master column the sales rollups (srd_store / srd_sku) copy at build
+// time. If any changed, the rollups are stale for every past date, not just
+// the DELTA window, and the sync rebuilds them.
+async function salesRollupFingerprint() {
+  const r = await query(`
+    SELECT md5(
+      COALESCE((SELECT string_agg(concat_ws('|', id, is_active, shop_closed, name, code, external_id, group_name, type, city, state), ',' ORDER BY id) FROM locations), '') ||
+      COALESCE((SELECT string_agg(concat_ws('|', id, sku_code, product_name, fit_type, color_code, color_name, size, mrp, cost_price, gst_rate), ',' ORDER BY id) FROM skus), '')
+    ) AS fp`);
+  return r.rows[0].fp;
+}
 const countRows = async (table) => Number((await query(`SELECT count(*)::bigint AS c FROM ${table}`)).rows[0].c);
 
 // Default runner: spawn the loader like the CLI does. Returns { code, tail }.
@@ -91,7 +102,8 @@ async function isDue(everyDays = everyDaysDefault(), now = new Date()) {
 async function refreshMasters({ runner = spawnLoader } = {}) {
   const t0 = Date.now();
   const before = await skuFingerprints();
-  const result = { ran: [], failed: [], skuMapChanged: false, skuPriceChanged: false, counts: {}, seconds: 0 };
+  const rollupBefore = await salesRollupFingerprint();
+  const result = { ran: [], failed: [], skuMapChanged: false, skuPriceChanged: false, salesRollupStale: false, counts: {}, seconds: 0 };
   for (const l of LOADERS) {
     const rowsBefore = await countRows(l.table);
     const ts = Date.now();
@@ -114,6 +126,7 @@ async function refreshMasters({ runner = spawnLoader } = {}) {
   const after = await skuFingerprints();
   result.skuMapChanged = before.map_fp !== after.map_fp;
   result.skuPriceChanged = before.price_fp !== after.price_fp;
+  result.salesRollupStale = rollupBefore !== (await salesRollupFingerprint());
   result.seconds = Number(((Date.now() - t0) / 1000).toFixed(1));
   logger.info(`[MASTER] refresh done in ${result.seconds}s — skus ${before.n} → ${after.n}; mapping ${result.skuMapChanged ? 'CHANGED' : 'unchanged'}, prices/categories ${result.skuPriceChanged ? 'CHANGED' : 'unchanged'}`);
   return result;
@@ -123,7 +136,7 @@ async function refreshMasters({ runner = spawnLoader } = {}) {
 async function refreshMastersIfDue({ everyDays = everyDaysDefault(), force = false, runner } = {}) {
   const d = await isDue(everyDays);
   if (!force && !d.due) {
-    return { skipped: true, reason: 'not due', lastSuccessAt: d.lastSuccessAt, nextDueAt: d.nextDueAt, skuMapChanged: false, skuPriceChanged: false };
+    return { skipped: true, reason: 'not due', lastSuccessAt: d.lastSuccessAt, nextDueAt: d.nextDueAt, skuMapChanged: false, skuPriceChanged: false, salesRollupStale: false };
   }
   logger.info(`[MASTER] refresh due (${d.lastSuccessAt ? `last success ${d.lastSuccessAt.toISOString()}, every ${everyDays}d` : 'never run'}) — running both loaders…`);
   return { skipped: false, ...(await refreshMasters({ runner })) };

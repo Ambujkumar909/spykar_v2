@@ -64,14 +64,16 @@ async function getStatus(req, res, next) {
 
     // Wall-clock safety net (kept for the rare case where the lock check
     // misclassifies — e.g., during DB restart, the lock briefly appears
-    // gone but the child reconnects and re-acquires). 30 min is well
-    // beyond any plausible real sync duration.
+    // gone but the child reconnects and re-acquires). The lock-based reaper
+    // above catches dead processes within one poll, so this only needs to
+    // outlast the longest real run: 30 min used to flag every live FULL
+    // (hours) as FAILED while it was still loading.
     await query(`
       UPDATE sync_logs
       SET status = 'FAILED', completed_at = NOW(),
           error_message = 'Sync exceeded maximum duration without completion (wall-clock reaper)'
       WHERE status = 'RUNNING'
-        AND started_at < NOW() - INTERVAL '30 minutes'
+        AND started_at < NOW() - INTERVAL '9 hours'
     `);
 
     // ─── Prefer the RUNNING row, fall back to the latest terminal row ──────

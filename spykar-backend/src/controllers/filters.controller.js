@@ -144,7 +144,7 @@ const dimensions = {
 async function getOptionsForDimension(req, res, next) {
   try {
     const { dimension } = req.params;
-    const def = dimensions[dimension];
+    const def = Object.hasOwn(dimensions, dimension) ? dimensions[dimension] : null;   // not 'constructor' etc.
     if (!def) {
       return res.status(400).json({ success: false, message: `Unknown dimension: ${dimension}` });
     }
@@ -162,24 +162,25 @@ async function getOptionsForDimension(req, res, next) {
  * Bulk endpoint — returns ALL filter dimensions in one round-trip. Used by the
  * FilterBar on initial mount so we don't fire 11 parallel requests.
  */
+// All dimensions in parallel (each is an indexed lookup). If ANY dimension
+// fails, throw: getOrSet then caches nothing. It used to swallow the error,
+// return [] for that dimension and cache the whole payload for 4 h — one pool
+// timeout left that dropdown empty for every user until the next sync.
+async function buildAllOptions(filters) {
+  const out = {};
+  const failed = [];
+  await Promise.all(Object.entries(dimensions).map(async ([dim, def]) => {
+    try { out[dim] = await fetchOptions(dim, def.table, def.col, filters); }
+    catch (err) { failed.push(`${dim}: ${err.message}`); }
+  }));
+  if (failed.length) throw new Error(`filter options failed (${failed.join('; ')})`);
+  return out;
+}
+
 async function getAllOptions(req, res, next) {
   try {
     const filters = { ...req.query };
-    const key     = cacheKey('filters:all', filters);
-    const data    = await getOrSet(key, async () => {
-      const out = {};
-      const dims = Object.entries(dimensions);
-      // Run in parallel — each runs against an indexed column set, so cumulative
-      // load is well under the connection-pool ceiling.
-      const results = await Promise.all(dims.map(async ([dim, def]) => {
-        try {
-          const v = await fetchOptions(dim, def.table, def.col, filters);
-          return [dim, v];
-        } catch { return [dim, []]; }
-      }));
-      results.forEach(([dim, values]) => { out[dim] = values; });
-      return out;
-    }, OPTIONS_TTL);
+    const data    = await getOrSet(cacheKey('filters:all', filters), () => buildAllOptions(filters), OPTIONS_TTL);
     res.json({ success: true, options: data });
   } catch (err) { next(err); }
 }
@@ -198,19 +199,7 @@ async function warmAllOptionsDefault() {
   // bar always emits mode/sale_mode/valuation regardless of user input, so
   // the empty-filters cache key includes those three.
   const filters = { mode: 'active', sale_mode: 'net', valuation: 'gross' };
-  const key     = cacheKey('filters:all', filters);
-  return getOrSet(key, async () => {
-    const out = {};
-    const dims = Object.entries(dimensions);
-    const results = await Promise.all(dims.map(async ([dim, def]) => {
-      try {
-        const v = await fetchOptions(dim, def.table, def.col, filters);
-        return [dim, v];
-      } catch { return [dim, []]; }
-    }));
-    results.forEach(([dim, values]) => { out[dim] = values; });
-    return out;
-  }, OPTIONS_TTL);
+  return getOrSet(cacheKey('filters:all', filters), () => buildAllOptions(filters), OPTIONS_TTL);
 }
 
 module.exports = { getOptionsForDimension, getAllOptions, warmAllOptionsDefault };

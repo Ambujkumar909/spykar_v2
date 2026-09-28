@@ -69,9 +69,12 @@ async function main() {
 main();
 
 // Safety: if something hangs forever (e.g., MSSQL request never responds),
-// the watchdog kills us at 30 minutes so we don't leak a zombie.
-// runDeltaSync's own logic should always terminate well before this.
+// the watchdog kills us so we don't leak a zombie. It used to be 30 min for
+// every run, which killed every FULL mid-load (a FULL reloads history since
+// 2024 and takes hours) and could cut off the 23:00 DELTA with its extra
+// reconcile / master-refresh stages. Override with SYNC_WATCHDOG_MIN.
+const watchdogMin = parseInt(process.env.SYNC_WATCHDOG_MIN, 10) || (syncType === 'FULL' ? 8 * 60 : 120);
 setTimeout(() => {
-  logger.error('[DETACHED] Sync runner watchdog tripped (30 min) — forcing exit');
+  logger.error(`[DETACHED] Sync runner watchdog tripped (${watchdogMin} min) — forcing exit`);
   process.exit(2);
-}, 30 * 60 * 1000).unref();
+}, watchdogMin * 60 * 1000).unref();

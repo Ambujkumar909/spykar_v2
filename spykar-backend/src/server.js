@@ -72,11 +72,11 @@ async function bootstrap() {
         `UPDATE sync_logs SET status = 'FAILED', completed_at = NOW(),
          error_message = 'Process interrupted (server restart + sync exceeded 30 min)'
          WHERE status = 'RUNNING'
-           AND started_at < NOW() - INTERVAL '30 minutes'
+           AND started_at < NOW() - INTERVAL '9 hours'
          RETURNING id`
       );
       if (stale.rowCount > 0) {
-        logger.warn(`Reaped ${stale.rowCount} truly orphaned RUNNING sync log(s) (> 30 min old)`);
+        logger.warn(`Reaped ${stale.rowCount} truly orphaned RUNNING sync log(s) (> 9 h old)`);
       }
     } finally {
       dbClient.release();

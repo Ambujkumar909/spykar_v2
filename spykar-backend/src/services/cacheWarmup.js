@@ -360,58 +360,6 @@ async function warmModeVariants() {
   await Promise.allSettled(tasks);
 }
 
-// ─── Overview cross-pivot warmer ─────────────────────────────────────
-// Heavy join (best-sellers + stock + busy-stores OOS, 5000-row CTE).
-// Cold cost is 7-15s per mode; warming all 3 at boot means every Overview
-// load and pill flip reads from Redis instead. Hash-key matches what the
-// controller computes so we hit the same slot on first user request.
-async function warmCrossPivot(mode) {
-  const start = Date.now();
-  try {
-    const axiosLike = require('http');
-    const port = process.env.PORT || 4000;
-    const todayISO = new Date().toISOString().slice(0, 10);
-    const path = `/api/v1/analytics/overview/cross-pivot?mode=${mode}&date_from=2025-01-01&date_to=${todayISO}`;
-    // We don't have a token; instead, directly invoke the controller's
-    // cache-population path by hitting the same code through getOrSet.
-    // But the controller is the single source of SQL truth, so we go via
-    // localhost HTTP using a service token minted from JWT_SECRET.
-    const jwt = require('jsonwebtoken');
-    const { query } = require('../config/database');
-    const u = await query(
-      `SELECT id FROM users WHERE role IN ('SUPER_ADMIN','ADMIN') AND is_active = true ORDER BY created_at LIMIT 1`
-    );
-    if (!u.rows.length) { logger.warn(`Cache warm-up (cross-pivot ${mode}) skipped: no admin user to mint service token`); return; }
-    const token = jwt.sign(
-      { userId: u.rows[0].id, role: 'SUPER_ADMIN', service: 'cacheWarmup' },
-      process.env.JWT_SECRET,
-      { expiresIn: '5m' }
-    );
-    await new Promise((resolve, reject) => {
-      const req = axiosLike.request({
-        method: 'GET', hostname: '127.0.0.1', port,
-        path, headers: { Authorization: `Bearer ${token}` },
-        timeout: 60_000,
-      }, (res) => {
-        res.resume();
-        res.on('end', () => resolve());
-      });
-      req.on('error',   reject);
-      req.on('timeout', () => req.destroy(new Error('cross-pivot warm-up timeout')));
-      req.end();
-    });
-    logger.info(`🔥 Cache warmed: cross-pivot [${mode}] in ${Date.now() - start}ms`);
-  } catch (err) {
-    logger.warn(`Cache warm-up (cross-pivot ${mode}) failed: ${err.message}`);
-  }
-}
-
-async function warmCrossPivotAllModes() {
-  // Sequential — these queries are heavy enough that running 3 in parallel
-  // doubles each one's wall-time via lock contention. Sequential is faster
-  // total wall time.
-  for (const mode of MODES) await warmCrossPivot(mode);
-}
 
 /**
  * Top-level warm-up orchestrator. Add more warmers here as new hot endpoints
@@ -523,7 +471,6 @@ async function warmCaches() {
     // and the truncated fallback isn't cached, so it re-ran every 4 min
     // for nothing. See the deprecation comment on warmStockAlerts above.
     warmModeVariants(),          // Active / Inactive / All for exec-summary, alerts-summary v2, ageing
-    warmCrossPivotAllModes(),    // cross-pivot tables (heavy CTE, all 3 modes sequential)
     warmFilterOptionsDefault(),  // /filters/options default key — front-page entry path
     warmNetworkPulseAllModes(),  // /locations/network-pulse — 13 s cold; warm all 3 modes
     warmSalesAnalyticsAllModes(),// /analytics/sales — 8 s cold; warm all 3 modes for FY default
@@ -572,7 +519,7 @@ function startPeriodicRewarm() {
 
 module.exports = {
   warmCaches, warmStockAlerts, warmStockAlertsSummary,
-  warmModeVariants, warmCrossPivotAllModes,
+  warmModeVariants,
   warmNetworkPulse, warmNetworkPulseAllModes,
   warmSalesAnalytics, warmSalesAnalyticsAllModes,
   warmFilterOptionsDefault, warmPrimarySales,
