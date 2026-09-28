@@ -77,6 +77,25 @@ function toPgDate(date) {
   return `${yr}-${mo}-${day}`;
 }
 
+// inventory_daily_snapshot is range-partitioned by month and Postgres does not
+// create partitions on insert. Migration 007 only pre-created Jan 2024 → Feb
+// 2026, so every later date failed with "no partition of relation … found for
+// row" (non-fatal in the sync → Stock Availability history silently stopped).
+// Both writers call this first, so any month — past or future — just works.
+async function ensureMonthPartition(dateISO) {
+  const m = /^(\d{4})-(\d{2})-\d{2}/.exec(String(dateISO));
+  if (!m) throw new Error(`ensureMonthPartition: bad date '${dateISO}'`);
+  const y = Number(m[1]), mo = Number(m[2]);
+  const from = `${m[1]}-${m[2]}-01`;
+  const to = mo === 12 ? `${y + 1}-01-01` : `${m[1]}-${String(mo + 1).padStart(2, '0')}-01`;
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS inventory_daily_snapshot_${m[1]}_${m[2]}
+                 PARTITION OF inventory_daily_snapshot FOR VALUES FROM ('${from}') TO ('${to}')`);
+  } catch (err) {
+    if (err.code !== '42P07') throw err;   // created concurrently by the other writer — fine
+  }
+}
+
 /** Inclusive range of YYYY-MM-DD strings between two dates */
 function dateRange(fromDate, toDate) {
   const out = [];
@@ -223,6 +242,7 @@ async function loadOneDate(erpPool, lookupMaps, snapshotDate) {
   //    rest of the backend.
   let inserted = 0;
   try {
+    await ensureMonthPartition(snapshotDate);
     await dbModule.transaction(async (client) => {
       await client.query(
         'DELETE FROM inventory_daily_snapshot WHERE snapshot_date = $1',
@@ -287,6 +307,7 @@ async function loadOneDate(erpPool, lookupMaps, snapshotDate) {
 async function archiveCurrentSnapshot(dateISO) {
   const day = dateISO || toPgDate(new Date());
   const t0 = Date.now();
+  await ensureMonthPartition(day);
   const inserted = await dbModule.transaction(async (client) => {
     await client.query('DELETE FROM inventory_daily_snapshot WHERE snapshot_date = $1', [day]);
     const r = await client.query(
@@ -401,6 +422,7 @@ module.exports = {
   retryFailedDates,
   archiveCurrentSnapshot,  // capture-forward: current snapshot → daily history
   loadOneDate,             // exported for unit testing / single-date refresh
+  ensureMonthPartition,
   toErpDate,
   toPgDate,
 };
