@@ -26,7 +26,7 @@ import { filterService } from '../../lib/services';
 import { getCached, setCached, isFresh } from '../../lib/dashboardCache';
 import { useSharedFilters } from '../../lib/FiltersContext';
 
-const FILTER_ROUTES = new Set(['/network', '/sales', '/primary-sales', '/stock-availability']); // '/inventory-ageing' disabled
+const FILTER_ROUTES = new Set(['/network', '/sales', '/primary-sales', '/stock-availability', '/inventory-ageing']);
 
 // Per-route dimension whitelist. Primary Sales is a WAREHOUSE-level feed, so only
 // the SKU-attribute dims that actually carry data there are relevant (verified

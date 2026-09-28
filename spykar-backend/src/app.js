@@ -151,7 +151,7 @@ app.use(`${API_V1}/stock-availability`, stockAvailabilityRoutes);
 app.use(`${API_V1}/primary-sales`, primarySalesRoutes);
 // Inventory Ageing DISABLED for now — route intentionally not registered so all
 // /ageing/* API calls 404. Re-enable this line to bring the feature back.
-// app.use(`${API_V1}/ageing`, ageingRoutes);
+app.use(`${API_V1}/ageing`, ageingRoutes);
 
 // ─── Error Handling ────────────────────────────────────────────────────────────
 app.use(notFound);

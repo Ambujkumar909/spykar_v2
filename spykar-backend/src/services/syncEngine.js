@@ -1533,7 +1533,11 @@ async function runDeltaSync(syncType = 'DELTA') {
     // Re-enable by flipping AGEING_ENABLED to true. When on: warehouse FIFO
     // (needs the fresh MITTRA ledger from Stage 5) + store continuous-on-hand
     // (needs the daily snapshot archived at Stage 3.9), non-fatal.
-    const AGEING_ENABLED = false;
+    // Live. Runs in the night sync only (AGEING_HOUR, default 23): the
+    // warehouse FIFO walks the whole MITTRA ledger, too heavy for the day
+    // syncs. Kill switch: SYNC_AGEING=false.
+    const ageingHour = Number.isInteger(parseInt(process.env.AGEING_HOUR, 10)) ? parseInt(process.env.AGEING_HOUR, 10) : 23;
+    const AGEING_ENABLED = process.env.SYNC_AGEING !== 'false' && new Date().getHours() === ageingHour;
     if (AGEING_ENABLED) {
       try {
         const t0 = Date.now();

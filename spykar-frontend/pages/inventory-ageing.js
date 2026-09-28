@@ -110,7 +110,7 @@ function AgeBar({ buckets, height = 10 }) {
 // the full page (nav item, filter route + backend /ageing route must also be
 // re-enabled). While true, the component returns BEFORE any hook or API call
 // fires, so nothing is calculated or fetched.
-const AGEING_DISABLED = true;
+const AGEING_DISABLED = false;   // live
 
 function AgeingDisabledNotice() {
   return (
@@ -163,8 +163,13 @@ function InventoryAgeingPageImpl() {
   const scope = useMemo(() => ({ source, status, ...lensScope }), [source, status, lensScope]);
   const scopeKey = useMemo(() => JSON.stringify(scope), [scope]);
 
-  // keep viewBy valid when source flips
-  useEffect(() => { if (!VIEW_BY[source].some((v) => v.key === viewBy)) setViewBy(VIEW_BY[source][0].key); }, [source]); // eslint-disable-line
+  // Switch source AND fix the view in the same update: fixing it in an effect
+  // afterwards sent one request with a view the new source doesn't have
+  // (400 'invalid group_by') before the page corrected itself.
+  const changeSource = (v) => {
+    setSource(v);
+    if (!VIEW_BY[v].some((x) => x.key === viewBy)) setViewBy(VIEW_BY[v][0].key);
+  };
 
   useEffect(() => {
     let a = true; setSumLoading(true);
@@ -220,7 +225,7 @@ function InventoryAgeingPageImpl() {
         <div className="ag-toolbar">
           <div className="ag-src">
             {SOURCES.map(({ value, label, Icon }) => (
-              <button key={value} className={`ag-srcbtn ${source === value ? 'on' : ''}`} onClick={() => setSource(value)}><Icon size={14} /> {label}</button>
+              <button key={value} className={`ag-srcbtn ${source === value ? 'on' : ''}`} onClick={() => changeSource(value)}><Icon size={14} /> {label}</button>
             ))}
           </div>
           <div style={{ flex: 1 }} />

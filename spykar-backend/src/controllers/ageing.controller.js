@@ -44,7 +44,7 @@ function dimsFor(source) {
     state:   { keyCol: 'l.state',      labelCol: 'l.state'      },
     city:    { keyCol: 'l.city',       labelCol: 'l.city'       },
     channel: { keyCol: 'l.group_name', labelCol: 'l.group_name' },
-    store:   { keyCol: 'l.id::text',   labelCol: "(l.code || ' · ' || l.name)" },
+    store:   { keyCol: 'l.code',       labelCol: "(l.code || ' · ' || l.name)" },   // = the store filter's value
     ...sku,
   };
 }
@@ -105,7 +105,9 @@ async function meta(source) {
 async function getSummary(req, res, next) {
   try {
     const source = normSource(req.query.source);
-    const cacheKey = `ageing:summary:${source}:${JSON.stringify(req.query)}`;
+    // computed_at in the key: a rebuild (sync or CLI) is visible immediately
+    // instead of after the 24 h TTL; a read during a rebuild is never pinned.
+    const cacheKey = `ageing:summary:${source}:${(await meta(source)).computed_at || 0}:${JSON.stringify(req.query)}`;
     const data = await getOrSet(cacheKey, async () => {
       const params = [];
       const { conds } = buildScope(req.query, params, source);
@@ -183,7 +185,7 @@ async function buildPivot(req) {
 
 async function getPivot(req, res, next) {
   try {
-    const cacheKey = `ageing:pivot:${JSON.stringify(req.query)}`;
+    const cacheKey = `ageing:pivot:${(await meta(normSource(req.query.source))).computed_at || 0}:${JSON.stringify(req.query)}`;
     const data = await getOrSet(cacheKey, () => buildPivot(req), AGE_TTL);
     res.json({ success: true, data });
   } catch (err) {

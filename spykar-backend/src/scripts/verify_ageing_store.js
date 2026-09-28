@@ -41,6 +41,37 @@ const ok = (c, m) => { console.log(`${c ? 'PASS' : 'FAIL'}  ${m}`); if (!c) fail
   ok(by('B').length === 0, `B: sold out on the as-of date → no phantom stock ${JSON.stringify(by('B'))}`);
   ok(by('C').length === 1 && by('C')[0].b === 0 && by('C')[0].u === 10, `C: a gap 10 days ago → all 10 units fresh ${JSON.stringify(by('C'))}`);
 
+  // Through the controller, as the page calls it.
+  const ctrl = require('../controllers/ageing.controller');
+  const call = (fn, q) => new Promise((resolve, reject) => fn({ query: q, params: {}, headers: {} }, { json: (b) => resolve(b.data), status() { return this; } }, reject));
+  const sum = await call(ctrl.getSummary, { source: 'store', status: 'all' });
+  const total = (sum.buckets || []).reduce((t, b) => t + Number(b.units || 0), 0);
+  ok(total === 20, `summary: 20 units aged across buckets (A 10 + C 10) — got ${total}`);
+  const pv = await call(ctrl.getPivot, { source: 'store', group_by: 'store', status: 'all' });
+  ok(pv.rows.length === 1 && pv.rows[0].key === 'S1', `store rows are keyed by store CODE (${pv.rows[0] && pv.rows[0].key})`);
+  const drill = await call(ctrl.getPivot, { source: 'store', group_by: 'store', status: 'all', store: pv.rows[0].key });
+  ok(drill.rows.length === 1, 'drilling with that key (what a row click sends) keeps the store, not an empty page');
+  await query(`UPDATE inventory_ageing_meta SET computed_at = computed_at + interval '1 second' WHERE source = 'store'`);
+  await query(`DELETE FROM inventory_ageing WHERE source = 'store' AND sku_id = $1`, [sku.C]);
+  const sum2 = await call(ctrl.getSummary, { source: 'store', status: 'all' });
+  ok((sum2.buckets || []).reduce((t, b) => t + Number(b.units || 0), 0) === 10, 'a rebuild (new computed_at) is visible at once, not after the 24 h cache');
+
+  // Warehouse FIFO (MITTRA ledger): +10 on day-100, +5 on day-10, −8 on day-5
+  // → 7 on hand; FIFO consumes the oldest first → 2 left from the 100-day
+  // receipt (bucket 3: 91–180) and all 5 from the 10-day one (bucket 0).
+  const wh = (await query(`INSERT INTO primary_warehouses (cono, whlo, whnm, divi) VALUES (92, 'W1', 'DC', 'AAA') RETURNING id`)).rows[0].id;
+  let t = 1;
+  for (const [daysAgo, q] of [[100, 10], [10, 5], [5, -8]]) {
+    await query(`INSERT INTO primary_sales_movements (warehouse_id, sku_id, cono, whlo, itno, trdt, rgdt, rgtm, tmsx, trqt)
+                 VALUES ($1, $2, 92, 'W1', 'A', DATE '2026-09-20' - $3::int, DATE '2026-09-20' - $3::int, 0, $4, $5)`, [wh, sku.A, daysAgo, t++, q]);
+  }
+  const { loadWarehouse } = require('../database/load_inventory_ageing');
+  await loadWarehouse();
+  const w = (await query(`SELECT age_bucket b, units::int u FROM inventory_ageing WHERE source = 'warehouse' ORDER BY 1`)).rows;
+  ok(JSON.stringify(w) === JSON.stringify([{ b: 0, u: 5 }, { b: 3, u: 2 }]), `warehouse FIFO: 5 fresh + 2 at 91–180 days ${JSON.stringify(w)}`);
+  const wsum = await call(ctrl.getSummary, { source: 'warehouse' });
+  ok((wsum.buckets || []).reduce((tt, b) => tt + Number(b.units || 0), 0) === 7, 'warehouse summary shows the 7 units on hand');
+
   await pool.end();
   await admin.query(`DROP DATABASE ${DB} WITH (FORCE)`); await admin.end();
   console.log(fails ? `❌ ${fails} failed` : '✅ all passed');
