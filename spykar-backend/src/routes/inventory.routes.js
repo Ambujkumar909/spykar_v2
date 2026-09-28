@@ -31,7 +31,9 @@ router.get('/snapshot/export',
 // GET /api/v1/inventory/location/:locationId
 // Inventory at a specific location
 router.get('/location/:locationId',
-  [param('locationId').isUUID()],
+  [param('locationId').isUUID(),
+   query('page').optional().isInt({ min: 1 }).toInt(),          // page=abc / page=-1 used to reach
+   query('limit').optional().isInt({ min: 1, max: 1000 }).toInt()], // Postgres as NaN / negative OFFSET
   validate,
   inventoryController.getLocationInventory
 );

@@ -30,7 +30,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { query, pool } = require('../config/database');
+const { query, pool, transaction } = require('../config/database');
 const { invalidatePattern } = require('../config/cache');
 const logger = require('../config/logger');
 
@@ -58,9 +58,12 @@ async function loadWarehouse() {
   const covered = Math.round((new Date(asOf) - new Date(r.rows[0].lo)) / 86400000);
 
   logger.info(`[AGEING/warehouse] FIFO as of ${asOf} (history covers ~${covered}d)…`);
-  await query(`DELETE FROM inventory_ageing WHERE source = 'warehouse'`);
 
-  const ins = await query(
+  // DELETE + INSERT in ONE transaction: a /ageing read during the rebuild used
+  // to see (and cache for 24 h) an empty 'warehouse' slice.
+  const ins = await transaction(async (c) => {
+    await c.query(`DELETE FROM inventory_ageing WHERE source = 'warehouse'`);
+    return c.query(
     `WITH mv AS (
         SELECT warehouse_id, sku_id, trdt, trqt
           FROM primary_sales_movements WHERE trdt <= $1::date
@@ -100,7 +103,7 @@ async function loadWarehouse() {
       WHERE l.qty > 0
       GROUP BY l.warehouse_id, l.sku_id, age_bucket, sk.mrp, sk.cost_price`,
     [asOf]
-  );
+  ); });
   await recordMeta('warehouse', asOf, covered, ins.rowCount);
   await report('warehouse', asOf);
 }
@@ -114,26 +117,46 @@ async function loadStore() {
   const cov = Math.round((new Date(asOf) - new Date(r.rows[0].lo)) / 86400000);
 
   logger.info(`[AGEING/store] continuous-on-hand as of ${asOf} (history covers ${cov}d)…`);
-  await query(`DELETE FROM inventory_ageing WHERE source = 'store'`);
 
   // mD = units present across the ENTIRE last-D-day window (= min on-hand). Only
   // trustworthy when cov >= D; otherwise that boundary is unproven. `bnd(D)`
   // returns the provable floor for D, or NULL when the window isn't covered.
-  const ins = await query(
+  // DELETE + INSERT in ONE transaction: a /ageing read during the rebuild used
+  // to see (and cache for 24 h) an empty 'store' slice.
+  const ins = await transaction(async (c) => {
+    await c.query(`DELETE FROM inventory_ageing WHERE source = 'store'`);
+    return c.query(
     `WITH s AS (
         SELECT location_id, sku_id, snapshot_date, qty_on_hand
           FROM inventory_daily_snapshot WHERE snapshot_date <= $1::date
      ),
+     -- The daily snapshot stores only qty > 0, so a date with NO row for a
+     -- pair means zero on hand that day. Count the snapshot dates in each
+     -- window: a pair with fewer rows than that was at zero at least once,
+     -- so its continuous-on-hand floor is 0 (MIN over its rows alone skipped
+     -- the empty days and aged restocked stock as old).
+     nd AS (
+        SELECT COUNT(DISTINCT snapshot_date)                                       AS n_all,
+               COUNT(DISTINCT snapshot_date) FILTER (WHERE snapshot_date > $1::date - 30)  AS n30,
+               COUNT(DISTINCT snapshot_date) FILTER (WHERE snapshot_date > $1::date - 60)  AS n60,
+               COUNT(DISTINCT snapshot_date) FILTER (WHERE snapshot_date > $1::date - 90)  AS n90,
+               COUNT(DISTINCT snapshot_date) FILTER (WHERE snapshot_date > $1::date - 180) AS n180,
+               COUNT(DISTINCT snapshot_date) FILTER (WHERE snapshot_date > $1::date - 365) AS n365
+          FROM s
+     ),
      agg AS (
-        SELECT location_id, sku_id,
-               (array_agg(qty_on_hand ORDER BY snapshot_date DESC))[1]              AS cur,
-               MIN(qty_on_hand)                                                     AS floor_all,
-               MIN(qty_on_hand) FILTER (WHERE snapshot_date > $1::date - 30)        AS m30,
-               MIN(qty_on_hand) FILTER (WHERE snapshot_date > $1::date - 60)        AS m60,
-               MIN(qty_on_hand) FILTER (WHERE snapshot_date > $1::date - 90)        AS m90,
-               MIN(qty_on_hand) FILTER (WHERE snapshot_date > $1::date - 180)       AS m180,
-               MIN(qty_on_hand) FILTER (WHERE snapshot_date > $1::date - 365)       AS m365
-          FROM s GROUP BY 1,2
+        SELECT s.location_id, s.sku_id,
+               -- on hand AT the as-of date (0 if no row): each pair's own
+               -- latest row brought back SKUs that sold out months ago
+               COALESCE(MAX(s.qty_on_hand) FILTER (WHERE s.snapshot_date = $1::date), 0) AS cur,
+               CASE WHEN COUNT(*) < MAX(nd.n_all) THEN 0 ELSE MIN(s.qty_on_hand) END AS floor_all,
+               CASE WHEN COUNT(*) FILTER (WHERE s.snapshot_date > $1::date - 30)  < MAX(nd.n30)  THEN 0 ELSE MIN(s.qty_on_hand) FILTER (WHERE s.snapshot_date > $1::date - 30)  END AS m30,
+               CASE WHEN COUNT(*) FILTER (WHERE s.snapshot_date > $1::date - 60)  < MAX(nd.n60)  THEN 0 ELSE MIN(s.qty_on_hand) FILTER (WHERE s.snapshot_date > $1::date - 60)  END AS m60,
+               CASE WHEN COUNT(*) FILTER (WHERE s.snapshot_date > $1::date - 90)  < MAX(nd.n90)  THEN 0 ELSE MIN(s.qty_on_hand) FILTER (WHERE s.snapshot_date > $1::date - 90)  END AS m90,
+               CASE WHEN COUNT(*) FILTER (WHERE s.snapshot_date > $1::date - 180) < MAX(nd.n180) THEN 0 ELSE MIN(s.qty_on_hand) FILTER (WHERE s.snapshot_date > $1::date - 180) END AS m180,
+               CASE WHEN COUNT(*) FILTER (WHERE s.snapshot_date > $1::date - 365) < MAX(nd.n365) THEN 0 ELSE MIN(s.qty_on_hand) FILTER (WHERE s.snapshot_date > $1::date - 365) END AS m365
+          FROM s CROSS JOIN nd
+         GROUP BY s.location_id, s.sku_id
      ),
      g AS (   -- provable floors: NULL where the window exceeds coverage ($2)
         SELECT location_id, sku_id, cur, floor_all,
@@ -164,7 +187,7 @@ async function loadStore() {
        ) AS b(idx, units)
       WHERE b.units > 0`,
     [asOf, cov]
-  );
+  ); });
   await recordMeta('store', asOf, cov, ins.rowCount);
   await report('store', asOf);
 }

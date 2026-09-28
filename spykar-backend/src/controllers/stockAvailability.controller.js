@@ -51,7 +51,10 @@ const measureOrUnits = (m) => (MEASURE_EXPR[m] ? m : 'units');
 function periodToRange(period, from, to) {
   if (from && to) return { from, to };
   const today = new Date();
-  const fmt = (d) => d.toISOString().slice(0, 10);
+  // LOCAL calendar date. toISOString() is UTC: new Date(y, m, 1) is IST
+  // midnight = 18:30 UTC the previous day, so every MTD/QTD/YTD started a day
+  // early, and 'today' was yesterday before 05:30 IST.
+  const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const y = today.getFullYear();
   const m = today.getMonth();
   switch (String(period || '').toLowerCase()) {
@@ -61,7 +64,7 @@ function periodToRange(period, from, to) {
       return { from: fmt(d), to: fmt(today) };
     }
     case 'qtd': { const q = Math.floor(m / 3) * 3; return { from: fmt(new Date(y, q, 1)), to: fmt(today) }; }
-    case 'ytd': return { from: fmt(new Date(y, 0, 1)), to: fmt(today) };
+    case 'ytd': return { from: fmt(new Date(m >= 3 ? y : y - 1, 3, 1)), to: fmt(today) };   // Indian FY (Apr), as the page's YTD pill
     case 'mtd':
     default:    return { from: fmt(new Date(y, m, 1)), to: fmt(today) };
   }
@@ -166,17 +169,25 @@ async function getRange(req, res, next) {
 //    over full history — cached, and loaded LAZILY by the UI (after first paint),
 //    so it never blocks the page. No precomputed rollup to seed or maintain.
 // ════════════════════════════════════════════════════════════════════════════
+// Scoped exactly like /summary (mode + Lens filters): it used to sum the whole
+// network, so the chart's marked "selected day" point never matched the Units
+// tile beside it — closed stores and every SKU leaked into the chart.
 async function getHistory(req, res, next) {
   try {
-    const data = await getOrSet('stockavail:history', async () => {
+    const data = await getOrSet(`stockavail:history:v2:${JSON.stringify(req.query)}`, async () => {
       const mx = await query('SELECT MAX(snapshot_date)::text AS to FROM inventory_daily_snapshot');
       const to = mx.rows[0]?.to || null;
       if (!to) return { dates: [] };
+      const params = [];
+      const { conds, joinSku } = buildScope(req.query, params);
+      const toIdx = params.push(to);
       const dts = await query(
-        `SELECT snapshot_date::text AS d, SUM(qty_on_hand)::bigint AS u
-           FROM inventory_daily_snapshot
-          WHERE snapshot_date > ($1::date - INTERVAL '35 days')
-          GROUP BY snapshot_date ORDER BY 1`, [to]);
+        `SELECT d.snapshot_date::text AS d, SUM(d.qty_on_hand)::bigint AS u
+           FROM inventory_daily_snapshot d
+           JOIN locations l ON l.id = d.location_id
+           ${joinSku ? 'JOIN skus s ON s.id = d.sku_id' : ''}
+          WHERE d.snapshot_date > ($${toIdx}::date - INTERVAL '35 days') AND ${conds.join(' AND ')}
+          GROUP BY d.snapshot_date ORDER BY 1`, params);
       return { dates: dts.rows.map((x) => ({ d: x.d, u: Number(x.u) })) };
     }, TTL.INVENTORY_SNAPSHOT);
     res.json({ success: true, data });
@@ -225,7 +236,8 @@ async function getSummary(req, res, next) {
       const prior = await query(
         `SELECT MAX(snapshot_date)::text AS d
            FROM inventory_daily_snapshot
-          WHERE snapshot_date <= ($1::date - INTERVAL '30 days')`,
+          WHERE snapshot_date <= ($1::date - INTERVAL '30 days')
+            AND snapshot_date >= ($1::date - INTERVAL '37 days')   -- else "Δ vs 30d" silently compared against months ago`,
         [asOf]
       );
       const priorDate = prior.rows[0]?.d || null;
@@ -388,7 +400,8 @@ async function buildPivot(req) {
   const priorRes = await query(
     `SELECT MAX(snapshot_date)::text AS d
        FROM inventory_daily_snapshot
-      WHERE snapshot_date <= ($1::date - INTERVAL '30 days')`,
+      WHERE snapshot_date <= ($1::date - INTERVAL '30 days')
+            AND snapshot_date >= ($1::date - INTERVAL '37 days')   -- else "Δ vs 30d" silently compared against months ago`,
     [asOf]
   );
   const priorDate = priorRes.rows[0]?.d || null;
@@ -601,7 +614,7 @@ async function exportCsv(req, res, next) {
     res.write(cols.join(',') + '\n');
     for (const r of pivot.rows) {
       res.write([
-        esc(r.label), r.store_count, r.stock_units, r.value_gross, r.value_cost,
+        r.label, r.store_count, r.stock_units, r.value_gross, r.value_cost,
         r.delta_vs_30d_pct,
       ].map(esc).join(',') + '\n');
     }

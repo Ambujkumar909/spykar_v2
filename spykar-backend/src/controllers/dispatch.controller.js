@@ -197,7 +197,8 @@ async function updateStatus(req, res, next) {
 
     params.push(req.params.id);
     await query(`UPDATE dispatch_orders SET ${updates.join(',')} WHERE id = $${params.length}`, params);
-    await invalidatePattern('inventory:*');
+    // Same set as a manual stock adjustment: every view that shows stock.
+    await Promise.all(['inventory:*', 'network:pulse:*', 'locations:list:*', 'stockavail:*'].map((p) => invalidatePattern(p)));
 
     res.json({ success: true, message: 'Dispatch status updated.' });
   } catch (err) { next(err); }

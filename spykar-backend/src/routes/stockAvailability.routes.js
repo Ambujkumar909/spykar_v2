@@ -22,17 +22,19 @@ const PERIOD = ['Today', 'WTD', 'MTD', 'QTD', 'YTD', 'custom',
 const SCOPE = ['state', 'city', 'channel', 'group_name', 'store', 'store_code',
                'category', 'colour', 'color', 'size', 'product', 'gender',
                'sub_product', 'season']
-  .map((k) => query(k).optional().isString().trim());
+  .map((k) => query(k).optional().isString().trim())
+  // Row-click drills send UUIDs; a bad one used to fail the ::uuid cast → 500.
+  .concat([query('location_id').optional().isUUID(), query('sku_id').optional().isUUID()]);
 
 // 0) Available snapshot-date range (bounds the calendar) — instant, no summing.
 router.get('/range', ctrl.getRange);
 
 // 0b) Recent-history sparkline (per-date total on-hand, last ~35 days) — lazy.
-router.get('/history', ctrl.getHistory);
+router.get('/history', [query('status').optional().isIn(STATUS), ...SCOPE], validate, ctrl.getHistory);
 
 // A) Summary KPIs at a point in time.
 router.get('/summary', [
-  query('as_of').optional().isISO8601(),
+  query('as_of').optional().isISO8601({ strict: true }),
   query('status').optional().isIn(STATUS),
   query('measure').optional().isIn(MEASURE),
   ...SCOPE,
@@ -52,7 +54,7 @@ router.get('/trend', [
 // C) Pivot table by dimension (stock now, 30d avg, delta, cover days).
 router.get('/pivot', [
   query('group_by').optional().isIn(GROUP_BY),
-  query('as_of').optional().isISO8601(),
+  query('as_of').optional().isISO8601({ strict: true }),
   query('measure').optional().isIn(MEASURE),
   query('status').optional().isIn(STATUS),
   ...SCOPE,
@@ -61,7 +63,7 @@ router.get('/pivot', [
 // E) CSV export — same filters as /pivot. (Declared before the param route.)
 router.get('/export.csv', [
   query('group_by').optional().isIn(GROUP_BY),
-  query('as_of').optional().isISO8601(),
+  query('as_of').optional().isISO8601({ strict: true }),
   query('measure').optional().isIn(MEASURE),
   query('status').optional().isIn(STATUS),
   ...SCOPE,

@@ -307,13 +307,17 @@ async function getNetworkPulse(req, res, next) {
               'count',  COUNT(*),
               'value',  0
             ) FROM locations l
-            WHERE l.is_active = true
+            ${where}
+              AND l.is_active = true
               AND l.shop_closed = false
               AND l.type <> 'WAREHOUSE'
               AND NULLIF(TRIM(l.group_name), '') IS NOT NULL
+              -- Same scope as every other widget in this response (it used to
+              -- ignore the location and SKU filters and always show the
+              -- network-wide count). "Empty" = no positive stock IN SCOPE.
               AND NOT EXISTS (
-                SELECT 1 FROM inventory_snapshot i2
-                WHERE i2.location_id = l.id AND i2.qty_on_hand > 0
+                SELECT 1 FROM inventory_snapshot i
+                WHERE i.location_id = l.id AND i.qty_on_hand > 0${catJoinClause}${skuJoinClause}
               )
             ) AS oos_active,
 

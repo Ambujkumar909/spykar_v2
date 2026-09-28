@@ -38,7 +38,8 @@ router.get('/top',
 // GET /api/v1/distributors/comparison
 // Side-by-side comparison of distributors
 router.get('/comparison',
-  [query('ids').notEmpty().withMessage('Comma-separated distributor IDs required')],
+  [query('ids').notEmpty().withMessage('Comma-separated distributor IDs required')
+    .custom((v) => String(v).split(',').every((x) => /^[0-9a-f-]{36}$/i.test(x.trim()))).withMessage('ids must be UUIDs')],
   validate,
   distributorController.compare
 );

@@ -369,6 +369,84 @@ async function getSkuInventory(req, res, next) {
   }
 }
 
+// ─── One definition of a stock alert (shared by /alerts and /alerts/summary) ─
+// inventory_snapshot only ever holds POSITIVE stock: the sync deletes a
+// position when it sells out. So `qty_on_hand = 0` never matched and "Out of
+// stock" was always 0. A stock-out is a MISSING row: a (store, SKU) that sold
+// in the last OOS_WINDOW_DAYS of data and has no stock row now. Those are added
+// to the snapshot rows as zero-stock positions before classification.
+const OOS_WINDOW_DAYS = 30;
+function alertsModeFilter(mode) {
+  return mode === 'inactive'
+    ? 'AND l.is_active = true AND s.is_active = true AND l.shop_closed = true'
+    : mode === 'all'
+      ? 'AND l.is_active = true AND s.is_active = true'
+      : 'AND l.is_active = true AND s.is_active = true AND l.shop_closed = false';
+}
+function alertsBaseSQL(activeFilter) {
+  return `
+    WITH data_end AS (SELECT MAX(moved_at) AS t FROM inventory_movements),
+    velocity AS (
+      SELECT
+        m.location_id, m.sku_id,
+        GREATEST(1,
+          ROUND(
+            SUM(ABS(m.qty_change))::numeric /
+            GREATEST(1, EXTRACT(EPOCH FROM (MAX(m.moved_at) - MIN(m.moved_at))) / 86400),
+            2
+          )
+        ) AS avg_daily_sales,
+        MAX(m.moved_at) AS last_sold_at
+      FROM inventory_movements m
+      WHERE m.movement_type = 'SALE'
+        AND m.moved_at >= (SELECT t FROM data_end) - INTERVAL '180 days'
+      GROUP BY m.location_id, m.sku_id
+    ),
+    positions AS (
+      SELECT i.location_id, i.sku_id, i.qty_on_hand, i.safety_stock, i.reorder_point
+        FROM inventory_snapshot i
+      UNION ALL
+      SELECT v.location_id, v.sku_id, 0, 0, 0
+        FROM velocity v
+       WHERE v.last_sold_at >= (SELECT t FROM data_end) - INTERVAL '${OOS_WINDOW_DAYS} days'
+         AND NOT EXISTS (SELECT 1 FROM inventory_snapshot i
+                          WHERE i.location_id = v.location_id AND i.sku_id = v.sku_id AND i.qty_on_hand > 0)
+    ),
+    thresholds AS (
+      SELECT
+        p.location_id, p.sku_id,
+        CASE WHEN p.safety_stock > 0 THEN p.safety_stock
+             ELSE GREATEST(5, ROUND(COALESCE(v.avg_daily_sales,1) * 7))
+        END AS effective_safety,
+        CASE WHEN p.reorder_point > 0 THEN p.reorder_point
+             ELSE GREATEST(2, ROUND(COALESCE(v.avg_daily_sales,1) * 3))
+        END AS effective_reorder
+      FROM positions p
+      LEFT JOIN velocity v ON v.location_id = p.location_id AND v.sku_id = p.sku_id
+    ),
+    alerts_base AS (
+      SELECT
+        l.is_active AS loc_active, s.is_active AS sku_active,
+        l.name AS location_name, COALESCE(l.group_name, l.type::text) AS location_type, l.city, l.state,
+        s.sku_code, s.product_name, s.color_name, s.size,
+        p.qty_on_hand,
+        t.effective_safety  AS safety_stock,
+        t.effective_reorder AS reorder_point,
+        ROUND(((t.effective_safety - p.qty_on_hand)::numeric / NULLIF(t.effective_safety,0)) * 100, 1) AS shortfall_pct,
+        CASE
+          WHEN p.qty_on_hand = 0                    THEN 'OUT_OF_STOCK'
+          WHEN p.qty_on_hand <= t.effective_reorder THEN 'REORDER_NOW'
+          ELSE                                           'LOW_STOCK'
+        END AS alert_level
+      FROM positions p
+      JOIN thresholds t ON t.location_id = p.location_id AND t.sku_id = p.sku_id
+      JOIN locations l ON l.id = p.location_id
+      JOIN skus s ON s.id = p.sku_id
+      WHERE p.qty_on_hand <= t.effective_safety
+      ${activeFilter}
+    )`;
+}
+
 // ─── Alerts ───────────────────────────────────────────────────────────────────
 // Uses explicit safety_stock when set; falls back to dynamic thresholds based
 // on avg daily sales so alerts fire even before thresholds are manually configured.
@@ -378,7 +456,7 @@ async function getAlerts(req, res, next) {
     // 'active'  → only is_active=true (default; matches operational intent)
     // 'inactive'→ only is_active=false (audit / archive view)
     // 'all'     → no is_active filter (true full-network view)
-    const modeRaw = (req.query.mode || 'active').toLowerCase();
+    const modeRaw = String(Array.isArray(req.query.mode) ? req.query.mode[0] : (req.query.mode || 'active')).toLowerCase();
     const mode = ['active', 'inactive', 'all'].includes(modeRaw) ? modeRaw : 'active';
 
     // Mode semantics — aligned with the rest of the platform (dashboard's
@@ -393,18 +471,18 @@ async function getAlerts(req, res, next) {
     // is_active=true is always required because rows with is_active=false are
     // either deleted or archived master records that shouldn't ever surface
     // as live alerts. (Verified DB-side: 0 rows currently have is_active=false.)
-    const activeFilter = mode === 'inactive'
-      ? 'AND l.is_active = true AND s.is_active = true AND l.shop_closed = true'
-      : mode === 'all'
-        ? 'AND l.is_active = true AND s.is_active = true'
-        : 'AND l.is_active = true AND s.is_active = true AND l.shop_closed = false';
+    const activeFilter = alertsModeFilter(mode);
 
     // Cache the already-serialized response body, scoped per mode. v10 = new
     // shape with mode + true summary even at zero rows (cache key bump
     // automatically invalidates v9 entries). On cache hit we stream the raw
     // JSON string directly with res.send(), skipping both JSON.parse on read
     // and res.json()'s re-stringify on write.
-    const cacheKey = `inventory:alerts:v12:${mode}`;
+    // detail_limit changes the payload, so it is part of the key: a VIEWER
+    // calling ?detail_limit=0 first used to pin an EMPTY drill list for 24h.
+    const requestedLimit = parseInt(req.query.detail_limit, 10);
+    const detailLimit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 5000, 0), 50000);
+    const cacheKey = `inventory:alerts:v13:${mode}:${detailLimit}`;
     const body = await getOrSetRawJson(cacheKey, async () => {
       // Two queries instead of one CROSS-JOINed monster:
       //   (1) summary — counts the FULL alerts_base (no row cap, this is the
@@ -415,58 +493,7 @@ async function getAlerts(req, res, next) {
       //       counts are never affected.
       // Splitting them is faster than CROSS JOIN (no 570K × duplication of
       // 4 summary columns) AND keeps the cards honest at any scale.
-      const baseSQL = `
-        WITH velocity AS (
-          SELECT
-            m.location_id, m.sku_id,
-            GREATEST(1,
-              ROUND(
-                SUM(ABS(m.qty_change))::numeric /
-                GREATEST(1, EXTRACT(EPOCH FROM (MAX(m.moved_at) - MIN(m.moved_at))) / 86400),
-                2
-              )
-            ) AS avg_daily_sales
-          FROM inventory_movements m
-          WHERE m.movement_type = 'SALE'
-            AND m.moved_at >= (SELECT MAX(moved_at) FROM inventory_movements) - INTERVAL '180 days'
-          GROUP BY m.location_id, m.sku_id
-        ),
-        thresholds AS (
-          SELECT
-            i.location_id, i.sku_id,
-            CASE WHEN i.safety_stock > 0 THEN i.safety_stock
-                 ELSE GREATEST(5, ROUND(COALESCE(v.avg_daily_sales,1) * 7))
-            END AS effective_safety,
-            CASE WHEN i.reorder_point > 0 THEN i.reorder_point
-                 ELSE GREATEST(2, ROUND(COALESCE(v.avg_daily_sales,1) * 3))
-            END AS effective_reorder
-          FROM inventory_snapshot i
-          LEFT JOIN velocity v ON v.location_id = i.location_id AND v.sku_id = i.sku_id
-        ),
-        alerts_base AS (
-          SELECT
-            l.is_active AS loc_active, s.is_active AS sku_active,
-            l.name AS location_name, COALESCE(l.group_name, l.type::text) AS location_type, l.city, l.state,
-            s.sku_code, s.product_name, s.color_name, s.size,
-            i.qty_on_hand,
-            t.effective_safety  AS safety_stock,
-            t.effective_reorder AS reorder_point,
-            ROUND(((t.effective_safety - i.qty_on_hand)::numeric / NULLIF(t.effective_safety,0)) * 100, 1) AS shortfall_pct,
-            CASE
-              WHEN i.qty_on_hand = 0                    THEN 'OUT_OF_STOCK'
-              WHEN i.qty_on_hand <= t.effective_reorder THEN 'REORDER_NOW'
-              ELSE                                           'LOW_STOCK'
-            END AS alert_level
-          FROM inventory_snapshot i
-          JOIN thresholds t ON t.location_id = i.location_id AND t.sku_id = i.sku_id
-          JOIN locations l ON l.id = i.location_id
-          JOIN skus s ON s.id = i.sku_id
-          WHERE (
-            i.qty_on_hand = 0
-            OR i.qty_on_hand <= t.effective_safety
-          )
-          ${activeFilter}
-        )`;
+      const baseSQL = alertsBaseSQL(activeFilter);
 
       // (1) TRUE network counts — no LIMIT, scanned once, cached.
       const summaryResult = await query(`
@@ -496,9 +523,6 @@ async function getAlerts(req, res, next) {
       // Configurable via ?detail_limit (max 50K). Default 5K matches the
       // existing UI's drill-list, which only renders the top few critical
       // SKUs anyway.
-      const requestedLimit = parseInt(req.query.detail_limit, 10);
-      const detailLimit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 5000, 0), 50000);
-
       const detailResult = detailLimit === 0
         ? { rows: [] }
         : await query(`
@@ -542,52 +566,20 @@ async function getAlerts(req, res, next) {
 // the 570K-row full alerts response. The full /alerts endpoint is unchanged.
 async function getAlertsSummary(req, res, next) {
   try {
-    // Same mode lens as executive-summary so the Stock Alerts tile narrows
-    // when the user flips the Active/Inactive/All pill on the Overview page.
+    // Same mode lens and the SAME alert definition as /alerts, so the two can
+    // never disagree (they were two hand-copied queries, both with the
+    // never-matching qty_on_hand = 0 stock-out check).
     const mode = ['active','inactive','all'].includes(req.query.mode) ? req.query.mode : 'active';
-    const modeClause = mode === 'active'   ? 'AND l.shop_closed = false'
-                     : mode === 'inactive' ? 'AND l.shop_closed = true'
-                     : '';
-    const summary = await getOrSet(`inventory:alerts:summary:v2:${mode}`, async () => {
-      const result = await query(`
-        WITH velocity AS (
-          SELECT
-            m.location_id, m.sku_id,
-            GREATEST(1,
-              ROUND(
-                SUM(ABS(m.qty_change))::numeric /
-                GREATEST(1, EXTRACT(EPOCH FROM (MAX(m.moved_at) - MIN(m.moved_at))) / 86400),
-                2
-              )
-            ) AS avg_daily_sales
-          FROM inventory_movements m
-          WHERE m.movement_type = 'SALE'
-            AND m.moved_at >= (SELECT MAX(moved_at) FROM inventory_movements) - INTERVAL '180 days'
-          GROUP BY m.location_id, m.sku_id
-        ),
-        thresholds AS (
-          SELECT
-            i.location_id, i.sku_id, i.qty_on_hand,
-            CASE WHEN i.safety_stock > 0 THEN i.safety_stock
-                 ELSE GREATEST(5, ROUND(COALESCE(v.avg_daily_sales,1) * 7))
-            END AS effective_safety,
-            CASE WHEN i.reorder_point > 0 THEN i.reorder_point
-                 ELSE GREATEST(2, ROUND(COALESCE(v.avg_daily_sales,1) * 3))
-            END AS effective_reorder
-          FROM inventory_snapshot i
-          LEFT JOIN velocity v ON v.location_id = i.location_id AND v.sku_id = i.sku_id
-          JOIN locations l ON l.id = i.location_id AND l.is_active = true
-          JOIN skus s ON s.id = i.sku_id AND s.is_active = true
-          WHERE 1=1 ${modeClause}
-        )
+    const summary = await getOrSet(`inventory:alerts:summary:v3:${mode}`, async () => {
+      const r = (await query(`
+        ${alertsBaseSQL(alertsModeFilter(mode))}
         SELECT
-          COUNT(*) FILTER (WHERE qty_on_hand = 0)::int                                           AS out_of_stock,
-          COUNT(*) FILTER (WHERE qty_on_hand > 0 AND qty_on_hand <= effective_reorder)::int      AS reorder_now,
-          COUNT(*) FILTER (WHERE qty_on_hand > effective_reorder AND qty_on_hand <= effective_safety)::int AS low_stock,
-          COUNT(*) FILTER (WHERE qty_on_hand = 0 OR qty_on_hand <= effective_safety)::int        AS total
-        FROM thresholds
-      `);
-      const r = result.rows[0] || { out_of_stock: 0, reorder_now: 0, low_stock: 0, total: 0 };
+          COUNT(*) FILTER (WHERE alert_level = 'OUT_OF_STOCK')::int AS out_of_stock,
+          COUNT(*) FILTER (WHERE alert_level = 'REORDER_NOW')::int  AS reorder_now,
+          COUNT(*) FILTER (WHERE alert_level = 'LOW_STOCK')::int    AS low_stock,
+          COUNT(*)::int                                              AS total
+        FROM alerts_base
+      `)).rows[0] || {};
       return {
         out_of_stock: r.out_of_stock || 0,
         reorder_now:  r.reorder_now  || 0,
@@ -625,7 +617,7 @@ async function getMovements(req, res, next) {
     const [result, countResult, typeStatsResult] = await Promise.all([
       // Paginated rows
       query(`
-        SELECT m.id, m.movement_type, m.qty_change, m.qty_before, m.qty_after,
+        SELECT m.id, m.location_id, m.sku_id, m.movement_type, m.qty_change, m.qty_before, m.qty_after,
                m.notes, m.moved_at, m.synced_from,
                l.name AS location_name, l.type AS location_type,
                s.sku_code, s.product_name, s.color_name, s.size
@@ -854,7 +846,9 @@ async function adjustStock(req, res, next) {
       );
     });
 
-    await invalidatePattern('inventory:*');
+    // Everything that shows stock, not just inventory:* — the network pulse
+    // (24 h) and the locations table (1 h) kept the pre-adjustment numbers.
+    await Promise.all(['inventory:*', 'network:pulse:*', 'locations:list:*', 'stockavail:*'].map((p) => invalidatePattern(p)));
     res.json({ success: true, message: 'Stock adjusted successfully.' });
   } catch (err) {
     next(err);

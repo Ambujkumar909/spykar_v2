@@ -112,7 +112,7 @@ export const analyticsService = {
 export const stockAvailabilityService = {
   getRange: () => api.get('/stock-availability/range'),
   // Recent-history sparkline — loaded lazily, independent of the critical path.
-  getHistory: () => api.get('/stock-availability/history'),
+  getHistory: (params = {}) => api.get('/stock-availability/history', { params }),
   getSummary: (params = {}) => api.get('/stock-availability/summary', { params }),
   getTrend:   (params = {}) => api.get('/stock-availability/trend', { params }),
   getPivot:   (params = {}) => api.get('/stock-availability/pivot', { params }),

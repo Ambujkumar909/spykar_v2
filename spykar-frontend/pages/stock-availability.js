@@ -21,7 +21,9 @@ import {
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// LOCAL date (toISOString() is UTC: before 05:30 IST it was yesterday, and the
+// calendar could not select today on a fresh install / failed /range).
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const fmtNum = (n) => (n == null ? '0' : Number(n).toLocaleString('en-IN'));
 function fmtCr(n) {
   if (n == null) return '—'; n = Number(n); const neg = n < 0; const a = Math.abs(n); let s;
@@ -150,14 +152,15 @@ export default function StockAvailabilityPage() {
   }, []);
 
   // Recent-history sparkline — fetched separately/lazily so its (bounded) sum
-  // never blocks first paint. Loads once; independent of the selected date.
+  // never blocks first paint. Independent of the selected date, but scoped by
+  // the same status + Lens filters as the Units tile it sits next to.
   useEffect(() => {
     let a = true;
-    stockAvailabilityService.getHistory()
+    stockAvailabilityService.getHistory(scope)
       .then((r) => { if (a) setHistory(r.data?.data?.dates || []); })
       .catch(() => { if (a) setHistory([]); });
     return () => { a = false; };
-  }, []);
+  }, [scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let a = true; setSummaryLoading(true);
