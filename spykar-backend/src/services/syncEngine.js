@@ -896,7 +896,11 @@ async function syncReturnsChunked(erpPool, lookupMaps, fromDate, toDate, stats) 
 
   const tasks = chunks.map(chunk => async () => {
     const fromStr = toErpDate(chunk.from);
-    const toStr   = toErpDate(chunk.to);
+    // SalesReturnAI compares its datetime DATE against the END date at 00:00,
+    // so TIMED returns on the chunk's last day were never returned (month-end
+    // days had zero timed returns). Ask for one day more; the extra day's
+    // rows are the next chunk's too and merge onto the same unique key.
+    const toStr   = toErpDate(new Date(chunk.to.getFullYear(), chunk.to.getMonth(), chunk.to.getDate() + 1));
 
     const inserted = await withRetry(
       () => streamMovements({
@@ -1086,17 +1090,26 @@ async function streamMovements({ erpPool, executeSp, movementType, direction, re
     // synced_from = 'SQL_SERVER_SYNC' matches the legacy literal so the
     // existing FULL-sync cleanup query (DELETE … WHERE synced_from =
     // 'SQL_SERVER_SYNC') keeps working unchanged.
+    // The ERP bills the same barcode on SEPARATE LINES of one invoice (2 units
+    // as 2 × qty 1). Those lines share our unique key, and DO NOTHING kept only
+    // the first — the rest of the quantity and value were lost. Sum the lines
+    // per key, and let a re-pull correct a stored row (heals the collapsed
+    // rows and picks up ERP-side corrections). The ERP stays the truth.
     const merge = await pgClient.query(`
       INSERT INTO inventory_movements
         (location_id, sku_id, movement_type, qty_change, qty_before, qty_after,
          reference_no, sale_value, moved_at, synced_from)
       SELECT
-        location_id, sku_id, movement_type::movement_type, qty_change,
+        location_id, sku_id, movement_type::movement_type, SUM(qty_change)::int,
         0, 0,
-        reference_no, sale_value, moved_at, 'SQL_SERVER_SYNC'
+        reference_no, SUM(sale_value), moved_at, 'SQL_SERVER_SYNC'
       FROM tmp_movements
+      GROUP BY location_id, sku_id, movement_type, reference_no, moved_at
       ON CONFLICT (location_id, sku_id, movement_type, reference_no, moved_at)
-        WHERE reference_no IS NOT NULL DO NOTHING
+        WHERE reference_no IS NOT NULL
+      DO UPDATE SET qty_change = EXCLUDED.qty_change, sale_value = EXCLUDED.sale_value
+        WHERE (inventory_movements.qty_change, inventory_movements.sale_value)
+              IS DISTINCT FROM (EXCLUDED.qty_change, EXCLUDED.sale_value)
     `);
 
     return merge.rowCount || 0;
