@@ -23,6 +23,7 @@ import { Package, MapPin, Building2, IndianRupee, Sparkles, Layers,
 import { locationService } from '../../lib/services';
 import { getCached, setCached, isFresh } from '../../lib/dashboardCache';
 import PremiumKpi from '../ui/PremiumKpi';
+import { formatFull } from '../../lib/v2/format';
 
 // Stable cache key per filter combo so toggling Active ↔ Inactive ↔ All
 // (or any other dim) hits its own cached slot. JSON.stringify with sorted
@@ -48,6 +49,8 @@ const fmtL = (n) => {
   return Math.round(n).toLocaleString('en-IN');
 };
 const fmtRs = (n) => '₹' + fmtL(n);
+// KPI cards show the figure in full — never K / L / Cr.
+const fullRs = (n) => formatFull(n, { rupee: true });
 const fmtNum = (n) => Number(n || 0).toLocaleString('en-IN');
 
 // Active uses the brand mint; "Closed today" uses a neutral slate so it
@@ -208,7 +211,7 @@ export default function NetworkPulse({ filters, onParetoPick }) {
           accent="sky"
           value={avgPerStore}
           loading={loading}
-          context={`avg ${fmtRs(avgValuePerStore)} per store`}
+          context={`avg ${fullRs(avgValuePerStore)} per store`}
         />
         <PremiumKpi
           label="Top Channel"
@@ -218,7 +221,7 @@ export default function NetworkPulse({ filters, onParetoPick }) {
           format="string"
           loading={loading}
           context={pulse?.channels?.[0]
-            ? `${fmtNum(pulse.channels[0].stores)} stores · ${fmtRs(pulse.channels[0].value)} · ${pulse.channels[0].billing_model}`
+            ? `${fmtNum(pulse.channels[0].stores)} stores · ${fullRs(pulse.channels[0].value)} · ${pulse.channels[0].billing_model}`
             : ''}
         />
       </div>

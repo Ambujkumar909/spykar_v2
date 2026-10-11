@@ -157,13 +157,97 @@ function windowScope(q, from, to, src) {
   const where = [`r.trdt BETWEEN $${fi}::date AND $${ti}::date`, ...conds].join(' AND ');
   return { p, where };
 }
-// COUNT(DISTINCT sku_id) over a window — the one KPI that needs sku grain.
-// Index-only via idx_psd_trdt_sku when unscoped.
+// Distinct SKUs moved in a window — the one KPI that needs sku grain. Counted
+// as one EXISTS probe per SKU on idx_psd_sku_trdt / idx_psd_wh_sku_trdt
+// (migration 032), so the cost follows the number of SKUs, not the window
+// width (the old COUNT(DISTINCT) scan hit the 40 s statement timeout on
+// all-time ranges). SKU-attribute / category filters apply to the outer skus;
+// type and warehouse (resolved to ids so the probe can seek) to the probe.
 async function distinctSkus(q, from, to) {
-  const src = pickSource(q, null, { forceSku: true });
-  const ws = windowScope(q, from, to, src);
-  const r = await query(`SELECT COUNT(DISTINCT r.sku_id)::int AS n ${buildFrom(q, src)} WHERE ${ws.where}`, ws.p);
+  const { warehouse, type, ...skuQ } = q;
+  const p = [];
+  const outer = buildScope(skuQ, p, { categoryCol: 's.category_norm' }).conds;
+  const inner = buildScope(type ? { type } : {}, p, { categoryCol: 's.category_norm' }).conds;
+  if (warehouse) {
+    const codes = String(warehouse).split(',').map((x) => x.trim()).filter(Boolean);
+    const ids = (await query('SELECT id FROM primary_warehouses WHERE whlo = ANY($1::text[])', [codes])).rows.map((r) => r.id);
+    if (!ids.length) return 0;
+    p.push(ids);
+    inner.push(`r.warehouse_id = ANY($${p.length}::uuid[])`);
+  }
+  const fi = p.push(from); const ti = p.push(to);
+  const r = await query(`
+    SELECT COUNT(*)::int AS n FROM skus s
+     WHERE s.is_active ${outer.map((c) => `AND ${c}`).join(' ')}
+       AND EXISTS (SELECT 1 FROM primary_sales_daily r
+                    WHERE r.sku_id = s.id AND r.trdt BETWEEN $${fi}::date AND $${ti}::date
+                    ${inner.map((c) => `AND ${c}`).join(' ')})`, p);
   return Number(r.rows[0].n);
+}
+
+// Stock × COGS for the selected window (primary_stock, migration 030).
+// primary_stock holds every position NOW (net: negative positions included, so
+// the roll-back below is an exact identity). Stock at any date D is rolled back
+// from now with the rollup's daily movements:
+//   closing(to)       = now − Σ movements with trdt > to
+//   opening(from − 1) = closing − Σ movements with from ≤ trdt ≤ to
+// so opening + change = closing, to the rupee. Movements are valued at the
+// rollup's cost (qty × M3 PUPR as loaded); stock now at the current PUPR.
+// The txn-type filter does not apply (stock is all types); warehouse /
+// category / SKU Lens filters do. COCO stores = warehouse type Z7.
+async function stockForWindow(q, from, to) {
+  const { type, ...scopeQ } = q;
+  const p1 = [];
+  const { conds } = buildScope(scopeQ, p1, { categoryCol: 's.category_norm' });
+  const nowQ = query(`
+    SELECT COALESCE(SUM(r.qty), 0)::bigint                                                AS units,
+           COALESCE(SUM(r.qty * COALESCE(r.pupr, 0)), 0)::numeric                         AS value,
+           COALESCE(SUM(r.qty) FILTER (WHERE w.whty = 'Z7'), 0)::bigint                   AS coco_units,
+           COALESCE(SUM(r.qty * COALESCE(r.pupr, 0)) FILTER (WHERE w.whty = 'Z7'), 0)::numeric AS coco_value,
+           COALESCE(SUM(r.qty) FILTER (WHERE r.qty < 0), 0)::bigint                       AS negative_units,
+           COUNT(DISTINCT r.warehouse_id) FILTER (WHERE r.qty > 0)::int                   AS warehouses
+      FROM primary_stock r
+      JOIN primary_warehouses w ON w.id = r.warehouse_id
+      JOIN skus s ON s.id = r.sku_id AND s.is_active   -- same active-master rule as the rollups
+     ${conds.length ? `WHERE ${conds.join(' AND ')}` : ''}`, p1);
+
+  const src = pickSource(scopeQ);
+  const p2 = [];
+  const sc = buildScope(scopeQ, p2, src);
+  const fi = p2.push(from); const ti = p2.push(to);
+  const flowQ = query(`
+    SELECT COALESCE(SUM(r.qty)  FILTER (WHERE r.trdt > $${ti}::date), 0)::numeric                    AS after_units,
+           COALESCE(SUM(r.cost) FILTER (WHERE r.trdt > $${ti}::date), 0)::numeric                    AS after_value,
+           COALESCE(SUM(r.qty)  FILTER (WHERE r.trdt <= $${ti}::date), 0)::numeric                   AS win_units,
+           COALESCE(SUM(r.cost) FILTER (WHERE r.trdt <= $${ti}::date), 0)::numeric                   AS win_value,
+           COALESCE(SUM(r.qty)  FILTER (WHERE r.trdt > $${ti}::date AND w.whty = 'Z7'), 0)::numeric  AS coco_after_units,
+           COALESCE(SUM(r.cost) FILTER (WHERE r.trdt > $${ti}::date AND w.whty = 'Z7'), 0)::numeric  AS coco_after_value
+      ${buildFrom(scopeQ, src, { wh: true })}
+     WHERE ${[`r.trdt >= $${fi}::date`, ...sc.conds].join(' AND ')}`, p2);
+
+  const [n, f, d] = await Promise.all([nowQ, flowQ,
+    query('SELECT MIN(trdt)::text AS lo, MAX(trdt)::text AS hi FROM primary_sales_daily_wh')]);
+  const x = n.rows[0]; const y = f.rows[0]; const num = Number;
+  const closingUnits = num(x.units) - num(y.after_units);
+  const closingValue = num(x.value) - num(y.after_value);
+  const openingUnits = closingUnits - num(y.win_units);
+  const openingValue = closingValue - num(y.win_value);
+  const hi = d.rows[0].hi;
+  const dayBefore = (iso) => { const t = new Date(iso + 'T00:00:00'); t.setDate(t.getDate() - 1); return fmt(t); };
+  return {
+    as_of: hi && to > hi ? hi : to,               // no movements exist after the latest loaded day
+    // Same cap for the opening label: a window starting after the latest loaded
+    // day has no movements yet, so its opening is the stock as of that day.
+    opening_as_of: hi && dayBefore(from) > hi ? hi : dayBefore(from),
+    closing_units: Math.round(closingUnits), closing_value: Math.round(closingValue),
+    opening_units: Math.round(openingUnits), opening_value: Math.round(openingValue),
+    change_units: Math.round(closingUnits - openingUnits), change_value: Math.round(closingValue - openingValue),
+    coco_units: Math.round(num(x.coco_units) - num(y.coco_after_units)),
+    coco_value: Math.round(num(x.coco_value) - num(y.coco_after_value)),
+    // Positions as of the latest sync (not rolled back — per-position detail).
+    negative_units_now: num(x.negative_units), warehouses_now: x.warehouses,
+    data_from: d.rows[0].lo,
+  };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -373,7 +457,7 @@ async function getOverview(req, res, next) {
     const { from, to } = periodToRange(req.query.period, req.query.from, req.query.to);
     const cacheKey = `primsales:overview:${from}:${to}:${JSON.stringify(req.query)}`;
     const data = await getOrSet(cacheKey, async () => {
-      const base = { from, to, empty: true, kpis: null, daily: [], flow: [], monthly: [], top_wh: [], top_cat: [], ttyp: [] };
+      const base = { from, to, empty: true, kpis: null, stock: null, daily: [], flow: [], monthly: [], top_wh: [], top_cat: [], ttyp: [] };
       if (!(await hasAnyData())) return base;
 
       const src = pickSource(req.query);                       // warehouse grain unless a SKU-only filter is on
@@ -384,33 +468,40 @@ async function getOverview(req, res, next) {
       const k1 = s();
       const kpisQ = query(
         `SELECT COALESCE(SUM(r.txns),0)::bigint AS txns, COALESCE(SUM(r.qty),0)::bigint AS net_qty,
-                COALESCE(SUM(r.gross_abs),0)::bigint AS throughput, COALESCE(SUM(ABS(r.qty)),0)::bigint AS throughput_units,
+                COALESCE(SUM(r.gross_abs),0)::bigint AS throughput, COALESCE(SUM(r.qty_abs),0)::bigint AS throughput_units,
                 COALESCE(SUM(r.gross),0)::bigint AS net_value,
                 COUNT(DISTINCT r.warehouse_id)::int AS wh, COUNT(DISTINCT r.ttyp)::int AS ttyp
          ${Fbase} WHERE ${k1.where}`, k1.p);
       const d = s();
-      const dailyQ = query(`SELECT r.trdt::text AS d, COALESCE(SUM(r.gross_abs),0)::bigint AS g, COALESCE(SUM(ABS(r.qty)),0)::bigint AS u ${Fbase} WHERE ${d.where} GROUP BY r.trdt ORDER BY r.trdt`, d.p);
+      const dailyQ = query(`SELECT r.trdt::text AS d, COALESCE(SUM(r.gross_abs),0)::bigint AS g, COALESCE(SUM(r.qty_abs),0)::bigint AS u ${Fbase} WHERE ${d.where} GROUP BY r.trdt ORDER BY r.trdt`, d.p);
       const fl = s();
-      const flowQ = query(`SELECT CASE WHEN r.qty>0 THEN 'Inbound' WHEN r.qty<0 THEN 'Outbound' ELSE 'Neutral' END AS dir,
-                COALESCE(SUM(r.txns),0)::bigint AS txns, COALESCE(SUM(r.gross_abs),0)::bigint AS g, COALESCE(SUM(ABS(r.qty)),0)::bigint AS u ${Fbase} WHERE ${fl.where} GROUP BY 1 ORDER BY g DESC`, fl.p);
+      // Direction per ledger ROW (in_* / out_* rollup columns, migration 031);
+      // Neutral = zero-qty rows (status postings).
+      const flowQ = query(`SELECT d.dir, d.txns, d.g, d.u FROM (
+           SELECT COALESCE(SUM(r.in_txns),0)::bigint AS it, COALESCE(SUM(r.in_gross_abs),0)::bigint AS ig, COALESCE(SUM(r.in_qty),0)::bigint AS iu,
+                  COALESCE(SUM(r.out_txns),0)::bigint AS ot, COALESCE(SUM(r.out_gross_abs),0)::bigint AS og, COALESCE(SUM(r.out_qty),0)::bigint AS ou,
+                  COALESCE(SUM(r.txns - r.in_txns - r.out_txns),0)::bigint AS nt
+             ${Fbase} WHERE ${fl.where}) x
+         CROSS JOIN LATERAL (VALUES ('Inbound', x.it, x.ig, x.iu), ('Outbound', x.ot, x.og, x.ou), ('Neutral', x.nt, 0::bigint, 0::bigint)) AS d(dir, txns, g, u)
+         WHERE d.txns > 0 ORDER BY d.g DESC`, fl.p);
       const mo = s();
       const monthlyQ = query(`SELECT to_char(date_trunc('month',r.trdt),'Mon') AS mon, date_trunc('month',r.trdt) AS mk, COALESCE(SUM(r.gross),0)::bigint AS net, COALESCE(SUM(r.qty),0)::bigint AS net_u
          ${Fbase} WHERE ${mo.where} GROUP BY 1,2 ORDER BY 2`, mo.p);
       const wh = s();
-      const whQ = query(`SELECT w.whlo AS code, w.whnm AS name, COALESCE(SUM(r.gross_abs),0)::bigint AS g, COALESCE(SUM(ABS(r.qty)),0)::bigint AS u
-         ${Fwh} WHERE ${wh.where} GROUP BY w.whlo, w.whnm ORDER BY g DESC NULLS LAST LIMIT 10`, wh.p);
+      const whQ = query(`SELECT w.whlo AS code, w.whnm AS name, COALESCE(SUM(r.gross_abs),0)::bigint AS g, COALESCE(SUM(r.qty_abs),0)::bigint AS u
+         ${Fwh} WHERE ${wh.where} GROUP BY w.whlo, w.whnm ORDER BY g DESC NULLS LAST, w.whlo LIMIT 10`, wh.p);
       const ca = s();
       const Fcat = buildFrom(req.query, withDim(src, GROUP_DIMS.colour)); // on sku grain the category column lives on skus → force the join
-      const catQ = query(`SELECT ${catExpr} AS name, COALESCE(SUM(r.gross_abs),0)::bigint AS g, COALESCE(SUM(ABS(r.qty)),0)::bigint AS u
-         ${Fcat} WHERE ${ca.where} GROUP BY 1 ORDER BY g DESC NULLS LAST LIMIT 8`, ca.p);
+      const catQ = query(`SELECT ${catExpr} AS name, COALESCE(SUM(r.gross_abs),0)::bigint AS g, COALESCE(SUM(r.qty_abs),0)::bigint AS u
+         ${Fcat} WHERE ${ca.where} GROUP BY 1 ORDER BY g DESC NULLS LAST, 1 LIMIT 8`, ca.p);
       const tt = s();
       const ttypQ = query(`SELECT r.ttyp AS code, COALESCE(SUM(r.txns),0)::bigint AS txns, COALESCE(SUM(r.qty),0)::bigint AS qty, COALESCE(SUM(r.gross),0)::bigint AS net
-         ${Fbase} WHERE ${tt.where} AND r.ttyp IS NOT NULL GROUP BY r.ttyp ORDER BY SUM(r.gross_abs) DESC NULLS LAST LIMIT 8`, tt.p);
+         ${Fbase} WHERE ${tt.where} AND r.ttyp IS NOT NULL GROUP BY r.ttyp ORDER BY SUM(r.gross_abs) DESC NULLS LAST, r.ttyp LIMIT 8`, tt.p);
       const { prevFrom, prevTo } = previousRange(from, to);
       const pv = windowScope(req.query, prevFrom, prevTo, src);
       const prevQ = query(`SELECT COALESCE(SUM(r.gross_abs),0)::bigint AS throughput ${Fbase} WHERE ${pv.where}`, pv.p);
 
-      const [k, daily, flow, monthly, whr, cat, ttr, prev] = await Promise.all([kpisQ, dailyQ, flowQ, monthlyQ, whQ, catQ, ttypQ, prevQ]);
+      const [k, daily, flow, monthly, whr, cat, ttr, prev, stock] = await Promise.all([kpisQ, dailyQ, flowQ, monthlyQ, whQ, catQ, ttypQ, prevQ, stockForWindow(req.query, from, to)]);
       const kr = k.rows[0]; const throughput = Number(kr.throughput);
       return {
         from, to, empty: Number(kr.txns) === 0,
@@ -421,6 +512,7 @@ async function getOverview(req, res, next) {
           // out of /overview lets the page paint in ~150ms; the tile fills lazily.
           warehouse_count: Number(kr.wh), sku_count: null, ttyp_count: Number(kr.ttyp),
           throughput_delta_pct: pct(throughput, Number(prev.rows[0].throughput)) },
+        stock,
         daily: daily.rows.map((x) => ({ d: x.d, g: Number(x.g), u: Number(x.u) })),
         flow: flow.rows.map((x) => ({ dir: x.dir, txns: Number(x.txns), g: Number(x.g), u: Number(x.u) })),
         monthly: monthly.rows.map((x) => ({ mon: x.mon, net: Number(x.net), net_u: Number(x.net_u) })),

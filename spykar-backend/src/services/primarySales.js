@@ -136,7 +136,12 @@ const LEDGER_INDEXES = [
 // is TRDT-windowed. The sku-grain composite (trdt, sku_id) additionally serves
 // COUNT(DISTINCT sku_id) as an index-only scan.
 const ROLLUP_TABLES = [
-  { table: 'primary_sales_daily',    indexes: [{ name: 'idx_psd_trdt_sku', ddl: (tbl, nm) => `CREATE INDEX ${nm} ON ${tbl} (trdt, sku_id)` }] },
+  { table: 'primary_sales_daily',    indexes: [
+    { name: 'idx_psd_trdt_sku',    ddl: (tbl, nm) => `CREATE INDEX ${nm} ON ${tbl} (trdt, sku_id)` },
+    // Per-SKU EXISTS probes for the distinct-SKU count (migration 032).
+    { name: 'idx_psd_sku_trdt',    ddl: (tbl, nm) => `CREATE INDEX ${nm} ON ${tbl} (sku_id, trdt) INCLUDE (warehouse_id, ttyp)` },
+    { name: 'idx_psd_wh_sku_trdt', ddl: (tbl, nm) => `CREATE INDEX ${nm} ON ${tbl} (warehouse_id, sku_id, trdt) INCLUDE (ttyp)` },
+  ] },
   { table: 'primary_sales_daily_wh', indexes: [{ name: 'idx_psdw_trdt',    ddl: (tbl, nm) => `CREATE INDEX ${nm} ON ${tbl} (trdt)` }] },
 ];
 
@@ -387,12 +392,18 @@ async function advanceHighWater(maxLmts, addRows) {
 // Warehouse grain (trdt, warehouse_id, ttyp, category_norm) is DERIVED from the
 // sku grain — the instant layer every non-SKU dashboard query reads (226×
 // smaller on the FY). Both are always written in the same transaction.
-const ROLLUP_COLS = 'trdt, warehouse_id, sku_id, ttyp, qty, gross, gross_abs, cost, txns';
-const WH_ROLLUP_COLS = 'trdt, warehouse_id, ttyp, category_norm, qty, gross, gross_abs, cost, txns, sku_rows';
+// Per-row direction columns (migration 031): qty_abs = Σ|trqt|; in_* / out_*
+// = rows with trqt > 0 / < 0 (out_qty positive). Net qty alone cannot give
+// units moved or the inbound/outbound split — receipts and issues cancel.
+const DIR_COLS = 'qty_abs, in_txns, in_qty, in_gross_abs, out_txns, out_qty, out_gross_abs';
+const ROLLUP_COLS = `trdt, warehouse_id, sku_id, ttyp, qty, gross, gross_abs, cost, txns, ${DIR_COLS}`;
+const WH_ROLLUP_COLS = `trdt, warehouse_id, ttyp, category_norm, qty, gross, gross_abs, cost, txns, sku_rows, ${DIR_COLS}`;
 const whRollupSelect = (src, whereExtra = '') => `
   SELECT r.trdt, r.warehouse_id, r.ttyp, s.category_norm,
          SUM(r.qty)::numeric(20,3), SUM(r.gross)::numeric(22,2), SUM(r.gross_abs)::numeric(22,2),
-         SUM(r.cost)::numeric(22,2), SUM(r.txns)::bigint, COUNT(*)::int
+         SUM(r.cost)::numeric(22,2), SUM(r.txns)::bigint, COUNT(*)::int,
+         SUM(r.qty_abs)::numeric(20,3), SUM(r.in_txns)::bigint, SUM(r.in_qty)::numeric(20,3), SUM(r.in_gross_abs)::numeric(22,2),
+         SUM(r.out_txns)::bigint, SUM(r.out_qty)::numeric(20,3), SUM(r.out_gross_abs)::numeric(22,2)
     FROM ${src} r
     JOIN skus s ON s.id = r.sku_id
    WHERE TRUE ${whereExtra}
@@ -403,7 +414,14 @@ const rollupSelect = (whereExtra = '') => `
          SUM(m.trqt * COALESCE(NULLIF(m.trpr,0), s.mrp, 0))::numeric(22,2)       AS gross,
          SUM(ABS(m.trqt * COALESCE(NULLIF(m.trpr,0), s.mrp, 0)))::numeric(22,2)  AS gross_abs,
          SUM(m.trqt * COALESCE(NULLIF(m.pupr,0), s.cost_price, 0))::numeric(22,2) AS cost,
-         COUNT(*)::int                                                            AS txns
+         COUNT(*)::int                                                            AS txns,
+         SUM(ABS(m.trqt))::numeric(20,3)                                          AS qty_abs,
+         COUNT(*) FILTER (WHERE m.trqt > 0)::int                                  AS in_txns,
+         COALESCE(SUM(m.trqt) FILTER (WHERE m.trqt > 0), 0)::numeric(20,3)        AS in_qty,
+         COALESCE(SUM(ABS(m.trqt * COALESCE(NULLIF(m.trpr,0), s.mrp, 0))) FILTER (WHERE m.trqt > 0), 0)::numeric(22,2) AS in_gross_abs,
+         COUNT(*) FILTER (WHERE m.trqt < 0)::int                                  AS out_txns,
+         COALESCE(-SUM(m.trqt) FILTER (WHERE m.trqt < 0), 0)::numeric(20,3)       AS out_qty,
+         COALESCE(SUM(ABS(m.trqt * COALESCE(NULLIF(m.trpr,0), s.mrp, 0))) FILTER (WHERE m.trqt < 0), 0)::numeric(22,2) AS out_gross_abs
     FROM primary_sales_movements m
     JOIN skus s ON s.id = m.sku_id AND s.is_active = true   -- active SKU master only
    WHERE m.trdt IS NOT NULL ${whereExtra}
@@ -525,9 +543,84 @@ async function rebuildRollupForDates(datesIn) {
   }
 }
 
+// ─── Stock on hand (primary_stock, migration 030) ────────────────────────────
+// NSTT is the on-hand balance after each MITTRA row, so the latest row per
+// (cono, whlo, itno) is that position's stock now; pupr (MITMAS.PUPR) is its
+// COGS. Only non-zero positions are kept. The full build scans the whole
+// ledger (minutes) into a TEMP table off-lock, then swaps it in with one short
+// TRUNCATE + INSERT; the per-sync refresh re-reads only the dirty keys, each an
+// index seek on uq_primary_movement.
+const stockSelect = (joinExtra = '') => `
+  SELECT DISTINCT ON (m.cono, m.whlo, m.itno)
+         m.cono, m.whlo, m.itno, m.warehouse_id, m.sku_id, m.nstt, m.pupr, m.trdt
+    FROM primary_sales_movements m ${joinExtra}
+   ORDER BY m.cono, m.whlo, m.itno, m.rgdt DESC, m.rgtm DESC, m.tmsx DESC`;
+const STOCK_COLS = 'cono, whlo, itno, warehouse_id, sku_id, qty, pupr, last_trdt';
+
+async function rebuildStock() {
+  const pg = await pgPool.connect();
+  guardClientErrors(pg, 'stock');
+  const t0 = Date.now();
+  try {
+    await pg.query(`SET work_mem = '512MB'`);
+    await pg.query('DROP TABLE IF EXISTS tmp_primary_stock');
+    await pg.query(`CREATE TEMP TABLE tmp_primary_stock AS
+      SELECT * FROM (${stockSelect()}) x WHERE COALESCE(x.nstt, 0) <> 0`);
+    await pg.query('BEGIN');
+    try {
+      // Dirty keys are covered by this snapshot; lock so no merge marks one mid-swap.
+      await pg.query('LOCK TABLE primary_stock_dirty IN SHARE ROW EXCLUSIVE MODE');
+      await pg.query('TRUNCATE primary_stock');
+      const ins = await pg.query(`INSERT INTO primary_stock (${STOCK_COLS}) SELECT * FROM tmp_primary_stock`);
+      await pg.query('DELETE FROM primary_stock_dirty');
+      await pg.query('COMMIT');
+      logger.info(`[PRIMARY] ✅ Stock rebuilt: ${fmtN(ins.rowCount)} warehouse × item positions in ${secs(t0)}s`);
+      return ins.rowCount || 0;
+    } catch (err) {
+      try { await pg.query('ROLLBACK'); } catch (_) { /* ignore */ }
+      throw err;
+    }
+  } finally {
+    try { await pg.query('DROP TABLE IF EXISTS tmp_primary_stock'); } catch (_) { /* ignore */ }
+    await resetSession(pg);
+    pg.release();
+  }
+}
+
+// Refresh the positions merges have marked dirty. An empty table (first run
+// after migration 030) is built in full instead.
+async function refreshStock() {
+  const empty = (await query('SELECT NOT EXISTS (SELECT 1 FROM primary_stock) AS e')).rows[0].e === true;
+  if (empty) return rebuildStock();
+  const pg = await pgPool.connect();
+  guardClientErrors(pg, 'stock-inc');
+  const t0 = Date.now();
+  try {
+    await pg.query('BEGIN');
+    await pg.query('LOCK TABLE primary_stock_dirty IN SHARE ROW EXCLUSIVE MODE');
+    const del = await pg.query(`DELETE FROM primary_stock p USING primary_stock_dirty d
+      WHERE (p.cono, p.whlo, p.itno) = (d.cono, d.whlo, d.itno)`);
+    const ins = await pg.query(`INSERT INTO primary_stock (${STOCK_COLS})
+      SELECT * FROM (${stockSelect('JOIN primary_stock_dirty d ON (d.cono, d.whlo, d.itno) = (m.cono, m.whlo, m.itno)')}) x
+       WHERE COALESCE(x.nstt, 0) <> 0`);
+    const dirty = await pg.query('DELETE FROM primary_stock_dirty');
+    await pg.query('COMMIT');
+    if (dirty.rowCount) logger.info(`[PRIMARY] ✅ Stock refreshed for ${fmtN(dirty.rowCount)} position(s) (${fmtN(del.rowCount)} replaced, ${fmtN(ins.rowCount)} on hand) in ${secs(t0)}s`);
+    return ins.rowCount || 0;
+  } catch (err) {
+    try { await pg.query('ROLLBACK'); } catch (_) { /* ignore */ }
+    logger.error(`[PRIMARY] Stock refresh failed: ${err.message}`);
+    throw err;
+  } finally {
+    pg.release();
+  }
+}
+
 // Drain primary_rollup_dirty: refresh every date any merge has marked stale —
-// this batch's AND any left over from an earlier failed refresh.
+// this batch's AND any left over from an earlier failed refresh. Stock
+// positions are drained first (their dirty keys are marked by the same merges).
 async function refreshRollupFromDirty() {
+  await refreshStock();
   const r = await query('SELECT trdt::text AS d FROM primary_rollup_dirty ORDER BY trdt');
   if (!r.rows.length) return 0;
   return rebuildRollupForDates(r.rows.map((x) => x.d));
@@ -592,6 +685,10 @@ async function mergeStaged(pg) {
     const dates = [...new Set([...dRes.rows, ...moved.rows].map((r) => r.d))].sort();
     if (merged > 0 && dates.length) {
       await pg.query(`INSERT INTO primary_rollup_dirty (trdt) SELECT unnest($1::date[]) ON CONFLICT (trdt) DO NOTHING`, [dates]);
+    }
+    // Stock positions whose balance may have moved (see refreshStock).
+    if (merged > 0) {
+      await pg.query(`INSERT INTO primary_stock_dirty (cono, whlo, itno) SELECT DISTINCT cono, whlo, itno FROM tmp_primary ON CONFLICT DO NOTHING`);
     }
     await pg.query('COMMIT');
     return { merged, dates: merged > 0 ? dates : [] };
@@ -704,7 +801,7 @@ async function runBackfill({ from = null, to = null, limit = null, truncate = fa
 
     if (truncate) {
       await pg.query('TRUNCATE primary_sales_movements');
-      await pg.query('TRUNCATE primary_backfill_progress, primary_rollup_dirty, primary_reconcile_state, primary_unmapped_items');
+      await pg.query('TRUNCATE primary_backfill_progress, primary_rollup_dirty, primary_reconcile_state, primary_unmapped_items, primary_stock_dirty');
       await pg.query('DELETE FROM primary_sync_state WHERE feed = $1', [FEED]);
       logger.info('[PRIMARY] Truncated ledger + feed state (fresh load). The rollup stays live until the new one swaps in.');
     }
@@ -785,6 +882,7 @@ async function runBackfill({ from = null, to = null, limit = null, truncate = fa
     await advanceHighWater(maxLmts, streamed);
     logger.info('[PRIMARY] Rebuilding rollup (off-lock, swapped in when ready)…');
     await rebuildRollup();
+    await rebuildStock();
     logger.info(`[PRIMARY] ✅ BACKFILL done: ${fmtN(streamed)} rows, ${fmtN(misses.total)} unmappable, ${secs(t0)}s, high-water=${maxLmts ? maxLmts.toISOString() : 'n/a'}`);
     return { mode, streamed, merged: streamed, miss: misses.total, maxLmts, seconds: Number(secs(t0)) };
   } finally {
@@ -1011,7 +1109,7 @@ async function runDelta({ force = false } = {}) {
 
 module.exports = {
   runWarehouses, runBackfill, runDelta, reconcile, remap,
-  rebuildRollup, rebuildRollupForDates, refreshRollupFromDirty,
+  rebuildRollup, rebuildRollupForDates, refreshRollupFromDirty, rebuildStock, refreshStock,
   buildLookupMaps, FEED,
   _internal: {   // for the offline verification harness (no M3)
     mergeStaged, rollupSelect, whRollupSelect, selectSql,

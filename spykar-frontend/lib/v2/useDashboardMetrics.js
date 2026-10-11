@@ -3,11 +3,9 @@
 //   { loading, error, asOf, kpis: {netSales, unitsSold, inventoryValuation,
 //     sellThrough, returnRate}, syncStatus }
 //
-// Fetch strategy:
-//   • Sales current period   — /analytics/sales?date_from=A&date_to=B
-//   • Sales last year period — /analytics/sales?date_from=A-1y&date_to=B-1y
-//   • Inventory snapshot     — /inventory/executive-summary
-// All three issue in parallel; deltas are computed client-side from the pair.
+// Fetch strategy: ONE request — GET /analytics/overview (sales now + last year
+// clipped like-for-like, stock totals, India map, sync status). The valuation
+// lens is applied locally, so switching it costs no network.
 //
 // Sparklines: backend doesn't yet return per-day series for hero metrics, so
 // we synthesise a 30-point random-walk anchored on the current value.  Not
@@ -15,9 +13,9 @@
 // pulse until the backend adds /analytics/sales/daily-series in Phase 4.
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { analyticsService, inventoryService, syncService } from '../services';
+import { analyticsService } from '../services';
 import { getCached, setCached, isFresh } from '../dashboardCache';
-import { pctDelta } from './format';
+import { pctDelta, formatFull } from './format';
 
 function shiftYear(iso, years) {
   const d = new Date(iso);
@@ -85,16 +83,142 @@ function pickSalesField(valuation) {
   }
 }
 
-export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation = 'gross' } = {}) {
-  // Instant-paint cache key — same mechanism /sales and /network use. Persisted
-  // to localStorage (see the 'ov:metrics:' entry in dashboardCache PERSIST_TIERS)
-  // so revisiting the dashboard — even after a full reload or browser restart —
-  // paints last-known numbers synchronously instead of flashing skeletons while
-  // a (50 ms) refetch runs. valuation is in the key because the computed KPI
-  // payload bakes in the valuation lens.
-  const cacheKey = `ov:metrics:${fromISO || ''}:${toISO || ''}:${mode}:${valuation}`;
+// Pure derivation: one /analytics/overview bundle + the valuation lens → the
+// shape every KPI card, the banner, the LY chart, the map and channel mix read.
+// The bundle carries every lens (gross / ex-GST / GST / MRP / discount), so a
+// lens switch is a re-derivation, not a network round-trip.
+function buildMetrics(b, valuation) {
+  const cur = b.current || {};
+  const c = cur.summary || {};
+  const dailyCur = cur.daily || [];
+  const comparable = !!b.comparable;
+  const ly = comparable ? b.ly : null;
+  const lyS = ly?.summary || {};
+  const dLy = (a, x) => (comparable && ly ? pctDelta(a, x) : null);
+  const stock = cur.stock_snapshot || {};
+  const totals = b.stock || {};
+  const dailyLy = ly?.daily || [];
+  const byChannel = cur.by_channel || [];
 
-  const [data, setData]       = useState(() => getCached(cacheKey) ?? null);
+  const netValue   = pickNet(c, valuation);
+  const salesField = pickSalesField(valuation);
+  const unitsSold  = Number(c.units_sold || 0);
+  const returnRate = Number(c.return_rate_pct || 0);
+  const invValue   = Number(stock.total_mrp_value || totals.total_stock_value || 0);
+  const invUnits   = Number(stock.total_units || totals.total_stock || 0);
+  // Sell-through: how much of (sold + on-hand) actually moved.  An
+  // executive-friendly proxy that doesn't require an opening-inventory
+  // baseline (which the API doesn't yet expose).
+  const sellThrough = (unitsSold + invUnits) > 0
+    ? (unitsSold / (unitsSold + invUnits)) * 100
+    : 0;
+
+  const lyNet     = pickNet(lyS, valuation);
+  const lyUnits   = Number(lyS.units_sold || 0);
+  const lyReturn  = Number(lyS.return_rate_pct || 0);
+  // No prior-year inventory or sell-through — leave deltas null so the
+  // pill renders "—" rather than a phony number.
+
+  // Sparklines now read from the real daily series.  Inventory has no
+  // time series in our schema yet, so its sparkline stays empty (the
+  // KpiHeroCard handles that gracefully).
+  const kpis = {
+    netSales: {
+      value: netValue,
+      delta: dLy(netValue, lyNet),
+      spark: realSparkline(dailyCur, salesField),
+      footnote: c.units_sold > 0
+        ? `avg ₹${Math.round(netValue / Math.max(1, c.units_sold)).toLocaleString('en-IN')} per unit`
+        : null,
+    },
+    unitsSold: {
+      value: unitsSold,
+      delta: dLy(unitsSold, lyUnits),
+      spark: realSparkline(dailyCur, 'sales_qty'),
+      footnote: c.return_units > 0
+        ? `${Number(c.return_units).toLocaleString('en-IN')} returned`
+        : null,
+    },
+    inventoryValuation: {
+      value: invValue,
+      delta: null,
+      spark: [],
+      footnote: invUnits ? `${invUnits.toLocaleString('en-IN')} units · ${totals.active_locations || stock.locations || '—'} locations` : null,
+    },
+    sellThrough: {
+      value: sellThrough,
+      delta: null,
+      spark: realSparkline(dailyCur, 'sales_qty'),
+      footnote: `${unitsSold.toLocaleString('en-IN')} sold against on-hand`,
+    },
+    returnRate: {
+      // Lower is better for return rate — caller uses inverseHealthFromDelta.
+      // The card shows this delta in percentage POINTS ("pp"), so it is
+      // the difference of the two rates — pctDelta gave a relative change
+      // (5% vs 4% showed "▲ 25.0pp" instead of 1.0pp).
+      value: returnRate,
+      delta: comparable && ly && lyS.units_sold > 0 ? returnRate - lyReturn : null,
+      spark: returnRateSparkline(dailyCur),
+      footnote: c.return_units > 0
+        ? `${Number(c.return_units).toLocaleString('en-IN')} returns · ${formatFull(c.return_value, { rupee: true })}`
+        : null,
+    },
+  };
+
+  // Aging dataset removed — the Aging widget is paused and the only other
+  // consumer (Needs Attention) is disabled, so getAgeing is no longer
+  // fetched. AgingWaterfall renders its own "Available soon" placeholder.
+
+  // Today vs LY, cumulative. Aligned by CALENDAR date (d → same day last
+  // year), not by array index: either window can skip a day with no
+  // movements, which shifted the whole LY curve.
+  const lySorted = [...dailyLy].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  let cumCur = 0, cumLy = 0, j = 0;
+  const todayVsLy = dailyCur.map((d) => {
+    cumCur += Number(d.sales_value || 0);
+    const lyDay = shiftYear(String(d.date).slice(0, 10), 1);
+    while (j < lySorted.length && String(lySorted[j].date).slice(0, 10) <= lyDay) {
+      cumLy += Number(lySorted[j].sales_value || 0); j++;
+    }
+    return { date: d.date, today: cumCur, ly: lySorted.length ? cumLy : null };
+  });
+
+  // Channel mix (no real "category" field in schema — channel is the
+  // closest meaningful split for executive view).
+  const channelMix = byChannel.map(r => ({
+    name:    r.channel,
+    value:   Number(r.sales_value || 0),
+    units:   Number(r.units || 0),
+    stores:  Number(r.stores || 0),
+  })).filter(r => r.value > 0);
+
+  // "Needs Attention" exception list removed (disabled per request). It
+  // was the only consumer of getAlertsSummary + getAgeing, so both calls
+  // are gone above. The shared /inventory/alerts endpoint (useAlerts) and
+  // /inventory/ageing remain available to other pages — untouched here.
+
+  return {
+    asOf: b.fetchedAt || new Date().toISOString(),
+    kpis,
+    todayVsLy,
+    channelMix,
+    stateHeatmap: b.state_heatmap || null,
+    syncStatus: b.sync || null,
+    raw: { current: c, ly: lyS, stock, totals },
+  };
+}
+
+export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation = 'gross' } = {}) {
+  // ONE request per (window, mode): GET /analytics/overview returns sales now,
+  // last year (clipped server-side to the last day with data — like-for-like),
+  // stock totals, the India map and sync status. It replaced 5 requests plus a
+  // sequential 6th (the LY re-fetch when data lagged the window), and its
+  // server blocks are rollup-backed. The raw bundle is cached per window+mode
+  // (localStorage via the 'ov:metrics:' persist tier → instant paint on revisit);
+  // the valuation lens is applied locally in buildMetrics.
+  const cacheKey = `ov:metrics:v2:${fromISO || ''}:${toISO || ''}:${mode}`;
+
+  const [bundle, setBundle]   = useState(() => getCached(cacheKey) ?? null);
   const [loading, setLoading] = useState(() => !getCached(cacheKey));
   const [error, setError]     = useState(null);
   const [nonce, setNonce]     = useState(0);        // bumped by reload() (the Retry button)
@@ -106,204 +230,25 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
     let alive = true;
     setError(null);
 
-    // Paint cached data immediately; only show the skeleton when we truly have
-    // nothing for this key yet.
-    // Nothing cached for THIS key: drop the previous key's payload. Keeping it
-    // showed (say) MTD numbers under the YTD label — and kept them there if the
-    // YTD request then failed.
+    // Paint cached data immediately; with nothing cached for THIS key, drop the
+    // previous key's payload (never show MTD numbers under a YTD label).
     const cached = getCached(cacheKey);
-    if (cached) { setData(cached); setLoading(false); }
-    else        { setData(null); setLoading(true); }
+    if (cached) { setBundle(cached); setLoading(false); }
+    else        { setBundle(null); setLoading(true); }
 
-    const lyFrom = shiftYear(fromISO, 1);
-    const lyTo   = shiftYear(toISO, 1);
-
-    // State heatmap is the heaviest dashboard query (full inventory_movements
-    // scan, grouped by state). It feeds ONLY the India map — no KPI card needs
-    // it — so we fetch it OUT-OF-BAND and merge it in when it lands, instead of
-    // gating the whole `loading` flag (and thus every KPI card + skeleton) on
-    // the slowest call. KPIs now paint as soon as sales + inventory resolve;
-    // the map fills in a beat later without holding the page hostage.
-    //
-    // `heatmapData` bridges the two async paths so the merge is order-independent:
-    //   • heatmap resolves first → setData is a no-op (data not built yet), but
-    //     the Promise.all below reads heatmapData when it constructs `data`.
-    //   • Promise.all resolves first → it seeds stateHeatmap:null, then this
-    //     handler patches the real value in.
-    let heatmapData = cached?.stateHeatmap ?? null;
-    analyticsService.getStateHeatmap?.({ date_from: fromISO, date_to: toISO, mode })
-      .then(heatmap => {
-        if (!alive) return;
-        heatmapData = heatmap?.data?.data || null;
-        setData(prev => (prev ? { ...prev, stateHeatmap: heatmapData } : prev));
-      })
-      .catch(() => { /* best-effort — map shows its empty state */ });
-
-    // Fresh cache (within TTL and newer than the last sync) → the numbers on
-    // screen are already current. Skip the KPI refetch entirely; flipping
-    // back to the dashboard costs zero network. isFresh() returns false after
-    // a sync (Header feeds setDataVersion), so post-sync we still refresh.
+    // Fresh cache (within TTL and newer than the last sync) → zero network.
     const forced = forceRef.current; forceRef.current = false;
-    if (cached && isFresh(cacheKey) && !forced) {
-      return () => { alive = false; };
-    }
+    if (cached && isFresh(cacheKey) && !forced) return () => { alive = false; };
 
-    Promise.all([
-      // Slim endpoint — returns ONLY summary + daily + by_channel (the three
-      // blocks v2 consumes).  ~240 ms cold vs ~8 s for /analytics/sales.
-      analyticsService.getSalesSummary({ date_from: fromISO, date_to: toISO, mode }),
-      // LY data for a closed window doesn't change — bump TTL to 24h.
-      analyticsService.getSalesSummary({
-        date_from: lyFrom, date_to: lyTo, mode, ttl_override: 86400,
-      }).catch(() => null),
-      inventoryService.getExecutiveSummary({ mode }),
-      syncService.getStatus().catch(() => null),
-      // Removed: inventoryService.getAgeing + getAlertsSummary — these fed ONLY
-      // the (now-removed) "Needs Attention" rail and the already-paused Aging
-      // widget, so the dashboard no longer calls either endpoint. The endpoints
-      // themselves are untouched (other pages still use /inventory/alerts via
-      // useAlerts, and /inventory/ageing remains available).
-      // Removed earlier: skuService.getTopMoving / getSlowMoving (SKU Pulse retired).
-    ])
-      .then(async ([cur, ly, inv, sync]) => {
+    analyticsService.getOverview({ date_from: fromISO, date_to: toISO, mode })
+      .then((res) => {
         if (!alive) return;
-        const c = cur?.data?.data?.summary || {};
-        const dailyCur = cur?.data?.data?.daily || [];
-        // Like-for-like: the current window only has data up to the last sync
-        // (syncs run 10:00/13:00/18:00/23:00), but the LY window always has the
-        // full period. Before the first sync "Today" read ₹0 and "▼100% vs LY",
-        // and every MTD/YTD was biased down by up to a day. Compare only up to
-        // the last day that actually has data; nothing yet → no delta ("—").
-        const lastDay = dailyCur.length ? String(dailyCur[dailyCur.length - 1].date).slice(0, 10) : null;
-        const comparable = !!lastDay;
-        if (lastDay && lastDay < toISO) {
-          ly = await analyticsService.getSalesSummary({
-            date_from: lyFrom, date_to: shiftYear(lastDay, 1), mode, ttl_override: 86400,
-          }).catch(() => null);
-          if (!alive) return;
-        }
-        const lyS = comparable ? (ly?.data?.data?.summary || {}) : {};
-        const dLy = (a, b) => (comparable && ly ? pctDelta(a, b) : null);
-        const stock = cur?.data?.data?.stock_snapshot || {};
-        const totals = inv?.data?.data?.totals || {};
-        const dailyLy  = comparable ? (ly?.data?.data?.daily || []) : [];
-        const byChannel = cur?.data?.data?.by_channel || [];
-
-        const netValue   = pickNet(c, valuation);
-        const salesField = pickSalesField(valuation);
-        const unitsSold  = Number(c.units_sold || 0);
-        const returnRate = Number(c.return_rate_pct || 0);
-        const invValue   = Number(stock.total_mrp_value || totals.total_stock_value || 0);
-        const invUnits   = Number(stock.total_units || totals.total_stock || 0);
-        // Sell-through: how much of (sold + on-hand) actually moved.  An
-        // executive-friendly proxy that doesn't require an opening-inventory
-        // baseline (which the API doesn't yet expose).
-        const sellThrough = (unitsSold + invUnits) > 0
-          ? (unitsSold / (unitsSold + invUnits)) * 100
-          : 0;
-
-        const lyNet     = pickNet(lyS, valuation);
-        const lyUnits   = Number(lyS.units_sold || 0);
-        const lyReturn  = Number(lyS.return_rate_pct || 0);
-        // No prior-year inventory or sell-through — leave deltas null so the
-        // pill renders "—" rather than a phony number.
-
-        // Sparklines now read from the real daily series.  Inventory has no
-        // time series in our schema yet, so its sparkline stays empty (the
-        // KpiHeroCard handles that gracefully).
-        const kpis = {
-          netSales: {
-            value: netValue,
-            delta: dLy(netValue, lyNet),
-            spark: realSparkline(dailyCur, salesField),
-            footnote: c.units_sold > 0
-              ? `avg ₹${Math.round(netValue / Math.max(1, c.units_sold)).toLocaleString('en-IN')} per unit`
-              : null,
-          },
-          unitsSold: {
-            value: unitsSold,
-            delta: dLy(unitsSold, lyUnits),
-            spark: realSparkline(dailyCur, 'sales_qty'),
-            footnote: c.return_units > 0
-              ? `${Number(c.return_units).toLocaleString('en-IN')} returned`
-              : null,
-          },
-          inventoryValuation: {
-            value: invValue,
-            delta: null,
-            spark: [],
-            footnote: invUnits ? `${invUnits.toLocaleString('en-IN')} units · ${totals.active_locations || stock.locations || '—'} locations` : null,
-          },
-          sellThrough: {
-            value: sellThrough,
-            delta: null,
-            spark: realSparkline(dailyCur, 'sales_qty'),
-            footnote: `${unitsSold.toLocaleString('en-IN')} sold against on-hand`,
-          },
-          returnRate: {
-            // Lower is better for return rate — caller uses inverseHealthFromDelta.
-            // The card shows this delta in percentage POINTS ("pp"), so it is
-            // the difference of the two rates — pctDelta gave a relative change
-            // (5% vs 4% showed "▲ 25.0pp" instead of 1.0pp).
-            value: returnRate,
-            delta: comparable && ly && lyS.units_sold > 0 ? returnRate - lyReturn : null,
-            spark: returnRateSparkline(dailyCur),
-            footnote: c.return_units > 0
-              ? `${Number(c.return_units).toLocaleString('en-IN')} returns · ${formatINRCompact(c.return_value)}`
-              : null,
-          },
-        };
-
-        // Aging dataset removed — the Aging widget is paused and the only other
-        // consumer (Needs Attention) is disabled, so getAgeing is no longer
-        // fetched. AgingWaterfall renders its own "Available soon" placeholder.
-
-        // Today vs LY, cumulative. Aligned by CALENDAR date (d → same day last
-        // year), not by array index: either window can skip a day with no
-        // movements, which shifted the whole LY curve.
-        const lySorted = [...dailyLy].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-        let cumCur = 0, cumLy = 0, j = 0;
-        const todayVsLy = dailyCur.map((d) => {
-          cumCur += Number(d.sales_value || 0);
-          const lyDay = shiftYear(String(d.date).slice(0, 10), 1);
-          while (j < lySorted.length && String(lySorted[j].date).slice(0, 10) <= lyDay) {
-            cumLy += Number(lySorted[j].sales_value || 0); j++;
-          }
-          return { date: d.date, today: cumCur, ly: lySorted.length ? cumLy : null };
-        });
-
-        // Channel mix (no real "category" field in schema — channel is the
-        // closest meaningful split for executive view).
-        const channelMix = byChannel.map(r => ({
-          name:    r.channel,
-          value:   Number(r.sales_value || 0),
-          units:   Number(r.units || 0),
-          stores:  Number(r.stores || 0),
-        })).filter(r => r.value > 0);
-
-        // "Needs Attention" exception list removed (disabled per request). It
-        // was the only consumer of getAlertsSummary + getAgeing, so both calls
-        // are gone above. The shared /inventory/alerts endpoint (useAlerts) and
-        // /inventory/ageing remain available to other pages — untouched here.
-
-        const built = {
-          asOf: new Date().toISOString(),
-          kpis,
-          todayVsLy,
-          channelMix,
-          stateHeatmap: heatmapData,
-          syncStatus: sync?.data?.data || null,
-          raw: { current: c, ly: lyS, stock, totals },
-        };
-        // Persist for instant paint on the next mount/reload. The heatmap may
-        // still be arriving — its own handler patches setData + the cache entry
-        // is refreshed on the next full fetch; caching it now (possibly null)
-        // is fine because the cheap 3 ms heatmap call always re-runs on mount.
-        setCached(cacheKey, built);
-        setData(built);
+        const b = { ...(res?.data?.data || {}), fetchedAt: new Date().toISOString() };
+        setCached(cacheKey, b);
+        setBundle(b);
         setLoading(false);
       })
-      .catch(err => {
+      .catch((err) => {
         if (!alive) return;
         // eslint-disable-next-line no-console
         console.warn('[useDashboardMetrics] fetch failed', err?.message);
@@ -312,15 +257,9 @@ export function useDashboardMetrics({ fromISO, toISO, mode = 'active', valuation
       });
 
     return () => { alive = false; };
-  }, [fromISO, toISO, mode, valuation, cacheKey, nonce]);
+  }, [fromISO, toISO, mode, cacheKey, nonce]);
 
+  const data = useMemo(() => (bundle ? buildMetrics(bundle, valuation) : null), [bundle, valuation]);
   return { data, loading, error, reload };
 }
 
-function formatINRCompact(v) {
-  const n = Number(v) || 0;
-  if (n >= 1e7) return '₹' + (n / 1e7).toFixed(2) + ' Cr';
-  if (n >= 1e5) return '₹' + (n / 1e5).toFixed(2) + ' L';
-  if (n >= 1e3) return '₹' + (n / 1e3).toFixed(1) + 'K';
-  return '₹' + Math.round(n).toLocaleString('en-IN');
-}

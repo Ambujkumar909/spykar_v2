@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
-  LayoutDashboard, Globe, TrendingUp, RefreshCw, LogOut, UserCog, Menu, X, LineChart, Warehouse, Hourglass,
+  LayoutDashboard, Globe, TrendingUp, RefreshCw, LogOut, UserCog, Menu, X, LineChart, Warehouse, Hourglass, ShoppingBag,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth-context';
 import PremiumFilterBar from './PremiumFilterBar';
@@ -14,8 +14,9 @@ const NAV = [
       { label: 'Overview',      href: '/',        icon: LayoutDashboard, color: '#EF4444', glow: 'rgba(239,68,68,0.15)' },
       { label: 'EBO Network',   href: '/network', icon: Globe,           color: '#3B82F6', glow: 'rgba(59,130,246,0.15)' },
       { label: 'Sales & Returns', href: '/sales', icon: TrendingUp,      color: '#10B981', glow: 'rgba(16,185,129,0.15)' },
-      { label: 'Stock Availability', href: '/stock-availability', icon: LineChart, color: '#0EA5E9', glow: 'rgba(14,165,233,0.15)' },
-      { label: 'Primary Sales', href: '/primary-sales', icon: Warehouse, color: '#8B5CF6', glow: 'rgba(139,92,246,0.15)' },
+      { label: 'EBO Stock History', href: '/stock-availability', icon: LineChart, color: '#0EA5E9', glow: 'rgba(14,165,233,0.15)' },
+      { label: 'Primary Inventory', href: '/primary-sales', icon: Warehouse, color: '#8B5CF6', glow: 'rgba(139,92,246,0.15)' },
+      { label: 'ESales Stock', href: '/esales-stock', icon: ShoppingBag, color: '#14B8A6', glow: 'rgba(20,184,166,0.15)' },
       { label: 'Inventory Ageing', href: '/inventory-ageing', icon: Hourglass, color: '#F97316', glow: 'rgba(249,115,22,0.15)' },
     ],
   },
@@ -30,7 +31,7 @@ const NAV = [
 
 // Routes that carry the Lens filter cluster (mirrors PremiumFilterBar's own
 // FILTER_ROUTES). Used to decide whether the mobile drawer shows the filters.
-const FILTER_ROUTES = new Set(['/network', '/sales', '/primary-sales', '/stock-availability', '/inventory-ageing']);
+const FILTER_ROUTES = new Set(['/network', '/sales', '/primary-sales', '/esales-stock', '/stock-availability', '/inventory-ageing']);
 
 // matchMedia-driven mobile flag. SSR-safe: starts false (so the server and the
 // first client render agree → no hydration mismatch), then corrects on mount.

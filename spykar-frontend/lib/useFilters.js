@@ -26,6 +26,7 @@ const ARRAY_DIMS = new Set([
   'style', 'shade', 'color', 'gender_name', 'sub_product', 'season', 'product',
   'category', 'brand', 'fit', 'size',
   'state', 'city', 'group_name', 'store_code',
+  'channel', 'partner_name',   // ESales stock / ESales ageing
 ]);
 
 const SCALAR_DIMS = new Set([

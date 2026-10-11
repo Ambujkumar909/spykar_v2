@@ -11,6 +11,7 @@
 // dashboard. Premium glass surfaces, gradient accent rails, hover lifts.
 
 import { useMemo, useState, useEffect, useRef } from 'react';
+import { formatFull, kpiFit } from '../../lib/v2/format';
 import {
   ShoppingBag, RotateCcw, IndianRupee, TrendingUp, TrendingDown, Building2,
   Sparkles, Zap, Target, Layers, AlertTriangle, ChevronRight, Award, Calendar,
@@ -26,6 +27,8 @@ const fmtL = (n) => {
   return Math.round(n).toLocaleString('en-IN');
 };
 const fmtRs = (n) => '₹' + fmtL(n);
+// KPI cards show the figure in full — never K / L / Cr.
+const fullRs = (n) => formatFull(n, { rupee: true });
 const fmtNum = (n) => Number(n || 0).toLocaleString('en-IN');
 const fmtPct = (a, b) => b ? Math.round((a / b) * 100) + '%' : '0%';
 
@@ -67,15 +70,14 @@ function KpiHero({ label, value, format = 'indian', icon: Icon, accent, context,
   const animate    = !showSkel && typeof value === 'number';
   const shown      = useCountUp(animate ? value : null, 720);
   // For percentage cards keep one decimal so 3.4% doesn't read as "3%".
-  // For Indian-format big numbers we still show K/L/Cr — the raw figure
-  // is exposed via the hover tooltip below.
+  // Big numbers are shown in full (no K/L/Cr); the type shrinks to fit.
   const isPct = suffix === '%';
   const display    = showSkel ? null
     : format === 'string'  ? value
     : format === 'indian'  && isPct
       ? prefix + (animate ? (Math.round(shown * 10) / 10).toFixed(1) : Number(value).toFixed(1)) + suffix
     : format === 'indian'
-      ? prefix + fmtL(animate ? Math.round(shown) : value) + suffix
+      ? prefix + formatFull(animate ? Math.round(shown) : value) + suffix
     : (prefix + (animate ? Math.round(shown) : Number(value)).toLocaleString('en-IN') + suffix);
   // Hover tooltip — show the precise raw figure (full Indian-localised
   // number with commas) so a user hovering on "5.40 L" sees "5,40,000".
@@ -123,7 +125,7 @@ function KpiHero({ label, value, format = 'indian', icon: Icon, accent, context,
       ) : (
         <div className="sx-hero-num"
           title={rawTooltip}
-          style={{ marginBottom: 8, fontSize: 32, cursor: 'help' }}>
+          style={{ ...kpiFit(display), marginBottom: 8, fontSize: 32, cursor: 'help' }}>
           {display ?? '—'}
         </div>
       )}
@@ -718,7 +720,7 @@ export default function SalesPulse({ data, loading, lensMode = 'net', valuation 
           loading={loading}
           context={
             valuationKind === 'pct'
-              ? `gross ₹${fmtL(Number(s.sales_value||0))} − COGS ₹${fmtL(Number(s.sales_cogs_value||0))}`
+              ? `gross ${fullRs(s.sales_value||0)} − COGS ${fullRs(s.sales_cogs_value||0)}`
               : `avg ₹${fmtNum(txns ? Math.round(value / txns) : 0)} per txn`
           }
         />
@@ -747,13 +749,13 @@ export default function SalesPulse({ data, loading, lensMode = 'net', valuation 
           label="Returns Rate"
           icon={RotateCcw} accent={Number(s.return_rate_pct) >= 5 ? '#DC2626' : '#D97706'}
           value={Number(s.return_rate_pct || 0)} format="indian" suffix="%" loading={loading}
-          context={`${fmtNum(s.return_units)} returns · ${fmtRs(s.return_value)}`}
+          context={`${fmtNum(s.return_units)} returns · ${fullRs(s.return_value)}`}
         />
         <KpiHero
           label={`Stock as of ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`}
           icon={TrendingUp} accent="#7C3AED"
           value={Number(data?.stock_snapshot?.total_units || 0)} loading={loading}
-          context={`MRP: ${fmtRs(data?.stock_snapshot?.total_mrp_value)} · narrows with filters`}
+          context={`MRP: ${fullRs(data?.stock_snapshot?.total_mrp_value)} · narrows with filters`}
         />
       </div>
 

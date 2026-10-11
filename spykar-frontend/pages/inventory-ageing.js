@@ -1,7 +1,9 @@
 // ─── /inventory-ageing — TRUE inventory ageing (FIFO + continuous-on-hand) ────
-// Two sources, one page. WAREHOUSE = real FIFO on the M3 MITTRA ledger (each
+// Three sources, one page. WAREHOUSE = real FIFO on the M3 MITTRA ledger (each
 // in-stock unit dated by the receipt it belongs to). STORE = continuous-on-hand
 // on the daily snapshot (units that never left across a window are ≥ that old).
+// ESALES = the same continuous-on-hand rule, first-in-first-out, on the monthly
+// partner stock files (how long the latest file's units have sat at a partner).
 // Reads the precomputed inventory_ageing table → instant. Ageing profiles are
 // drawn as CSS stacked bars (no chart lib → zero hover artefacts). Lens-driven:
 // sidebar filters + clickable rows re-scope everything.
@@ -13,9 +15,10 @@ import { useFilters } from '../lib/useFilters';
 import { FiltersProvider } from '../lib/FiltersContext';
 import { ageingService } from '../lib/services';
 import { notifyApiError } from '../lib/notifyApiError';
+import { formatFull } from '../lib/v2/format';
 import {
   Hourglass, Warehouse, Store, MapPin, Building2, Layers, Tag, Palette, Ruler, Shirt,
-  Download, ChevronRight, AlertTriangle, Boxes, IndianRupee, Clock, ShieldCheck,
+  Download, ChevronRight, AlertTriangle, Boxes, IndianRupee, Clock, ShieldCheck, ShoppingBag, Users,
 } from 'lucide-react';
 
 const fmtNum = (n) => (n == null ? '0' : Number(n).toLocaleString('en-IN'));
@@ -50,6 +53,7 @@ const BUCKET_ORDER = ['d0_30', 'd31_60', 'd61_90', 'd91_180', 'd181_365', 'd365_
 const SOURCES = [
   { value: 'warehouse', label: 'Warehouse (FIFO)', Icon: Warehouse },
   { value: 'store', label: 'Store (on-hand)', Icon: Store },
+  { value: 'esales', label: 'ESales (partners)', Icon: ShoppingBag },
 ];
 const MEASURE_OPTIONS = [{ value: 'units', label: 'Units' }, { value: 'gross', label: 'Value (MRP)' }, { value: 'cost', label: 'Cost' }];
 const STATUS_OPTIONS = [{ value: 'active', label: 'Active stores' }, { value: 'inactive', label: 'Inactive stores' }, { value: 'all', label: 'All stores' }];
@@ -64,11 +68,22 @@ const VIEW_BY = {
     { key: 'channel', label: 'Channel', Icon: Layers }, { key: 'store', label: 'Store', Icon: Store },
     { key: 'category', label: 'Category', Icon: Tag }, { key: 'colour', label: 'Colour', Icon: Palette }, { key: 'size', label: 'Size', Icon: Ruler },
   ],
+  esales: [
+    { key: 'partner', label: 'Partner', Icon: Store }, { key: 'channel', label: 'Channel', Icon: ShoppingBag },
+    { key: 'category', label: 'Category', Icon: Tag }, { key: 'gender', label: 'Gender', Icon: Users }, { key: 'product', label: 'Product', Icon: Shirt },
+    { key: 'colour', label: 'Colour', Icon: Palette }, { key: 'size', label: 'Size', Icon: Ruler }, { key: 'season', label: 'Season', Icon: Clock },
+  ],
 };
+// ESales stock has no cost — it is valued at MRP.
+const measuresFor = (source) => (source === 'esales' ? MEASURE_OPTIONS.filter((m) => m.value !== 'cost') : MEASURE_OPTIONS);
+const HERO_EYEBROW = { warehouse: 'Warehouse ageing · FIFO', store: 'Store ageing · continuous-on-hand', esales: 'ESales ageing · continuous-on-hand at partners' };
 // view-by → Lens filter key for row-click drill (null = not drillable, e.g. store opens nothing extra here)
-const VIEWBY_LENS = { warehouse: 'warehouse', state: 'state', city: 'city', channel: 'group_name', store: 'store_code', category: 'category', colour: 'color', size: 'size', product: 'product' };
+const VIEWBY_LENS = { warehouse: 'warehouse', state: 'state', city: 'city', channel: 'group_name', store: 'store_code', category: 'category', colour: 'color', size: 'size', product: 'product',
+  partner: 'partner_name', gender: 'gender_name', season: 'season' };
+// For the ESales source "channel" is the marketplace (its own Lens key), not the store channel.
+const lensKeyOf = (source, viewBy) => (source === 'esales' && viewBy === 'channel' ? 'channel' : VIEWBY_LENS[viewBy]);
 const LENS_LABELS = {
-  state: 'State', city: 'City', store_code: 'Store', group_name: 'Channel', warehouse: 'Warehouse',
+  state: 'State', city: 'City', store_code: 'Store', group_name: 'Channel', warehouse: 'Warehouse', channel: 'Channel', partner_name: 'Partner',
   category: 'Category', product: 'Product', sub_product: 'Sub-product', gender_name: 'Gender', size: 'Size', color: 'Colour', season: 'Season',
 };
 const measureVal = (r, m) => (m === 'gross' ? r.value_gross : m === 'cost' ? r.value_cost : r.units);
@@ -133,7 +148,6 @@ function InventoryAgeingPageImpl() {
   const { isDark } = useTheme();
   const ORANGE = '#F97316';
 
-  const [source, setSource] = useState('warehouse');
   const [measure, setMeasure] = useState('units');
   const [viewBy, setViewBy] = useState('warehouse');
   const [summary, setSummary] = useState(null);
@@ -143,11 +157,14 @@ function InventoryAgeingPageImpl() {
   const [exporting, setExporting] = useState(false);
 
   // Sidebar Lens (shared) — row clicks write here too.
-  const filtersApi = useFilters({ defaults: { mode: 'active' }, persist: ['mode'] });
+  // `source` lives in the shared filter state (and so in the URL): the sidebar
+  // reads it to offer partner-level filters while ESales is selected.
+  const filtersApi = useFilters({ defaults: { mode: 'active' }, persist: ['mode', 'source'] });
   const lens = filtersApi.filters;
   const setLens = filtersApi.setFilter;
   const clearLens = filtersApi.clearFilter;
   const status = lens.mode || 'active';
+  const source = SOURCES.some((x) => x.value === lens.source) ? lens.source : 'warehouse';
 
   const activeLensDims = useMemo(
     () => Object.keys(LENS_LABELS).filter((d) => { const v = lens[d]; return Array.isArray(v) ? v.length > 0 : Boolean(v); }),
@@ -158,18 +175,32 @@ function InventoryAgeingPageImpl() {
     put('state', lens.state); put('city', lens.city); put('channel', lens.group_name); put('store', lens.store_code);
     put('warehouse', lens.warehouse); put('category', lens.category); put('color', lens.color); put('size', lens.size);
     put('product', lens.product); put('gender', lens.gender_name); put('sub_product', lens.sub_product); put('season', lens.season);
+    if (source === 'esales') {       // marketplace channel + partner replace the store-level location filters
+      delete p.state; delete p.city; delete p.store; delete p.warehouse;
+      const one = (v) => [].concat(v || []);
+      if (one(lens.channel).length) p.channel = one(lens.channel).join(','); else delete p.channel;
+      if (one(lens.partner_name).length) p.partner_name = one(lens.partner_name).join('|');   // names may hold a comma
+    }
     return p;
-  }, [lens]);
+  }, [lens, source]);
   const scope = useMemo(() => ({ source, status, ...lensScope }), [source, status, lensScope]);
   const scopeKey = useMemo(() => JSON.stringify(scope), [scope]);
 
   // Switch source AND fix the view in the same update: fixing it in an effect
   // afterwards sent one request with a view the new source doesn't have
   // (400 'invalid group_by') before the page corrected itself.
+  // Filters picked for one source mean nothing for another kind of location
+  // (a State for a marketplace partner), so crossing into or out of ESales
+  // starts from a clean Lens.
   const changeSource = (v) => {
-    setSource(v);
+    if (v === source) return;
+    if (v === 'esales' || source === 'esales') filtersApi.clearAll();
+    setLens('source', v === 'warehouse' ? undefined : v);
     if (!VIEW_BY[v].some((x) => x.key === viewBy)) setViewBy(VIEW_BY[v][0].key);
+    if (v === 'esales' && measure === 'cost') setMeasure('units');
   };
+  // Arriving on a URL that already says ?source=esales: fix the view to match.
+  useEffect(() => { if (!VIEW_BY[source].some((x) => x.key === viewBy)) setViewBy(VIEW_BY[source][0].key); }, [source]); // eslint-disable-line
 
   useEffect(() => {
     let a = true; setSumLoading(true);
@@ -189,7 +220,7 @@ function InventoryAgeingPageImpl() {
     return () => { a = false; };
   }, [viewBy, measure, scopeKey]); // eslint-disable-line
 
-  const lensKeyFor = VIEWBY_LENS[viewBy];
+  const lensKeyFor = lensKeyOf(source, viewBy);
   const onRowClick = useCallback((r) => {
     if (!lensKeyFor) return;
     const cur = lens[lensKeyFor];
@@ -219,7 +250,7 @@ function InventoryAgeingPageImpl() {
   return (
     <FiltersProvider value={filtersApi}>
     <DashboardLayout title="Inventory Ageing"
-      subtitle="How old is the stock we're holding — true FIFO in warehouses, continuous-on-hand in stores">
+      subtitle="How old is the stock we're holding — true FIFO in warehouses, continuous-on-hand in stores and at ESales partners">
       <div className="ag-page">
         {/* toolbar */}
         <div className="ag-toolbar">
@@ -229,7 +260,7 @@ function InventoryAgeingPageImpl() {
             ))}
           </div>
           <div style={{ flex: 1 }} />
-          <HeaderField label="Measure" value={measure} onChange={setMeasure} options={MEASURE_OPTIONS} minWidth={96} />
+          <HeaderField label="Measure" value={measure} onChange={setMeasure} options={measuresFor(source)} minWidth={96} />
           {source === 'store' && <HeaderField label="Status" value={status} onChange={(v) => setLens('mode', v)} options={STATUS_OPTIONS} minWidth={104} />}
         </div>
 
@@ -255,7 +286,7 @@ function InventoryAgeingPageImpl() {
         <div className="ag-hero">
           <div className="ag-hero-glow" />
           <div style={{ position: 'relative' }}>
-            <div className="ag-eyebrow"><Hourglass size={12} /> {source === 'warehouse' ? 'Warehouse ageing · FIFO' : 'Store ageing · continuous-on-hand'} · as of {prettyDate(summary?.meta?.as_of)}</div>
+            <div className="ag-eyebrow"><Hourglass size={12} /> {HERO_EYEBROW[source]} · as of {prettyDate(summary?.meta?.as_of)}</div>
             {sumLoading ? <div className="sx-shimmer" style={{ height: 58, width: '50%', borderRadius: 10 }} /> : (
               <div className="ag-hero-num">
                 {summary?.aged_pct == null ? '—' : `${summary.aged_pct}%`}
@@ -263,9 +294,9 @@ function InventoryAgeingPageImpl() {
               </div>
             )}
             <div className="ag-hero-sub">
-              <span><b>{cnt(summary?.total_units)}</b> units held</span>
-              <span><b>{fmtCr(measure === 'cost' ? summary?.total_value_cost : summary?.total_value_gross)}</b> value</span>
-              <span><b>{fmtCr(summary?.aged_value_gross)}</b> at risk (&gt;90d)</span>
+              <span><b>{formatFull(summary?.total_units)}</b> units held</span>
+              <span><b>{formatFull(measure === 'cost' ? summary?.total_value_cost : summary?.total_value_gross, { rupee: true })}</b> value</span>
+              <span><b>{formatFull(summary?.aged_value_gross, { rupee: true })}</b> at risk (&gt;90d)</span>
               {cov != null && <span className="ag-cov">history covers {cov} days</span>}
             </div>
           </div>
@@ -275,6 +306,12 @@ function InventoryAgeingPageImpl() {
         {isStoreThin && (
           <div className="ag-note"><ShieldCheck size={14} />
             Store ageing is proven only to <b>{cov} days</b> so far — older stock sits in <b>“Undetermined”</b> until more daily snapshots load. Warehouse ageing (FIFO) is exact today.</div>
+        )}
+
+        {source === 'esales' && (
+          <div className="ag-note"><ShieldCheck size={14} />
+            Aged from the monthly partner stock files: a unit is as old as the first file it has been <b>continuously on hand</b> in at that partner (first in, first out).
+            Whole months map onto the bands — first seen in this file = 0–30 d, one file back = 31–60 d, and so on. Valued at MRP; the files carry no cost.</div>
         )}
 
         {/* ageing profile — full-width stacked bar + legend */}

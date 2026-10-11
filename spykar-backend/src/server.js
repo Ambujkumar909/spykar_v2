@@ -15,6 +15,7 @@ const logger = require('./config/logger');
 const { connectDatabase } = require('./config/database');
 const { startScheduler } = require('./jobs/syncScheduler');
 const { startCacheInvalidator } = require('./jobs/cacheInvalidator');
+const { startEsalesWatcher } = require('./jobs/esalesWatcher');
 
 const PORT = process.env.PORT || 4000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -143,6 +144,9 @@ async function bootstrap() {
     // in a detached process, so a watcher flushes + re-warms this cache when a
     // sync completes (keeps the dashboard fresh without a shared cache server).
     startCacheInvalidator();
+
+    // ESales stock: load new / changed / removed workbooks from ESALES_STOCK_DIR
+    startEsalesWatcher();
 
     // Start ETL sync scheduler
     if (process.env.ENABLE_SCHEDULER === 'true') {

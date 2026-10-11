@@ -16,15 +16,17 @@ router.post('/login',
   authController.login
 );
 
-// POST /api/v1/auth/refresh
-router.post('/refresh',
-  [body('refreshToken').isString().notEmpty().withMessage('Refresh token required')],
-  validate,
-  authController.refresh
-);
+// POST /api/v1/auth/refresh — the refresh token rides in the httpOnly cookie
+// (a body token is still accepted from tabs running the pre-cookie build).
+router.post('/refresh', authController.refresh);
 
-// POST /api/v1/auth/logout
+// POST /api/v1/auth/logout — this device; /logout-all — every device
 router.post('/logout', authenticate, authController.logout);
+router.post('/logout-all', authenticate, authController.logoutAll);
+
+// Sessions (devices) of the signed-in user
+router.get('/sessions', authenticate, authController.listMySessions);
+router.delete('/sessions/:id', authenticate, [param('id').isUUID().withMessage('Invalid session id')], validate, authController.revokeMySession);
 
 // GET /api/v1/auth/me
 router.get('/me', authenticate, authController.me);

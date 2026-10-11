@@ -3,7 +3,6 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const compression = require('compression');
-const rateLimit = require('express-rate-limit');
 
 const { errorHandler } = require('./middleware/errorHandler');
 const { notFound } = require('./middleware/notFound');
@@ -22,9 +21,16 @@ const syncRoutes = require('./routes/sync.routes');
 const filterRoutes = require('./routes/filters.routes');
 const stockAvailabilityRoutes = require('./routes/stockAvailability.routes');
 const primarySalesRoutes = require('./routes/primarySales.routes');
+const esalesStockRoutes = require('./routes/esalesStock.routes');
 const ageingRoutes = require('./routes/ageing.routes');
 
 const app = express();
+
+// Behind nginx (and the Next.js /api rewrite) every request arrives from
+// 127.0.0.1. Trust X-Forwarded-For ONLY from loopback so req.ip is the real
+// client — otherwise all users share one rate-limit bucket — while a client
+// hitting :4000 directly still cannot spoof its IP.
+app.set('trust proxy', 'loopback');
 
 // ─── Request timeout ──────────────────────────────────────────────────────────
 // Bound every HTTP request at 45s so a pathological query can never leave a
@@ -62,31 +68,10 @@ app.use(cors({
 }));
 
 // ─── Rate Limiting ─────────────────────────────────────────────────────────────
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 500,
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) => req.path.startsWith('/api/v1/auth'),
-  message: { success: false, message: 'Too many requests, please try again later.' },
-});
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, message: 'Too many login attempts, please try again in a few minutes.' },
-});
-
-const aiLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 200,
-  message: { success: false, message: 'AI query limit reached. Please wait a moment.' },
-  skipSuccessfulRequests: false,
-});
-
-app.use(globalLimiter);
+// Per-user (JWT) business limits; nginx adds the per-IP edge shield.
+// Full design: middleware/rateLimits.js.
+const limits = require('./middleware/rateLimits');
+app.use(limits.burst, limits.sustained);
 
 // ─── Body Parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
@@ -135,7 +120,9 @@ const API_V1 = '/api/v1';
 // The strict limiter guards password guessing only. It used to cover the whole
 // /auth router, so ~30 page loads (/me) or token refreshes per 15 min from one
 // office IP got a 429 — which the frontend treated as a dead session.
-app.use(`${API_V1}/auth/login`, authLimiter);
+app.use([`${API_V1}/stock-availability/export.csv`, `${API_V1}/ageing/export.csv`, `${API_V1}/primary-sales/export.csv`, `${API_V1}/esales-stock/export.csv`, `${API_V1}/inventory/snapshot/export`], limits.exportCsv);
+app.use(`${API_V1}/auth/login`, limits.loginByIp, limits.loginByAccount);
+app.use(`${API_V1}/auth/refresh`, limits.refresh);
 app.use(`${API_V1}/auth`, authRouter);
 app.use(`${API_V1}/users`, userRouter);
 app.use(`${API_V1}/inventory`, inventoryRoutes);
@@ -144,11 +131,13 @@ app.use(`${API_V1}/locations`, locationRoutes);
 app.use(`${API_V1}/skus`, skuRoutes);
 app.use(`${API_V1}/dispatch`, dispatchRoutes);
 app.use(`${API_V1}/analytics`, analyticsRoutes);
-app.use(`${API_V1}/ai`, aiLimiter, aiRoutes);
+app.use(`${API_V1}/ai`, limits.ai, aiRoutes);
+app.use(`${API_V1}/sync/trigger`, limits.syncTrigger);
 app.use(`${API_V1}/sync`, syncRoutes);
 app.use(`${API_V1}/filters`, filterRoutes);
 app.use(`${API_V1}/stock-availability`, stockAvailabilityRoutes);
 app.use(`${API_V1}/primary-sales`, primarySalesRoutes);
+app.use(`${API_V1}/esales-stock`, esalesStockRoutes);
 // Inventory Ageing DISABLED for now — route intentionally not registered so all
 // /ageing/* API calls 404. Re-enable this line to bring the feature back.
 app.use(`${API_V1}/ageing`, ageingRoutes);

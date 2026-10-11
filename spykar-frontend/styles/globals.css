@@ -1874,7 +1874,21 @@ html.theme-light .sx-page {
 .sales-pulse-kpis   .sx-hero-num,
 .network-pulse-kpis .pk-num,
 .v2-kpi-row .v2-card .tabular-nums {
-  font-size: 23px !important;
+  font-size: min(23px, calc(100cqw / (var(--kpi-len, 6) * 0.6))) !important;
+  white-space: nowrap;
+}
+/* KPI figures are shown in full (no K / L / Cr), so the type shrinks with the
+   character count (--kpi-len, set inline by kpiFit) to always fit the card.
+   cqw = 1% of the nearest .kpi-fit-box / KPI card content width. */
+.sales-pulse-kpis  .sales-kpi-card,
+.network-pulse-kpis .sx-card,
+.v2-kpi-row .v2-card,
+.kpi-fit-box {
+  container-type: inline-size;
+}
+.kpi-fit {
+  font-size: min(var(--kpi-max, 23px), calc(100cqw / (var(--kpi-len, 6) * 0.6))) !important;
+  white-space: nowrap;
 }
 
 /* Responsive layout — Phase 5 polish.

@@ -27,14 +27,14 @@ async function authenticate(req, res, next) {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new AppError('Authentication required. Please provide a valid token.', 401);
+      throw new AppError('Authentication required. Please provide a valid token.', 401, 'TOKEN_MISSING');
     }
 
     const token = authHeader.split(' ')[1];
 
     // Check if token is blacklisted (logged out)
     if (isRevoked(token)) {
-      throw new AppError('Token has been invalidated. Please log in again.', 401);
+      throw new AppError('Token has been invalidated. Please log in again.', 401, 'SESSION_REVOKED');
     }
 
     // Verify token
@@ -43,20 +43,33 @@ async function authenticate(req, res, next) {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
     } catch (err) {
       if (err.name === 'TokenExpiredError') {
-        throw new AppError('Token expired. Please refresh your session.', 401);
+        throw new AppError('Token expired. Please refresh your session.', 401, 'TOKEN_EXPIRED');
       }
-      throw new AppError('Invalid token. Please log in again.', 401);
+      throw new AppError('Invalid token. Please log in again.', 401, 'TOKEN_INVALID');
     }
 
-    // Fetch fresh user from DB (ensures revoked access is caught)
+    // Fresh user + (for session tokens) the session, in ONE query: a
+    // deactivated user or an ended session is refused on the very next request.
+    // Tokens without sid were minted before server-side sessions existed and
+    // expire within 15 min on their own.
     const result = await query(
-      'SELECT id, name, email, role, is_active FROM users WHERE id = $1',
-      [decoded.userId]
+      `SELECT u.id, u.name, u.email, u.role, u.is_active,
+              s.id AS sid, s.revoked_at, s.absolute_expires_at
+         FROM users u
+         LEFT JOIN auth_sessions s ON s.id = $2::uuid AND s.user_id = u.id
+        WHERE u.id = $1`,
+      [decoded.userId, decoded.sid || null]
     );
 
     if (!result.rows.length || !result.rows[0].is_active) {
-      throw new AppError('User account not found or deactivated.', 401);
+      throw new AppError('User account not found or deactivated.', 401, 'ACCOUNT_DISABLED');
     }
+    const row = result.rows[0];
+    if (decoded.sid && (!row.sid || row.revoked_at || new Date(row.absolute_expires_at) <= new Date())) {
+      throw new AppError('This session has ended. Please sign in again.', 401, 'SESSION_REVOKED');
+    }
+    req.sessionId = decoded.sid || null;
+    delete row.sid; delete row.revoked_at; delete row.absolute_expires_at;
 
     req.user = result.rows[0];
     req.token = token;

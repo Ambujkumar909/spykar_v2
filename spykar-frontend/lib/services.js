@@ -4,6 +4,9 @@ import api from './api';
 export const authService = {
   login: (email, password) => api.post('/auth/login', { email, password }),
   logout: () => api.post('/auth/logout'),
+  logoutAll: () => api.post('/auth/logout-all'),
+  sessions: () => api.get('/auth/sessions'),
+  revokeSession: (id) => api.delete(`/auth/sessions/${id}`),
   me: () => api.get('/auth/me'),
   refresh: (refreshToken) => api.post('/auth/refresh', { refreshToken }),
   listUsers: (params = {}) => api.get('/users', { params }),
@@ -105,6 +108,8 @@ export const analyticsService = {
   // v2 dashboard — state-wise sales for the India heatmap.  Added in
   // Phase 3 alongside the new backend route.
   getStateHeatmap: (params = {}) => api.get('/analytics/state-heatmap', { params }),
+  // v2 Overview — the whole page in one round-trip (see useDashboardMetrics).
+  getOverview: (params = {}) => api.get('/analytics/overview', { params }),
 };
 
 // ─── Stock Availability (4th page — stock over time) ──────────────────────────
@@ -137,6 +142,22 @@ export const primarySalesService = {
   getTypes:      () => api.get('/primary-sales/types'),
   getWarehouses: () => api.get('/primary-sales/warehouses'),
   exportCsv:     (params = {}) => api.get('/primary-sales/export.csv', { params, responseType: 'blob' }),
+};
+
+// ─── ESales Stock (partner month-end stock files) ────────────────────────────
+// Read-only stock snapshots at the e-commerce partners. Mirrors primarySalesService.
+export const esalesStockService = {
+  getOverview: (params = {}) => api.get('/esales-stock/overview', { params }),
+  getSkuCount: (params = {}) => api.get('/esales-stock/sku-count', { params }),
+  getRange:    () => api.get('/esales-stock/range'),
+  getTrend:    (params = {}) => api.get('/esales-stock/trend', { params }),
+  getPivot:    (params = {}) => api.get('/esales-stock/pivot', { params }),
+  getItems:    (params = {}) => api.get('/esales-stock/items', { params }),
+  getItem:     (params = {}) => api.get('/esales-stock/item', { params }),
+  getFilterOptions: (params = {}) => api.get('/esales-stock/filter-options', { params }),
+  getPartners: () => api.get('/esales-stock/partners'),
+  getChannels: () => api.get('/esales-stock/channels'),
+  exportCsv:   (params = {}) => api.get('/esales-stock/export.csv', { params, responseType: 'blob' }),
 };
 
 // ─── Inventory Ageing (true FIFO warehouse + continuous-on-hand store) ────────

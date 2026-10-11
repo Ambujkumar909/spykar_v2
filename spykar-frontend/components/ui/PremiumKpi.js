@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
+import { formatFull, kpiFit } from '../../lib/v2/format';
 
 const PRESETS = {
   slate:   { color: '#94A3B8', bg: 'rgba(148,163,184,0.10)', border: 'rgba(148,163,184,0.20)', gradient: 'linear-gradient(135deg, #64748B, #334155)' },
@@ -41,14 +42,8 @@ function useCountUp(value, duration = 800) {
   return n;
 }
 
-function fmtIndian(n) {
-  if (n == null || isNaN(n)) return '—';
-  const v = Math.abs(n);
-  if (v >= 10000000) return (n / 10000000).toFixed(2) + ' Cr';
-  if (v >= 100000)   return (n / 100000).toFixed(2) + ' L';
-  if (v >= 1000)     return (n / 1000).toFixed(1) + 'K';
-  return Math.round(n).toLocaleString('en-IN');
-}
+// KPI figures are shown in full — never K / L / Cr.
+const fmtIndian = (n) => formatFull(n);
 
 function fmtPct(part, total) {
   if (!total) return '0%';
@@ -206,7 +201,7 @@ export default function PremiumKpi({
       </div>
 
       {/* Headline number + sparkline row */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
         <div>
           {loading ? (
             <div className="sx-shimmer" style={{ height: heroSize, width: 120, marginBottom: 8, borderRadius: 6 }} />
@@ -215,6 +210,7 @@ export default function PremiumKpi({
               className="pk-num"
               title={rawTooltip}
               style={{
+                ...kpiFit(headline),
                 fontFamily: 'var(--font-display)',
                 fontSize: heroSize,
                 fontWeight: 800,

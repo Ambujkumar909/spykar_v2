@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { formatNumber, formatCurrency } from '../../lib/utils';
+import { formatFull } from '../../lib/v2/format';
 
 // ── CountUp — smooth animated number transitions ─────────────────────────────
 // World-class dashboards (Stripe, Linear, Vercel) animate KPI numbers when
@@ -80,8 +80,8 @@ export default function KpiCard({
   const animatable = !loading && (format === 'number' || format === 'currency') && typeof value === 'number';
   const shown = useCountUp(animatable ? value : null, 700);
   const displayValue = loading ? null
-    : format === 'currency' ? formatCurrency(animatable ? Math.round(shown) : value)
-    : format === 'number'   ? formatNumber(animatable ? Math.round(shown) : value)
+    : format === 'currency' ? formatFull(animatable ? Math.round(shown) : value, { rupee: true })
+    : format === 'number'   ? formatFull(animatable ? Math.round(shown) : value)
     : value;
 
   const isUp   = change > 0;

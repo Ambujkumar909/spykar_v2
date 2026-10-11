@@ -6,7 +6,8 @@
 // rollup-served response is numerically identical to the live one:
 //   mrp_val  = |qty| * COALESCE(mrp,0)
 //   cost_val = |qty| * COALESCE(cost_price, COALESCE(mrp,0)*0.45)
-//   gst_val  = sale_value * gst_rate / (100 + gst_rate)     [gst_rate default 12]
+//   gst_val  = gst_amount (the ERP's own GST for the line; rows without it fall
+//              back to sale_value * gst_rate / (100 + gst_rate), default 12)
 //   ex_gst   = sale_value - gst_val
 //
 // Two entry points:
@@ -24,8 +25,8 @@ const VAL = {
   val:     `COALESCE(m.sale_value,0)`,
   mrp:     `ABS(m.qty_change)::numeric * COALESCE(s.mrp,0)`,
   cost:    `ABS(m.qty_change)::numeric * COALESCE(s.cost_price, COALESCE(s.mrp,0)*0.45)`,
-  gst:     `COALESCE(m.sale_value,0)::numeric * COALESCE(s.gst_rate,12) / NULLIF(100+COALESCE(s.gst_rate,12),0)`,
-  exgst:   `COALESCE(m.sale_value,0)::numeric - (COALESCE(m.sale_value,0)::numeric * COALESCE(s.gst_rate,12) / NULLIF(100+COALESCE(s.gst_rate,12),0))`,
+  gst:     `COALESCE(m.gst_amount, COALESCE(m.sale_value,0)::numeric * COALESCE(s.gst_rate,12) / NULLIF(100+COALESCE(s.gst_rate,12),0))`,
+  exgst:   `COALESCE(m.sale_value,0)::numeric - COALESCE(m.gst_amount, COALESCE(m.sale_value,0)::numeric * COALESCE(s.gst_rate,12) / NULLIF(100+COALESCE(s.gst_rate,12),0))`,
 };
 
 // The 14 measure expressions (SALE-filtered then RETURN-filtered), reused by

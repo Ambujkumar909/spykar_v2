@@ -13,6 +13,7 @@ import { useFilters } from '../lib/useFilters';
 import { FiltersProvider } from '../lib/FiltersContext';
 import { stockAvailabilityService } from '../lib/services';
 import { notifyApiError } from '../lib/notifyApiError';
+import { formatFull, kpiFit } from '../lib/v2/format';
 import LoadError from '../components/ui/LoadError';
 import {
   Boxes, Layers, Store, Package, IndianRupee, TrendingUp, TrendingDown, CalendarDays,
@@ -308,12 +309,14 @@ export default function StockAvailabilityPage() {
   ]), [svsSorted]);
 
   const snapped = summary?.as_of && summary.as_of !== asOf;
-  const heroVal = measure === 'units' ? cnt(summary?.stock_units) : fmtCr(measure === 'cost' ? summary?.value_cost : summary?.value_gross);
+  // KPI figures are shown in full — never K / L / Cr.
+  const fullRs = (n) => formatFull(n, { rupee: true });
+  const heroVal = measure === 'units' ? formatFull(summary?.stock_units) : fullRs(measure === 'cost' ? summary?.value_cost : summary?.value_gross);
   const delta = summary?.delta_units_vs_30d_pct;
 
   return (
     <FiltersProvider value={filtersApi}>
-    <DashboardLayout title="Stock Availability"
+    <DashboardLayout title="EBO Stock History"
       subtitle="As-on-date stock history — pick any day and see exactly what was on hand across the network">
       <div className="sa-page">
         {/* ── AS-ON toolbar ── */}
@@ -354,11 +357,11 @@ export default function StockAvailabilityPage() {
         {/* ── HERO ── */}
         <div className="sa-hero">
           <div className="sa-hero-glow" />
-          <div style={{ position: 'relative' }}>
+          <div className="kpi-fit-box" style={{ position: 'relative' }}>
             <div className="sa-eyebrow"><Boxes size={12} /> Stock on hand · {prettyDate(summary?.as_of || asOf)}</div>
             {summaryFailed && !summaryLoading ? <LoadError label="Couldn't load stock for this date" onRetry={retry} minHeight={80} />
               : summaryLoading ? <div className="sx-shimmer" style={{ height: 60, width: '55%', borderRadius: 10 }} /> : (
-              <div className="sa-hero-num">
+              <div className="sa-hero-num kpi-fit" style={kpiFit(heroVal, 66)}>
                 {heroVal}
                 {delta != null && (
                   <span className={`sa-delta ${delta >= 0 ? 'up' : 'down'}`}>
@@ -369,7 +372,7 @@ export default function StockAvailabilityPage() {
             )}
             <div className="sa-hero-sub">
               <span><b>{fmtNum(summary?.store_count)}</b> stores</span>
-              <span><b>{cnt(summary?.sku_count)}</b> SKUs</span>
+              <span><b>{formatFull(summary?.sku_count)}</b> SKUs</span>
               <span><b>{fmtNum(summary?.avg_per_store)}</b> units/store</span>
               {snapped && <span className="sa-snap">nearest snapshot · {prettyDate(summary.as_of)}</span>}
             </div>
@@ -381,9 +384,9 @@ export default function StockAvailabilityPage() {
           <div className="sx-card" style={{ padding: 18 }}>
             <div className="sa-kpis">
               <Kpi icon={Boxes} label="Units" accent={CYAN} loading={summaryLoading} value={fmtNum(summary?.stock_units)} sub="on hand" />
-              <Kpi icon={IndianRupee} label={measure === 'cost' ? 'Cost' : 'Value'} accent="#10B981" loading={summaryLoading} value={fmtCr(measure === 'cost' ? summary?.value_cost : summary?.value_gross)} sub={measure === 'cost' ? 'qty×cost' : 'qty×MRP'} />
+              <Kpi icon={IndianRupee} label={measure === 'cost' ? 'Cost' : 'Value'} accent="#10B981" loading={summaryLoading} value={fullRs(measure === 'cost' ? summary?.value_cost : summary?.value_gross)} sub={measure === 'cost' ? 'qty×cost' : 'qty×MRP'} />
               <Kpi icon={Store} label="Stores" accent="#F59E0B" loading={summaryLoading} value={fmtNum(summary?.store_count)} sub="with stock" />
-              <Kpi icon={Package} label="SKUs" accent="#A855F7" loading={summaryLoading} value={cnt(summary?.sku_count)} sub="distinct" />
+              <Kpi icon={Package} label="SKUs" accent="#A855F7" loading={summaryLoading} value={formatFull(summary?.sku_count)} sub="distinct" />
             </div>
           </div>
           <div className="sx-card" style={{ padding: 18 }}>
@@ -578,12 +581,12 @@ export default function StockAvailabilityPage() {
 
 function Kpi({ icon: Icon, label, value, sub, accent, loading }) {
   return (
-    <div style={{ borderRadius: 12, background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', padding: '14px 16px' }}>
+    <div className="kpi-fit-box" style={{ borderRadius: 12, background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', padding: '14px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <span style={{ width: 24, height: 24, borderRadius: 7, background: accent + '1e', color: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon size={13} /></span>
         <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{label}</span>
       </div>
-      {loading ? <div className="sx-shimmer" style={{ height: 24, width: '70%', borderRadius: 6 }} /> : <div style={{ fontSize: 23, fontWeight: 850, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>{value}</div>}
+      {loading ? <div className="sx-shimmer" style={{ height: 24, width: '70%', borderRadius: 6 }} /> : <div className="kpi-fit" style={{ ...kpiFit(value, 23), fontWeight: 850, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>{value}</div>}
       <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>{sub}</div>
     </div>
   );

@@ -173,7 +173,8 @@ CORE TABLES (sizes verified):
 • inventory_movements (2.83M rows, range 2024-03-31 → ${today})
     movement_type ENUM only has 'SALE' and 'RETURN' in actual data (DISPATCH/RECEIPT/TRANSFER never logged)
     qty_change INT (SALE is NEGATIVE, RETURN is POSITIVE)
-    sale_value NUMERIC ← PRE-COMPUTED revenue per row (avg ₹1,531.76). Always prefer SUM(sale_value) over SUM(ABS(qty_change)*mrp) — sale_value reflects discounts, mrp doesn't.
+    sale_value NUMERIC ← PRE-COMPUTED gross billed amount per row, GST-INCLUSIVE, after discount. Always prefer SUM(sale_value) over SUM(ABS(qty_change)*mrp) — sale_value reflects discounts, mrp doesn't.
+    gst_amount NUMERIC ← GST inside sale_value. Ex-GST revenue = sale_value - COALESCE(gst_amount,0).
     moved_at TIMESTAMPTZ
 
 • stock_ageing (2.50M rows)

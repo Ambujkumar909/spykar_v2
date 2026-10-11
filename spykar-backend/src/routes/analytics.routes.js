@@ -66,6 +66,13 @@ router.get('/overview/cross-pivot', analyticsController.getOverviewCrossPivot);
 
 // v2 — sales aggregated to state level for the India heatmap.  Same date
 // range + mode params as /sales so the map and the KPI cards stay in sync.
+// v2 Overview — everything the page needs in ONE round-trip (sales now + LY,
+// stock totals, India map, sync status). See analytics.controller getOverview.
+router.get('/overview', [
+  query('date_from').optional().isISO8601(),
+  query('date_to').optional().isISO8601(),
+  query('mode').optional().isIn(['active', 'inactive', 'all']),
+], validate, analyticsController.getOverview);
 router.get('/state-heatmap', [
   query('date_from').optional().isISO8601(),
   query('date_to').optional().isISO8601(),

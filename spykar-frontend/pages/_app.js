@@ -42,7 +42,7 @@ export default function App({ Component, pageProps }) {
   return (
     <AuthProvider>
       <Head>
-        <title>Spykar IQ — Inventory Intelligence</title>
+        <title>Spykar IQ — Business Command Centre</title>
         {/* Viewport — THE switch that turns the mobile layout on. Without it
             phones use a ~980px layout viewport and shrink-to-fit the desktop
             UI, so the @media(max-width:768px) mobile layer (bottom tab bar,

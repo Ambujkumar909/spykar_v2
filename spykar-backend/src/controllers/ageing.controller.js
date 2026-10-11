@@ -1,8 +1,11 @@
 // ─── Inventory Ageing controller ─────────────────────────────────────────────
 // Reads the PRECOMPUTED `inventory_ageing` table (built by
-// src/database/load_inventory_ageing.js — see migration 019). Two sources:
+// src/database/load_inventory_ageing.js — see migration 019). Three sources:
 //   • warehouse — true FIFO ageing off the M3 MITTRA ledger
 //   • store     — continuous-on-hand ageing off the daily snapshot
+//   • esales    — continuous-on-hand (FIFO) at the e-commerce partners, off the
+//                 monthly partner stock files; its own precomputed view
+//                 `esales_ageing` (migration 035), same columns
 // Everything here is read-only + cached; the heavy computation lives in the
 // batch loader so these endpoints return in milliseconds. Lens-filterable
 // (same multi-select scope grammar as stockAvailability).
@@ -23,7 +26,7 @@ const BUCKETS = [
   { idx: 9, key: 'undetermined', label: 'Undetermined', aged: false },
 ];
 
-const SOURCES = new Set(['warehouse', 'store']);
+const SOURCES = new Set(['warehouse', 'store', 'esales']);
 const normSource = (s) => (SOURCES.has(s) ? s : 'warehouse');
 
 // group-by dimension whitelist per source. keyCol identifies a member,
@@ -40,6 +43,9 @@ function dimsFor(source) {
   if (source === 'warehouse') {
     return { warehouse: { keyCol: 'w.whlo', labelCol: "(w.whlo || ' · ' || w.whnm)" }, ...sku };
   }
+  if (source === 'esales') {
+    return { partner: { keyCol: 'a.partner_name', labelCol: 'a.partner_name' }, channel: { keyCol: 'a.channel', labelCol: 'a.channel' }, ...sku };
+  }
   return {
     state:   { keyCol: 'l.state',      labelCol: 'l.state'      },
     city:    { keyCol: 'l.city',       labelCol: 'l.city'       },
@@ -53,6 +59,12 @@ const normalizeGroupBy = (g) => (g === 'color' ? 'colour' : g);
 // FROM clause + scope predicates. Both sources join skus (attributes + value);
 // store joins locations, warehouse joins primary_warehouses.
 function baseFrom(source) {
+  // esales_ageing already carries its item attributes; the LATERAL select only
+  // names them `s` so the shared SKU filters / dimensions apply unchanged.
+  if (source === 'esales') {
+    return `FROM esales_ageing a
+         CROSS JOIN LATERAL (SELECT a.category_norm, a.color_name, a.size, a.product, a.gender_name, a.sub_product, a.season) s`;
+  }
   return source === 'warehouse'
     ? `FROM inventory_ageing a
          JOIN primary_warehouses w ON w.id = a.ref_id
@@ -88,6 +100,12 @@ function buildScope(q, params, source) {
     if (q.city)    addCI('l.city', q.city);
     if (q.channel || q.group_name) addEq('l.group_name', q.channel || q.group_name);
     if (q.store || q.store_code)   addEq('l.code', q.store || q.store_code);
+  } else if (source === 'esales') {
+    if (q.channel) addEq('a.channel', q.channel);
+    if (q.partner_name) {     // names, '|'-separated (a name may hold a comma)
+      const names = String(q.partner_name).split('|').map((s) => s.trim()).filter(Boolean);
+      if (names.length) { params.push(names); conds.push(`a.partner_name = ANY($${params.length})`); }
+    }
   } else {
     if (q.warehouse) addEq('w.whlo', q.warehouse);
   }
@@ -95,6 +113,11 @@ function buildScope(q, params, source) {
 }
 
 async function meta(source) {
+  if (source === 'esales') {
+    const e = (await query(`SELECT MAX(snapshot_date)::text AS as_of, (MAX(snapshot_date) - MIN(snapshot_date))::int AS covered_days,
+                                   (SELECT items_built_at FROM esales_meta) AS computed_at FROM esales_files`)).rows[0];
+    return { as_of: e.as_of, covered_days: e.covered_days, computed_at: e.computed_at };
+  }
   const r = await query(
     `SELECT as_of_date::text AS as_of, covered_days, computed_at FROM inventory_ageing_meta WHERE source = $1`,
     [source]);
@@ -147,7 +170,7 @@ async function getSummary(req, res, next) {
 // ── B) pivot — per-member ageing breakdown ──────────────────────────────────
 async function buildPivot(req) {
   const source = normSource(req.query.source);
-  const groupBy = normalizeGroupBy(req.query.group_by || (source === 'warehouse' ? 'warehouse' : 'category'));
+  const groupBy = normalizeGroupBy(req.query.group_by || (source === 'warehouse' ? 'warehouse' : source === 'esales' ? 'partner' : 'category'));
   const dim = dimsFor(source)[groupBy];
   if (!dim) { const e = new Error(`invalid group_by: ${req.query.group_by}`); e.status = 400; throw e; }
   const measure = ['units', 'gross', 'cost'].includes(req.query.measure) ? req.query.measure : 'units';

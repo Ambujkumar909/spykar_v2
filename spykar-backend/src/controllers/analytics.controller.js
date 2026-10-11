@@ -493,16 +493,17 @@ async function getSalesAnalytics(req, res, next) {
           COALESCE(m.sale_value, 0)      AS val,
           -- Valuation augmentations — computed per movement row so every
           -- aggregate below can pick the right ₹ basis without re-querying.
-          -- gst_rate defaults to 12% when missing (apparel median) so legacy
-          -- rows don't poison the GST split. cost_price defaults to 45% MRP
+          -- GST is the ERP's own amount for the line (gst_amount). Only a row
+          -- without it falls back to the SKU rate (default 12%).
+          -- cost_price defaults to 45% MRP
           -- (also the load_item_master.js convention).
           (ABS(m.qty_change)::numeric * COALESCE(s.mrp, 0))                     AS mrp_val,
           (ABS(m.qty_change)::numeric * COALESCE(s.cost_price, COALESCE(s.mrp,0)*0.45)) AS cost_val,
-          (COALESCE(m.sale_value, 0)::numeric * COALESCE(s.gst_rate, 12)
-            / NULLIF(100 + COALESCE(s.gst_rate, 12), 0))                        AS gst_val,
+          COALESCE(m.gst_amount, COALESCE(m.sale_value, 0)::numeric * COALESCE(s.gst_rate, 12)
+            / NULLIF(100 + COALESCE(s.gst_rate, 12), 0)) AS gst_val,
           (COALESCE(m.sale_value, 0)::numeric
-            - COALESCE(m.sale_value, 0)::numeric * COALESCE(s.gst_rate, 12)
-              / NULLIF(100 + COALESCE(s.gst_rate, 12), 0))                      AS ex_gst_val,
+            - COALESCE(m.gst_amount, COALESCE(m.sale_value, 0)::numeric * COALESCE(s.gst_rate, 12)
+            / NULLIF(100 + COALESCE(s.gst_rate, 12), 0))) AS ex_gst_val,
           m.location_id,
           m.sku_id,
           s.sku_code,
@@ -1110,11 +1111,11 @@ async function getSalesDrilldown(req, res, next) {
             COALESCE(m.sale_value, 0)      AS val,
             (ABS(m.qty_change)::numeric * COALESCE(s.mrp, 0))                     AS mrp_val,
             (ABS(m.qty_change)::numeric * COALESCE(s.cost_price, COALESCE(s.mrp,0)*0.45)) AS cost_val,
-            (COALESCE(m.sale_value, 0)::numeric * COALESCE(s.gst_rate, 12)
-              / NULLIF(100 + COALESCE(s.gst_rate, 12), 0))                         AS gst_val,
+            COALESCE(m.gst_amount, COALESCE(m.sale_value, 0)::numeric * COALESCE(s.gst_rate, 12)
+              / NULLIF(100 + COALESCE(s.gst_rate, 12), 0)) AS gst_val,
             (COALESCE(m.sale_value, 0)::numeric
-              - COALESCE(m.sale_value, 0)::numeric * COALESCE(s.gst_rate, 12)
-                / NULLIF(100 + COALESCE(s.gst_rate, 12), 0))                       AS ex_gst_val,
+              - COALESCE(m.gst_amount, COALESCE(m.sale_value, 0)::numeric * COALESCE(s.gst_rate, 12)
+              / NULLIF(100 + COALESCE(s.gst_rate, 12), 0))) AS ex_gst_val,
             m.location_id,
             m.sku_id,
             s.sku_code, s.product_name, s.color_name, s.size,
@@ -1669,7 +1670,13 @@ async function getOverviewCrossPivot(req, res, next) {
 async function getStateHeatmap(req, res, next) {
   try {
     const { date_from, date_to, mode = 'active' } = req.query;
-    const cacheKey = `analytics:state-heatmap:v2:${date_from || ''}:${date_to || todayISO()}:${mode}`;
+    res.json({ success: true, data: await computeStateHeatmap({ date_from, date_to, mode }) });
+  } catch (err) { next(err); }
+}
+
+async function computeStateHeatmap({ date_from, date_to, mode = 'active' }) {
+  {
+    const cacheKey = `analytics:state-heatmap:v3:${date_from || ''}:${date_to || todayISO()}:${mode}`;
 
     // Match the same store-lifecycle semantics used by the main sales endpoint:
     // active = open stores, inactive = closed stores, all = both, all within
@@ -1681,6 +1688,22 @@ async function getStateHeatmap(req, res, next) {
         : 'AND l.is_active = TRUE AND l.shop_closed = FALSE';
 
     const data = await getOrSet(cacheKey, async () => {
+      // Fast path: srd_store carries state + per-store daily sale/return sums
+      // on the same active baseline as the live scan below (verified equal).
+      if (date_from && date_to && await rollupsReady()) {
+        const smc = mode === 'inactive' ? ' AND shop_closed = true' : mode === 'all' ? '' : ' AND shop_closed = false';
+        const r = await query(`
+          SELECT UPPER(TRIM(state)) AS state_name,
+                 COALESCE(SUM(s_qty),0)::int AS units_sold, COALESCE(SUM(r_qty),0)::int AS units_returned,
+                 ROUND(COALESCE(SUM(s_val),0) - COALESCE(SUM(r_val),0), 2) AS net_value,
+                 COUNT(DISTINCT location_id)::int AS store_count
+            FROM srd_store
+           WHERE sale_date >= $1::date AND sale_date <= $2::date AND state IS NOT NULL${smc}
+             AND s_txn + r_txn > 0
+           GROUP BY UPPER(TRIM(state))
+           ORDER BY net_value DESC`, [date_from, date_to]);
+        return r.rows;
+      }
       // Default window: last 30 days of available data.
       const dateClause = (date_from && date_to)
         ? `AND m.moved_at::date BETWEEN $1 AND $2`
@@ -1721,8 +1744,62 @@ async function getStateHeatmap(req, res, next) {
                 // cache.clear(), so this can never pin stale data. The old
                 // 5-min TTL just re-ran a full inventory_movements scan
                 // (2.8M rows) every 5 min and gated the whole dashboard paint.
+    return data;
+  }
+}
 
-    res.json({ success: true, data });
+// ─── Network stock totals — the three figures the Overview's Inventory KPI
+// needs (units, MRP value, stocked locations). Same predicates as the
+// executive summary's totals, without its alert computation (12 s cold).
+async function computeStockTotals(mode = 'active') {
+  const mc = mode === 'active' ? 'AND l.shop_closed = false' : mode === 'inactive' ? 'AND l.shop_closed = true' : '';
+  // Sum per store first, then total: same result, no COUNT(DISTINCT) sort
+  // (850 → 255 ms).
+  return getOrSet(`inventory:stock-totals:v1:${mode}`, async () => (await query(`
+    SELECT COALESCE(SUM(x.u), 0)::int       AS total_stock,
+           COALESCE(SUM(x.v), 0)::numeric   AS total_stock_value,
+           COUNT(*)::int                    AS active_locations
+      FROM (SELECT i.location_id, SUM(i.qty_on_hand) AS u, SUM(i.qty_on_hand * s.mrp) AS v
+              FROM inventory_snapshot i JOIN skus s ON s.id = i.sku_id AND s.is_active = true
+             GROUP BY i.location_id) x
+      JOIN locations l ON l.id = x.location_id
+     WHERE l.is_active = true ${mc}`)).rows[0], 86400);
+}
+
+const shiftYearISO = (iso, years) => { const d = new Date(iso + 'T00:00:00'); d.setFullYear(d.getFullYear() - years);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+// Capture a controller's JSON without HTTP (sync status has no cache and its
+// own side effects — reusing the handler keeps one definition).
+const captureJson = (fn, q = {}) => new Promise((resolve, reject) => {
+  fn({ query: q, params: {}, headers: {}, body: {} }, { status() { return this; }, json: (b) => resolve(b), set() { return this; }, setHeader() {} }, (e) => (e ? reject(e) : resolve(null)));
+});
+
+// ─── GET /analytics/overview — the whole Overview in ONE round-trip ─────────
+// Replaces 5 requests (sales ×2 — plus a sequential 3rd when data lags the
+// window — executive-summary, state-heatmap, sync/status). Last year is clipped
+// server-side to the last day the current window has data (like-for-like), so
+// the client never re-requests it. Each block keeps its own cache key.
+async function getOverview(req, res, next) {
+  try {
+    const { mode = 'active' } = req.query;
+    const date_from = req.query.date_from || '2024-04-01';
+    const date_to = req.query.date_to || todayISO();
+    const [current, stock, heatmap, sync] = await Promise.all([
+      computeSalesSummary({ date_from, date_to, mode }),
+      computeStockTotals(mode),
+      computeStateHeatmap({ date_from, date_to, mode }).catch(() => null),
+      captureJson(require('./sync.controller').getStatus).then((b) => b?.data ?? null).catch(() => null),
+    ]);
+    const daily = current.daily || [];
+    const lastDay = daily.length ? String(daily[daily.length - 1].date).slice(0, 10) : null;
+    let ly = null; let lyWindow = null;
+    if (lastDay) {
+      lyWindow = { from: shiftYearISO(date_from, 1), to: shiftYearISO(lastDay < date_to ? lastDay : date_to, 1) };
+      ly = await computeSalesSummary({ date_from: lyWindow.from, date_to: lyWindow.to, mode }).catch(() => null);
+    }
+    res.json({ success: true, data: { from: date_from, to: date_to, mode, last_data_day: lastDay, comparable: !!lastDay,
+      current, ly, ly_window: lyWindow, stock, state_heatmap: heatmap, sync } });
   } catch (err) { next(err); }
 }
 
@@ -1742,7 +1819,14 @@ async function getStateHeatmap(req, res, next) {
 async function getSalesSummary(req, res, next) {
   try {
     const { date_from, date_to, mode = 'active' } = req.query;
-    const ttl = Number(req.query.ttl_override) || 86400; // 24h — ERP is daily-sync, no point expiring sooner
+    const data = await computeSalesSummary({ date_from, date_to, mode, ttl: Number(req.query.ttl_override) || 86400 });
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+}
+
+// Shared by /sales/summary and /overview (same cache key → one computation).
+async function computeSalesSummary({ date_from, date_to, mode = 'active', ttl = 86400 }) {
+  {
     // v3: payload now carries the ex_gst / gst / mrp lens values so the
     // dashboard can re-pivot revenue without a second round-trip.  Bump the
     // cache key so old v2 entries don't shadow the new fields.
@@ -1772,6 +1856,55 @@ async function getSalesSummary(req, res, next) {
       `);
       const eligibleStoreCount = eligibleRes.rows[0]?.eligible || 0;
 
+      // Fast path: the daily per-store rollup (srd_store — same active-store /
+      // active-SKU baseline and byte-identical valuation as the live CTE, kept
+      // current by every sync; the /sales page already serves from it). An
+      // indexed range-sum over ~a few hundred rows per day instead of a scan of
+      // inventory_movements: YTD 4 s → tens of ms. Live CTE below = fallback.
+      if (await rollupsReady()) {
+        const smc = mode === 'inactive' ? ' AND shop_closed = true' : mode === 'all' ? '' : ' AND shop_closed = false';
+        const fr = await query(`
+          WITH r AS (SELECT * FROM srd_store WHERE sale_date >= $1::date AND sale_date <= $2::date${smc})
+          SELECT
+            (SELECT json_build_object(
+              'units_sold',   COALESCE(SUM(s_qty),0)::int,          'sales_value',  COALESCE(SUM(s_val),0)::bigint,
+              'return_units', COALESCE(SUM(r_qty),0)::int,          'return_value', COALESCE(SUM(r_val),0)::bigint,
+              'net_units',    (COALESCE(SUM(s_qty),0) - COALESCE(SUM(r_qty),0))::int,
+              'net_value',    (COALESCE(SUM(s_val),0) - COALESCE(SUM(r_val),0))::bigint,
+              'sales_ex_gst_value',   ROUND(COALESCE(SUM(s_exgst),0))::bigint,
+              'return_ex_gst_value',  ROUND(COALESCE(SUM(r_exgst),0))::bigint,
+              'net_ex_gst_value',     ROUND(COALESCE(SUM(s_exgst),0) - COALESCE(SUM(r_exgst),0))::bigint,
+              'sales_gst_collected',  ROUND(COALESCE(SUM(s_gst),0))::bigint,
+              'return_gst_collected', ROUND(COALESCE(SUM(r_gst),0))::bigint,
+              'net_gst_collected',    ROUND(COALESCE(SUM(s_gst),0) - COALESCE(SUM(r_gst),0))::bigint,
+              'sales_mrp_value',      ROUND(COALESCE(SUM(s_mrp),0))::bigint,
+              'return_mrp_value',     ROUND(COALESCE(SUM(r_mrp),0))::bigint,
+              'net_mrp_value',        ROUND(COALESCE(SUM(s_mrp),0) - COALESCE(SUM(r_mrp),0))::bigint,
+              'sales_discount_value', GREATEST(0, ROUND(COALESCE(SUM(s_mrp),0) - COALESCE(SUM(s_val),0)))::bigint,
+              'sales_txns',        COALESCE(SUM(s_txn),0)::int,
+              'return_txns',       COALESCE(SUM(r_txn),0)::int,
+              'stores_with_sales', COUNT(DISTINCT location_id) FILTER (WHERE s_txn > 0)::int,
+              'active_days',       COUNT(DISTINCT sale_date)   FILTER (WHERE s_txn > 0)::int,
+              'return_rate_pct',   CASE WHEN COALESCE(SUM(s_qty),0) > 0
+                                        THEN ROUND(100.0 * COALESCE(SUM(r_qty),0) / NULLIF(COALESCE(SUM(s_qty),0), 0), 2) ELSE 0 END
+            ) FROM r) AS summary,
+            (SELECT json_agg(d ORDER BY d.date) FROM (
+              SELECT sale_date AS date,
+                     COALESCE(SUM(s_qty),0)::int sales_qty, COALESCE(SUM(s_val),0)::bigint sales_value,
+                     COALESCE(SUM(r_qty),0)::int return_qty, COALESCE(SUM(r_val),0)::bigint return_value
+                FROM r GROUP BY sale_date HAVING SUM(s_txn) + SUM(r_txn) > 0) d) AS daily,
+            (SELECT json_agg(c ORDER BY c.sales_value DESC NULLS LAST) FROM (
+              SELECT channel,
+                     COUNT(DISTINCT location_id) FILTER (WHERE s_txn > 0)::int stores,
+                     COALESCE(SUM(s_qty),0)::int units, COALESCE(SUM(s_val),0)::bigint sales_value,
+                     COALESCE(SUM(r_qty),0)::int return_qty, COALESCE(SUM(r_val),0)::bigint return_value
+                FROM r GROUP BY channel HAVING COALESCE(SUM(s_val),0) > 0) c) AS by_channel`, [from, to]);
+        const fx = fr.rows[0] || {};
+        const summary = fx.summary || {};
+        summary.eligible_store_count = eligibleStoreCount;
+        return { summary, daily: fx.daily || [], by_channel: fx.by_channel || [] };
+      }
+
       // Single-pass aggregate: summary + daily + by_channel from one scan.
       // The mov CTE joins skus so we can compute the valuation lens fields
       // (ex-GST, GST collected, MRP) from one pass — same gst-rate / mrp
@@ -1785,11 +1918,11 @@ async function getSalesSummary(req, res, next) {
             COALESCE(m.sale_value, 0)       AS val,
             -- Valuation augmentations
             (ABS(m.qty_change)::numeric * COALESCE(s.mrp, 0))                 AS mrp_val,
-            (COALESCE(m.sale_value, 0)::numeric * COALESCE(s.gst_rate, 12)
-              / NULLIF(100 + COALESCE(s.gst_rate, 12), 0))                    AS gst_val,
+            COALESCE(m.gst_amount, COALESCE(m.sale_value, 0)::numeric * COALESCE(s.gst_rate, 12)
+              / NULLIF(100 + COALESCE(s.gst_rate, 12), 0)) AS gst_val,
             (COALESCE(m.sale_value, 0)::numeric
-              - COALESCE(m.sale_value, 0)::numeric * COALESCE(s.gst_rate, 12)
-                / NULLIF(100 + COALESCE(s.gst_rate, 12), 0))                  AS ex_gst_val,
+              - COALESCE(m.gst_amount, COALESCE(m.sale_value, 0)::numeric * COALESCE(s.gst_rate, 12)
+              / NULLIF(100 + COALESCE(s.gst_rate, 12), 0))) AS ex_gst_val,
             m.location_id,
             COALESCE(l.group_name, l.type::text) AS channel,
             l.type AS location_type
@@ -1884,14 +2017,13 @@ async function getSalesSummary(req, res, next) {
         by_channel: row.by_channel || [],
       };
     }, ttl);
-
-    res.json({ success: true, data });
-  } catch (err) { next(err); }
+    return data;
+  }
 }
 
 module.exports = {
   getNetworkOverview, getStockTrend, getSizeDistribution,
   getColorDistribution, getZoneHeatmap, getFillRate,
   getSalesAnalytics, getSalesDrilldown, getReturnsAnalytics,
-  getOverviewCrossPivot, getStateHeatmap, getSalesSummary,
+  getOverviewCrossPivot, getStateHeatmap, getSalesSummary, getOverview,
 };

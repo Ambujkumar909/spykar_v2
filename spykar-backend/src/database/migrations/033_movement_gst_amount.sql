@@ -1,0 +1,11 @@
+-- ─── Migration 033: real GST per sale/return line ────────────────────────────
+-- The sync stored the ERP's SALEAMT (taxable, BEFORE GST) in sale_value while
+-- every screen treated it as the GST-inclusive gross, then stripped an assumed
+-- skus.gst_rate from it again. Gross was short by the GST (7 Oct 2026: 29.68 L
+-- shown vs 32.82 L billed) and Ex-GST / GST were both wrong.
+--
+-- From here: sale_value = ERP GROSSAMT (GST-inclusive), gst_amount = the ERP's
+-- SGST + CGST + IGST for the line, Ex-GST = sale_value − gst_amount (= SALEAMT).
+-- NULL gst_amount = a row not re-pulled yet; readers fall back to the old
+-- rate-based split for it. Nullable ADD COLUMN: no table rewrite.
+ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS gst_amount NUMERIC(12,2);

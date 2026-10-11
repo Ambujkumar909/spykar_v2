@@ -198,8 +198,11 @@ async function warmAllOptionsDefault() {
   // Match the params the FilterBar sends on first mount.  v2 universal filter
   // bar always emits mode/sale_mode/valuation regardless of user input, so
   // the empty-filters cache key includes those three.
-  const filters = { mode: 'active', sale_mode: 'net', valuation: 'gross' };
-  return getOrSet(cacheKey('filters:all', filters), () => buildAllOptions(filters), OPTIONS_TTL);
+  // /sales opens on All stores, every other tab on Active — warm both.
+  return Promise.all(['active', 'all'].map((mode) => {
+    const filters = { mode, sale_mode: 'net', valuation: 'gross' };
+    return getOrSet(cacheKey('filters:all', filters), () => buildAllOptions(filters), OPTIONS_TTL);
+  }));
 }
 
 module.exports = { getOptionsForDimension, getAllOptions, warmAllOptionsDefault };

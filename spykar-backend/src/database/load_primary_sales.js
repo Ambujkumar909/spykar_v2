@@ -26,6 +26,8 @@
  *        (pulls exactly those ITNOs from M3). Runs automatically in every sync.
  *   node src/database/load_primary_sales.js --rollup
  *        Rebuild the speed layer (both rollups) from the ledger, off-lock, atomic swap.
+ *   node src/database/load_primary_sales.js --stock
+ *        Rebuild primary_stock (on hand × COGS per warehouse × item) from the ledger.
  *   node src/database/load_primary_sales.js --reconcile [--from= --to=]
  *        Self-heal: per-day M3 vs PG counts (default last PRIMARY_RECONCILE_DAYS=45
  *        days), batched re-pull of short days, remembers unmappable residue so
@@ -49,11 +51,12 @@ const MODE   = ARGS.includes('--warehouses') ? 'warehouses'
              : ARGS.includes('--reconcile')  ? 'reconcile'
              : ARGS.includes('--rollup')     ? 'rollup'
              : ARGS.includes('--remap')      ? 'remap'
+             : ARGS.includes('--stock')      ? 'stock'
              : null;
 
 async function main() {
   if (!MODE) {
-    console.error('Usage: node load_primary_sales.js --warehouses | --backfill [--truncate] [--from= --to=] [--limit=N] | --delta [--force] | --reconcile [--from= --to=] | --rollup | --remap');
+    console.error('Usage: node load_primary_sales.js --warehouses | --backfill [--truncate] [--from= --to=] [--limit=N] | --delta [--force] | --reconcile [--from= --to=] | --rollup | --remap | --stock');
     process.exit(1);
   }
   console.log('='.repeat(64));
@@ -84,6 +87,11 @@ async function main() {
       // re-cluster the sku-grain rollup by date on an existing deployment.
       const n = await primary.rebuildRollup();
       console.log(`Rollup rebuilt: ${n} sku-grain rows (warehouse grain derived + swapped in the same transaction)`);
+    } else if (MODE === 'stock') {
+      // Rebuild primary_stock (on hand per warehouse × item) from the ledger.
+      // No M3 needed. The sync keeps it current after this first build.
+      const n = await primary.rebuildStock();
+      console.log(`Stock rebuilt: ${n} warehouse × item positions on hand`);
     } else if (MODE === 'reconcile') {
       const r = await primary.reconcile({ from: argVal('from') || undefined, to: argVal('to') || undefined });
       if (r.skipped) console.log('Reconcile skipped — no data window.');

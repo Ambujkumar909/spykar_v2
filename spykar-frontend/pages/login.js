@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import {
   ArrowRight,
@@ -10,6 +10,17 @@ import {
 import { useAuth } from '../lib/auth-context';
 import toast from 'react-hot-toast';
 
+// Why the previous session ended (code from the API / session engine).
+const REASONS = {
+  LOGOUT: 'You have been signed out.',
+  SESSION_IDLE: 'You were signed out after a period of inactivity.',
+  SESSION_EXPIRED: 'Your session reached its maximum length. Please sign in again.',
+  SESSION_REVOKED: 'This session was signed out. Please sign in again.',
+  ACCOUNT_DISABLED: 'This account has been deactivated. Contact your administrator.',
+};
+// Only same-site paths — never an absolute or protocol-relative URL (open redirect).
+const safeNext = (n) => (typeof n === 'string' && n.startsWith('/') && !n.startsWith('//') && !n.startsWith('/\\') && !n.startsWith('/login') ? n : '/');
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -18,13 +29,19 @@ export default function LoginPage() {
   const { login } = useAuth();
   const router = useRouter();
 
+  useEffect(() => {
+    if (!router.isReady) return;
+    const msg = REASONS[router.query.reason];
+    if (msg) toast(msg, { id: 'session-reason', icon: router.query.reason === 'LOGOUT' ? '👋' : '🔒', duration: 6000 });
+  }, [router.isReady, router.query.reason]);
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (!email || !password) return toast.error('Please enter email and password.');
     setLoading(true);
     try {
       await login(email, password);
-      router.replace('/');
+      router.replace(safeNext(router.query.next));
     } catch (err) {
       toast.error(err?.response?.data?.message || 'Login failed. Check your credentials.');
     } finally {
@@ -162,7 +179,7 @@ export default function LoginPage() {
                 color: '#667085',
               }}
             >
-              Inventory intelligence dashboard
+              Sales, stock &amp; supply — one live view
             </p>
           </div>
 

@@ -11,12 +11,12 @@ const ctrl = require('../controllers/ageing.controller');
 
 router.use(authenticate);
 
-const SOURCE = ['warehouse', 'store'];
+const SOURCE = ['warehouse', 'store', 'esales'];
 const MEASURE = ['units', 'gross', 'cost'];
-const GROUP_BY = ['warehouse', 'state', 'city', 'channel', 'store',
+const GROUP_BY = ['warehouse', 'state', 'city', 'channel', 'store', 'partner',
                   'category', 'colour', 'color', 'size', 'product', 'gender', 'season'];
 const STATUS = ['active', 'inactive', 'all'];
-const SCOPE = ['state', 'city', 'channel', 'group_name', 'store', 'store_code', 'warehouse',
+const SCOPE = ['state', 'city', 'channel', 'group_name', 'store', 'store_code', 'warehouse', 'partner_name',
                'category', 'colour', 'color', 'size', 'product', 'gender', 'sub_product', 'season']
   .map((k) => query(k).optional().isString().trim());
 

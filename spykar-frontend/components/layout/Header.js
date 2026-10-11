@@ -71,7 +71,7 @@ export default function Header({ title, subtitle, headerSlot, hideSync }) {
   let isSync = false;
   let isUser = false;
 
-  if (lowerTitle.includes('sales') || lowerTitle.includes('return')) {
+  if (lowerTitle.includes('sales') || lowerTitle.includes('return') || lowerTitle.includes('primary')) {
     isSales = true;
     PageIcon = TrendingUp;
     themeColor = '#EF4444'; // Spykar Red
@@ -83,8 +83,8 @@ export default function Header({ title, subtitle, headerSlot, hideSync }) {
     themeColor = '#3B82F6';
     glowColor = 'rgba(59, 130, 246, 0.15)';
     iconBorderColor = 'rgba(59, 130, 246, 0.3)';
-  } else if (lowerTitle.includes('availab')) {
-    // Stock Availability — sky/cyan, distinct from the other three pages.
+  } else if (lowerTitle.includes('availab') || lowerTitle.includes('stock history')) {
+    // EBO Stock History — sky/cyan, distinct from the other three pages.
     PageIcon = LineChart;
     themeColor = '#0EA5E9';
     glowColor = 'rgba(14, 165, 233, 0.15)';

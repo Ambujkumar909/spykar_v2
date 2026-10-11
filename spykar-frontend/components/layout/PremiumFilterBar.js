@@ -22,11 +22,15 @@ import {
   CalendarRange, Briefcase, Activity
 } from 'lucide-react';
 import MultiSelect from '../filters/MultiSelect';
-import { filterService } from '../../lib/services';
+import { filterService, esalesStockService } from '../../lib/services';
 import { getCached, setCached, isFresh } from '../../lib/dashboardCache';
 import { useSharedFilters } from '../../lib/FiltersContext';
 
-const FILTER_ROUTES = new Set(['/network', '/sales', '/primary-sales', '/stock-availability', '/inventory-ageing']);
+const FILTER_ROUTES = new Set(['/network', '/sales', '/primary-sales', '/esales-stock', '/stock-availability', '/inventory-ageing']);
+// Inventory Ageing shows partner-level filters while its ESales source is
+// selected (the page keeps the source in the shared filter state).
+const AGEING_ESALES = '/inventory-ageing#esales';
+const routeKeyFor = (pathname, filters) => (pathname === '/inventory-ageing' && filters?.source === 'esales' ? AGEING_ESALES : pathname);
 
 // Per-route dimension whitelist. Primary Sales is a WAREHOUSE-level feed, so only
 // the SKU-attribute dims that actually carry data there are relevant (verified
@@ -35,6 +39,13 @@ const FILTER_ROUTES = new Set(['/network', '/sales', '/primary-sales', '/stock-a
 // Shade (duplicate of Colour), Style (13k values), Fit (empty), Brand (single).
 const ROUTE_DIMS = {
   '/primary-sales': new Set(['gender_name', 'category', 'product', 'sub_product', 'size', 'color', 'season']),
+  // ESales Stock is PARTNER-level (marketplaces, not stores): location / party /
+  // status do not exist for it — it has its own Channel + Partner group instead
+  // (ROUTE_GROUPS). Shade is excluded (identical to Colour on every ESales item) and
+  // Style (8k values — searched in the page's SKU table instead).
+  '/esales-stock': new Set(['channel', 'partner_name', 'gender_name', 'category', 'product', 'sub_product', 'size', 'color', 'season']),
+  // Inventory Ageing with its ESales source selected: the same partner-level set.
+  [AGEING_ESALES]: new Set(['channel', 'partner_name', 'gender_name', 'category', 'product', 'sub_product', 'size', 'color', 'season']),
   // Stock Availability is STORE-level inventory (locations ⋈ skus), so the FULL
   // dimensional lens applies — location AND product attributes. Status (mode) is
   // driven by the page's own control, and Shade/Style are excluded (Shade dups
@@ -47,10 +58,24 @@ const ROUTE_DIMS = {
   '/inventory-ageing': new Set(['gender_name', 'category', 'product', 'sub_product',
     'size', 'color', 'season', 'state', 'city', 'store_code', 'group_name', 'mode']),
 };
+// Routes whose Lens lists come from their OWN data instead of the global SKU
+// master — the page then offers only values it can actually show.
+const ESALES_OPTIONS = { prefix: 'esales:', fetch: (params) => esalesStockService.getFilterOptions(params) };
+const ROUTE_OPTIONS = { '/esales-stock': ESALES_OPTIONS, [AGEING_ESALES]: ESALES_OPTIONS };
+// Filter groups that exist on one route only, shown first.
+const PARTNER_GROUP = [{
+  name: 'Partner',
+  eyebrow: 'Where it sits',
+  dims: [
+    { key: 'channel',      label: 'Channel', apiKey: 'channel',      Icon: Briefcase },
+    { key: 'partner_name', label: 'Partner', apiKey: 'partner_name', Icon: Store     },
+  ],
+}];
+const ROUTE_GROUPS = { '/esales-stock': PARTNER_GROUP, [AGEING_ESALES]: PARTNER_GROUP };
 function groupsForRoute(pathname) {
   const allow = ROUTE_DIMS[pathname];
   if (!allow) return FILTER_GROUPS;
-  return FILTER_GROUPS
+  return [...(ROUTE_GROUPS[pathname] || []), ...FILTER_GROUPS]
     .map((g) => ({ ...g, dims: g.dims.filter((d) => allow.has(d.key)) }))
     .filter((g) => g.dims.length);
 }
@@ -198,12 +223,16 @@ export default function PremiumFilterBar({ isOpen = false }) {
 function Panel({ api, pathname }) {
   const { filters, setFilter, clearAll, activeCount } = api;
 
+  const routeKey = routeKeyFor(pathname, filters);
+  const own = ROUTE_OPTIONS[routeKey];
+  const keyOf = (params) => (own ? own.prefix : '') + filterOptionsCacheKey(params);
+  const firstKey = own ? keyOf({}) : filterOptionsCacheKey(PREFETCH_DEFAULTS);
   const [optionsByDim, setOptionsByDim] = useState(() => {
-    const c = getCached(filterOptionsCacheKey(PREFETCH_DEFAULTS));
+    const c = getCached(firstKey);
     return c || {};
   });
   const [loading, setLoading] = useState(() => {
-    const c = getCached(filterOptionsCacheKey(PREFETCH_DEFAULTS));
+    const c = getCached(firstKey);
     return !c || Object.keys(c).length === 0;
   });
   const debounceRef  = useRef(null);
@@ -213,7 +242,7 @@ function Panel({ api, pathname }) {
   const fetchOptions = async (params, cacheKey) => {
     const myId = ++requestId.current;
     try {
-      const r = await filterService.getAllOptions(params);
+      const r = await (own ? own.fetch(params) : filterService.getAllOptions(params));
       if (myId !== requestId.current) return;
       const opts = r.data?.options || {};
       setCached(cacheKey, opts);
@@ -229,11 +258,12 @@ function Panel({ api, pathname }) {
   useEffect(() => {
     const params = {};
     Object.entries(filters).forEach(([k, v]) => {
+      if (own && !ROUTE_DIMS[routeKey].has(k)) return;     // e.g. the ageing page's source / mode are not ESales filters
       if (v === undefined || v === null || v === '') return;
       if (Array.isArray(v) && v.length === 0) return;
       params[toApiKey(k)] = Array.isArray(v) ? v.join(',') : v;
     });
-    const key = filterOptionsCacheKey(params);
+    const key = keyOf(params);
     activeKeyRef.current = key;
 
     const cached = getCached(key);
@@ -249,7 +279,7 @@ function Panel({ api, pathname }) {
     debounceRef.current = setTimeout(() => fetchOptions(params, key), 100);
     return () => { clearTimeout(debounceRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(filters)]);
+  }, [JSON.stringify(filters), routeKey]);
 
   return (
     <div className="lux__inner">
@@ -277,7 +307,7 @@ function Panel({ api, pathname }) {
 
       {/* ─── Filter groups (route-scoped) ─── */}
       <div className="lux__groups">
-        {groupsForRoute(pathname).map((group) => (
+        {groupsForRoute(routeKey).map((group) => (
           <FilterGroup
             key={group.name}
             group={group}

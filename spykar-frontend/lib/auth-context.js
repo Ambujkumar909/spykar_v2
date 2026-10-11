@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import Cookies from 'js-cookie';
 import { authService } from '../lib/services';
+import { applySession, startSessionEngine, hasSessionHint, endSession, announceLogin, markActivity } from './session';
 
 const AuthContext = createContext(null);
 
@@ -31,45 +31,36 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const accessToken  = Cookies.get('accessToken');
-    const refreshToken = Cookies.get('refreshToken');
+    startSessionEngine();
     const cached = readCachedUser();
 
-    // No credentials at all → definitively logged out. Don't even try /me.
-    if (!accessToken && !refreshToken) {
+    // Nothing on this device suggests a session → logged out; skip the network.
+    // (The refresh token is an httpOnly cookie we cannot see, so the access
+    // token / cached profile / a pre-cookie refresh token are the hints.)
+    if (!hasSessionHint()) {
       writeCachedUser(null);
       setLoading(false);
       return;
     }
 
-    // OPTIMISTIC PAINT: we have a credential AND a cached profile, so render the
-    // app right now. This runs in the first post-hydration effect, so the
-    // blocking "Loading Spykar IQ…" gate is gone after a single frame instead of
-    // a network round-trip. (We can't seed this in useState without a hydration
-    // mismatch against the static-prerendered shell, hence the one-frame defer.)
+    // OPTIMISTIC PAINT with the cached profile; revalidate in the background.
+    // (Can't seed useState without a hydration mismatch against the static
+    // shell, hence the one-frame defer.)
     if (cached) {
       setUser(cached);
       setLoading(false);
     }
 
-    // BACKGROUND REVALIDATE: confirm the session is still good. The api response
-    // interceptor transparently refreshes an expired access token using the
-    // refresh token, so this succeeds as long as the refresh token is valid —
-    // which also fixes spurious logouts when only the 15-min access token had
-    // expired on reload.
+    // /me goes through the API client, which refreshes an expired / missing
+    // access token from the httpOnly cookie first. Only a 401 ends things; a
+    // network error / 5xx / 429 keeps the optimistic user and retries later.
     authService.me()
       .then(res => {
         setUser(res.data.data);
         writeCachedUser(res.data.data);
       })
       .catch((err) => {
-        // Only a 401 means the session is dead (the interceptor already tried a
-        // refresh). A network error, timeout, 5xx or 429 — e.g. the API
-        // restarting while the user reloads — must NOT throw away a valid
-        // 7-day session; keep the optimistic user and let the next call retry.
-        if (err?.response?.status !== 401) return;
-        Cookies.remove('accessToken');
-        Cookies.remove('refreshToken');
+        if (err?.response?.status !== 401 && !err?.sessionEnded) return;
         writeCachedUser(null);
         setUser(null);
       })
@@ -78,20 +69,20 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (email, password) => {
     const res = await authService.login(email, password);
-    const { accessToken, refreshToken, user: userData } = res.data.data;
-    Cookies.set('accessToken', accessToken, { expires: 1/96 });
-    Cookies.set('refreshToken', refreshToken, { expires: 7 });
+    const { user: userData } = res.data.data;
+    applySession(res.data.data);          // access token + idle window; refresh token is the httpOnly cookie
+    markActivity();
     setUser(userData);
     writeCachedUser(userData);
+    announceLogin();                      // other tabs sitting on /login move on too
     return userData;
   }, []);
 
-  const logout = useCallback(async () => {
-    try { await authService.logout(); } catch {}
-    Cookies.remove('accessToken');
-    Cookies.remove('refreshToken');
-    writeCachedUser(null);
+  // This device only; `everywhere` ends every session of this user.
+  const logout = useCallback(async ({ everywhere = false } = {}) => {
+    try { await (everywhere ? authService.logoutAll() : authService.logout()); } catch {}
     setUser(null);
+    endSession('LOGOUT');                 // clears this tab + tells the other tabs
   }, []);
 
   return (

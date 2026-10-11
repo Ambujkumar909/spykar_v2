@@ -1,105 +1,59 @@
 import axios from 'axios';
-import Cookies from 'js-cookie';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001/api/v1';
+import { getAccessToken, expiresSoon, refreshSession, endSession, hasSessionHint, userIsActive, SessionEndedError } from './session';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 
 const api = axios.create({
   baseURL: API_URL,
   timeout: 30000,
+  withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 });
 
-// ─── Request interceptor: attach access token ─────────────────────────────────
-api.interceptors.request.use(
-  (config) => {
-    const token = Cookies.get('accessToken');
-    if (token) config.headers.Authorization = `Bearer ${token}`;
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
+const isAuthEndpoint = (url = '') => /\/auth\/(login|refresh)\b/.test(url);
 
-// ─── Response interceptor: handle 401, refresh token ─────────────────────────
-let isRefreshing = false;
-let failedQueue = [];
+// A refresh is only allowed for someone actually using the app: background
+// polling must not keep an abandoned session alive (see lib/session.js).
+async function freshToken() {
+  if (!userIsActive()) throw new SessionEndedError('SESSION_IDLE', 'Signed out after a period of inactivity.');
+  return refreshSession();
+}
 
-const processQueue = (error, token = null) => {
-  failedQueue.forEach((prom) => {
-    if (error) prom.reject(error);
-    else prom.resolve(token);
-  });
-  failedQueue = [];
-};
+// ─── Request interceptor: attach a token that is not about to expire ─────────
+api.interceptors.request.use(async (config) => {
+  if (!isAuthEndpoint(config.url) && hasSessionHint() && expiresSoon(getAccessToken(), 30000)) {
+    try { await freshToken(); } catch (e) { if (e.sessionEnded) { endSession(e.code); throw e; } /* transient: send anyway */ }
+  }
+  const token = getAccessToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
 
+// ─── Response interceptor ────────────────────────────────────────────────────
+// 401 codes: TOKEN_EXPIRED / TOKEN_MISSING / TOKEN_INVALID → refresh once and
+// retry; SESSION_REVOKED / ACCOUNT_DISABLED → the session is over, no retry.
+// Login/refresh 401s ("wrong password", "no session") pass straight through.
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config;
+    const originalRequest = error.config || {};
+    const status = error.response && error.response.status;
+    const code = error.response && error.response.data && error.response.data.code;
 
-    // A 401 from the auth endpoints themselves is NOT an expired session — it's
-    // "wrong credentials" (login) or "bad refresh token" (refresh). Those must
-    // pass straight through to the caller so the login page can show the error.
-    // Without this guard, a wrong-password 401 hit the refresh/clearAuth path
-    // below → clearAuth() did window.location.href='/login' (a full reload),
-    // which wiped the error toast before the user ever saw it.
-    const reqUrl = originalRequest?.url || '';
-    const isAuthEndpoint = reqUrl.includes('/auth/login') || reqUrl.includes('/auth/refresh');
-
-    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        })
-          .then((token) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`;
-            return api(originalRequest);
-          })
-          .catch((err) => Promise.reject(err));
-      }
-
-      originalRequest._retry = true;
-      isRefreshing = true;
-
-      const refreshToken = Cookies.get('refreshToken');
-      if (!refreshToken) {
-        isRefreshing = false;
-        clearAuth();
+    if (status === 401 && !isAuthEndpoint(originalRequest.url)) {
+      if (code === 'SESSION_REVOKED' || code === 'ACCOUNT_DISABLED' || originalRequest._retry) {
+        endSession(code || 'SESSION_INVALID');
         return Promise.reject(error);
       }
-
+      originalRequest._retry = true;
       try {
-        const res = await axios.post(`${API_URL}/auth/refresh`, { refreshToken });
-        const { accessToken, refreshToken: newRefreshToken } = res.data.data;
-
-        Cookies.set('accessToken', accessToken, { expires: 1/96 }); // 15min
-        Cookies.set('refreshToken', newRefreshToken, { expires: 7 });
-
-        api.defaults.headers.common.Authorization = `Bearer ${accessToken}`;
-        processQueue(null, accessToken);
-        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+        await freshToken();
+        originalRequest.headers.Authorization = `Bearer ${getAccessToken()}`;
         return api(originalRequest);
-      } catch (refreshError) {
-        // Two tabs share one cookie jar: if the other tab rotated the refresh
-        // token first, ours is now spent (401) but its fresh tokens are already
-        // in the cookies. Use those instead of logging both tabs out.
-        if (refreshError.response?.status === 401) {
-          await new Promise((r) => setTimeout(r, 800));
-          const rotated = Cookies.get('refreshToken');
-          const current = Cookies.get('accessToken');
-          if (rotated && rotated !== refreshToken && current) {
-            api.defaults.headers.common.Authorization = `Bearer ${current}`;
-            processQueue(null, current);
-            originalRequest.headers.Authorization = `Bearer ${current}`;
-            return api(originalRequest);
-          }
-        }
-        processQueue(refreshError, null);
-        // Only a rejected refresh token ends the session; a network blip or a
-        // 5xx during refresh leaves the cookies for the next attempt.
-        if (refreshError.response?.status === 401) clearAuth();
-        return Promise.reject(refreshError);
-      } finally {
-        isRefreshing = false;
+      } catch (e) {
+        if (e.sessionEnded) endSession(e.code);
+        return Promise.reject(e.sessionEnded ? error : e);
       }
     }
 
@@ -110,11 +64,16 @@ api.interceptors.response.use(
     // usually still running on the server and cached by the time we retry.
     const cfg = error.config;
     const canceled = axios.isCancel?.(error) || error.code === 'ERR_CANCELED' || cfg?.signal?.aborted;
-    const transient = !error.response || [502, 503, 504].includes(error.response.status) || error.code === 'ECONNABORTED';
+    // 429 (rate limited) is transient too: wait what the server asks for
+    // (Retry-After, capped at 15 s) instead of flashing an error.
+    const limited = error.response?.status === 429;
+    const transient = limited || !error.response || [502, 503, 504].includes(error.response.status) || error.code === 'ECONNABORTED';
     if (cfg && !canceled && transient && (cfg.method || 'get').toLowerCase() === 'get') {
       cfg.__retries = (cfg.__retries || 0) + 1;
       if (cfg.__retries <= 2) {
-        await new Promise((r) => setTimeout(r, cfg.__retries === 1 ? 1500 : 4000));
+        const retryAfterS = Number(error.response?.headers?.['retry-after']) || Number(error.response?.data?.retryAfter) || 0;
+        const waitMs = limited ? Math.min(15000, Math.max(1000, retryAfterS * 1000)) : (cfg.__retries === 1 ? 1500 : 4000);
+        await new Promise((r) => setTimeout(r, waitMs));
         if (!cfg.signal?.aborted) return api(cfg);
       }
     }
@@ -123,16 +82,8 @@ api.interceptors.response.use(
   }
 );
 
-export function clearAuth() {
-  Cookies.remove('accessToken');
-  Cookies.remove('refreshToken');
-  Cookies.remove('user');
-  if (typeof window !== 'undefined') {
-    // Purge the optimistic-paint profile (see auth-context) so the reload to
-    // /login can't briefly render the app shell for a now-logged-out user.
-    try { window.localStorage.removeItem('spykar-user'); } catch {}
-    window.location.href = '/login';
-  }
+export function clearAuth(code = 'LOGOUT') {
+  endSession(code);
 }
 
 export default api;

@@ -1,7 +1,7 @@
 // ─── /primary-sales — Spykar Primary Sales (Infor M3 MITTRA) ─────────────────
 // Ultra-premium, DETAILED warehouse-movement intelligence. Denim-indigo identity
 // (Spykar is a denim house; DENIM is the #1 category). One /overview round-trip
-// powers the hero + KPIs + daily throughput + flow + monthly + leaderboards +
+// powers the hero (stock on hand × COGS) + KPIs + daily throughput + flow + monthly + leaderboards +
 // txn structure; /pivot + /trend power the detailed explorer. Everything filters
 // on TRDT (transaction date). "Throughput" = Σ|qty×price| (direction-agnostic, so
 // the headline never reads negative); "Net" keeps the sign (stock value added).
@@ -16,6 +16,7 @@ import { useFilters } from '../lib/useFilters';
 import { FiltersProvider } from '../lib/FiltersContext';
 import { primarySalesService } from '../lib/services';
 import { notifyApiError } from '../lib/notifyApiError';
+import { formatFull, kpiFit } from '../lib/v2/format';
 import LoadError from '../components/ui/LoadError';
 import {
   Boxes, Warehouse, Package, IndianRupee, TrendingUp, TrendingDown, Receipt,
@@ -42,6 +43,8 @@ function cnt(n) {
   return n.toLocaleString('en-IN');
 }
 const fmtNum = (n) => (n == null ? '0' : Number(n).toLocaleString('en-IN'));
+// KPI figures (hero + KPI strip) are shown in full — never K / L / Cr.
+const fullRs = (n) => formatFull(n, { rupee: true });
 
 // TTYP direction from the signed qty (M3 codes; exact labels live in M3 config).
 const ttypRole = (qty) => (qty > 0 ? 'Inbound' : qty < 0 ? 'Outbound' : 'Neutral');
@@ -239,7 +242,7 @@ export default function PrimarySalesPage() {
     let a = true; setOvLoading(true);
     primarySalesService.getOverview({ from: fromISO, to: toISO, ...scope })
       .then((r) => { if (a) { setOv(r.data?.data || null); setOvFailed(false); } })
-      .catch((e) => { if (a) { setOv(null); setOvFailed(true); notifyApiError(e, 'Failed to load primary sales'); } })
+      .catch((e) => { if (a) { setOv(null); setOvFailed(true); notifyApiError(e, 'Failed to load primary inventory'); } })
       .finally(() => { if (a) setOvLoading(false); });
     return () => { a = false; };
   }, [scopeKey, fromISO, toISO, retryN]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -285,9 +288,11 @@ export default function PrimarySalesPage() {
   }, [viewBy, fromISO, toISO, measure, scope]);
 
   const k = ov?.kpis;
-  const inTx = ov?.flow?.find((f) => f.dir === 'Inbound')?.txns || 0;
-  const outTx = ov?.flow?.find((f) => f.dir === 'Outbound')?.txns || 0;
-  const inShare = (inTx + outTx) ? Math.round(inTx / (inTx + outTx) * 100) : 0;
+  const st = ov?.stock; // stock on hand × COGS — positions now, not date-windowed
+  const fmtDay = (iso) => (iso ? new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : null);
+  const asOf = fmtDay(st?.as_of);
+  const openingOf = fmtDay(st?.opening_as_of);
+  const signed = (n, f) => (n > 0 ? '+' : n < 0 ? '−' : '') + f(Math.abs(n));
 
   // ── palette (validated categorical + denim accent) ──
   const DENIM = isDark ? '#7B92FF' : '#3D5AF1';
@@ -420,7 +425,7 @@ export default function PrimarySalesPage() {
 
   return (
     <FiltersProvider value={filtersApi}>
-    <DashboardLayout title="Primary Sales"
+    <DashboardLayout title="Primary Inventory"
       subtitle="Warehouse movement intelligence from the Infor M3 ledger — receipts, issues & transfers by transaction date"
       headerSlot={headerSlot} hideSync={true}>
       <div className="ps-root">
@@ -428,48 +433,63 @@ export default function PrimarySalesPage() {
         {/* ── HERO ── */}
         <div className="ps-hero">
           <div className="ps-hero-glow" />
-          <div className="ps-hero-inner">
-            <div className="ps-eyebrow"><Sparkles size={12} /> {isUnits ? 'Units moved' : 'Gross value moved'} · {ov?.from || fromISO} → {ov?.to || toISO}</div>
+          <div className="ps-hero-inner kpi-fit-box">
+            <div className="ps-eyebrow" title="Stock on hand × COGS (item purchase price, M3 PUPR)">
+              <Sparkles size={12} /> {isUnits ? 'Closing stock' : 'Closing stock at cost'}{asOf ? ` · as of ${asOf}` : ''}
+            </div>
             {ovLoading ? <Shim h={64} w="60%" /> : (
-              <div className="ps-hero-num tnum">
-                {!isUnits && <span className="cur">₹</span>}{isUnits ? cnt(k?.throughput_units) : fmtCr(k?.throughput, false)}
+              <div className="ps-hero-num tnum kpi-fit" style={kpiFit(`${formatFull(isUnits ? st?.closing_units : st?.closing_value)}${isUnits ? ' un' : ''}`, 74)}>
+                {!isUnits && <span className="cur">₹</span>}{formatFull(isUnits ? st?.closing_units : st?.closing_value)}
                 {isUnits && <span className="ps-hero-suffix">units</span>}
-                {k?.throughput_delta_pct != null && (
-                  <span className={`ps-delta ${k.throughput_delta_pct >= 0 ? 'up' : 'down'}`}>
-                    {k.throughput_delta_pct >= 0 ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}
-                    {Math.abs(k.throughput_delta_pct)}%
-                  </span>
-                )}
               </div>
             )}
             <div className="ps-hero-sub">
-              <span><b className="tnum">{cnt(k?.txns || 0)}</b> transactions</span>
-              <span><b className="tnum">{k?.warehouse_count || 0}</b> warehouses</span>
-              <span><b className="tnum">{skuLoading ? '…' : cnt(skuCount || 0)}</b> SKUs</span>
-              <span className="ps-chip"><i style={{ background: IN }} />Inbound <b>{inShare}%</b></span>
-              <span className="ps-chip"><i style={{ background: OUT }} />Outbound <b>{100 - inShare}%</b></span>
+              {isUnits
+                ? <span><b className="tnum">{fullRs(st?.closing_value)}</b> at cost</span>
+                : <span><b className="tnum">{formatFull(st?.closing_units || 0)}</b> units</span>}
+              {st && (
+                <span title="Opening + change = closing (at cost)">
+                  Opening{openingOf ? ` ${openingOf}` : ''} <b className="tnum">{isUnits ? formatFull(st.opening_units) : fullRs(st.opening_value)}</b>
+                  {' · '}Change <b className="tnum" style={{ color: (isUnits ? st.change_units : st.change_value) >= 0 ? '#0a7f4f' : OUT }}>
+                    {isUnits ? signed(st.change_units, formatFull) : signed(st.change_value, fullRs)}</b>
+                </span>
+              )}
+              {st?.coco_units > 0 && (
+                <span title="COCO stores (warehouse type Z7) are included above">
+                  incl. COCO stores <b className="tnum">{isUnits ? formatFull(st.coco_units) : fullRs(st.coco_value)}</b>
+                </span>
+              )}
+              <span title={`${ov?.from || fromISO} → ${ov?.to || toISO} · receipts, issues & transfers`}>
+                <b className="tnum">{isUnits ? formatFull(k?.throughput_units) : fullRs(k?.throughput)}</b> moved in period
+                {k?.throughput_delta_pct != null && (
+                  <span className={`ps-delta sm ${k.throughput_delta_pct >= 0 ? 'up' : 'down'}`}>
+                    {k.throughput_delta_pct >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+                    {Math.abs(k.throughput_delta_pct)}%
+                  </span>
+                )}
+              </span>
             </div>
           </div>
         </div>
 
-        {ovFailed && !ovLoading ? <Card style={{ marginTop: 16 }}><LoadError label="Couldn't load primary sales for this selection" onRetry={retry} minHeight={220} /></Card>
+        {ovFailed && !ovLoading ? <Card style={{ marginTop: 16 }}><LoadError label="Couldn't load primary inventory for this selection" onRetry={retry} minHeight={220} /></Card>
           : emptyAll ? <Card style={{ marginTop: 16 }}><Empty label="No primary-sales movements in this date range" /></Card> : (
         <>
         {/* ── KPI strip ── */}
         <div className="ps-kpis">
           {[
-            { lab: 'Transactions', val: cnt(k?.txns || 0), foot: 'movement lines', Icon: Receipt, c: DENIM },
-            { lab: 'Net value flow', val: (k?.net_value >= 0 ? '+' : '') + fmtCr(k?.net_value), foot: 'stock value added', Icon: IndianRupee, c: SERIES[1] },
+            { lab: 'Transactions', val: formatFull(k?.txns || 0), foot: 'movement lines', Icon: Receipt, c: DENIM },
+            { lab: 'Stock change', val: st ? signed(st.change_value, fullRs) : '—', foot: 'closing − opening, at cost', Icon: IndianRupee, c: SERIES[1] },
             { lab: 'Warehouses', val: fmtNum(k?.warehouse_count), foot: 'with activity', Icon: Warehouse, c: SERIES[0] },
-            { lab: 'Distinct SKUs', val: skuLoading ? '…' : cnt(skuCount || 0), foot: 'items moved', Icon: Package, c: SERIES[4] },
+            { lab: 'Distinct SKUs', val: skuLoading ? '…' : formatFull(skuCount || 0), foot: 'items moved', Icon: Package, c: SERIES[4] },
             { lab: 'Txn types', val: fmtNum(k?.ttyp_count), foot: 'receipt · issue · transfer', Icon: ArrowLeftRight, c: SERIES[2] },
             { lab: 'Net units', val: fmtNum(k?.net_qty), foot: 'signed quantity', Icon: Boxes, c: SERIES[7] },
           ].map((t, i) => (
-            <div key={i} className="ps-kpi">
+            <div key={i} className="ps-kpi kpi-fit-box">
               <div className="ps-kpi-bar" style={{ background: t.c }} />
               <div className="ps-kpi-head"><span className="ps-kpi-ic" style={{ background: t.c + '1c', color: t.c }}><t.Icon size={13} strokeWidth={2.2} /></span>
                 <span className="ps-kpi-lab">{t.lab}</span></div>
-              {ovLoading ? <Shim h={26} w="70%" /> : <div className="ps-kpi-val tnum">{t.val}</div>}
+              {ovLoading ? <Shim h={26} w="70%" /> : <div className="ps-kpi-val tnum kpi-fit" style={kpiFit(t.val, 25)}>{t.val}</div>}
               <div className="ps-kpi-foot">{t.foot}</div>
             </div>
           ))}
@@ -638,6 +658,7 @@ export default function PrimarySalesPage() {
         .ps-hero-suffix { font-size: 0.32em; font-weight: 700; color: var(--text-muted); margin-left: 0.28em; align-self: center; }
         .ps-delta { font-size: 15px; font-weight: 800; display: inline-flex; align-items: center; gap: 2px;
           padding: 4px 10px; border-radius: 999px; margin-left: 12px; align-self: center; }
+        .ps-delta.sm { font-size: 11.5px; padding: 2px 7px; margin-left: 6px; vertical-align: middle; }
         .ps-delta.up { color: #0a7f4f; background: rgba(16,163,74,0.14); }
         .ps-delta.down { color: ${OUT}; background: ${OUT}22; }
         .ps-hero-sub { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 18px; font-size: 14px; color: var(--text-secondary); }

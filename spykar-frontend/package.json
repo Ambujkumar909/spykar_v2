@@ -1,7 +1,7 @@
 {
   "name": "spykar-inventory-dashboard",
   "version": "1.0.0",
-  "description": "Spykar Jeans — AI-Powered Inventory Intelligence Dashboard",
+  "description": "Spykar Jeans — AI-Powered Business Command Centre",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",

@@ -805,7 +805,8 @@ export default function SalesAnalyticsPage() {
   // and a Sale/Return/Net lens specific to this page.
   const v2FilterApi =
     useFilters({
-      defaults: { mode: 'active', sale_mode: 'net', valuation: 'gross' },
+      // This tab opens on ALL stores (open + closed); every other tab opens on Active.
+      defaults: { mode: 'all', sale_mode: 'net', valuation: 'gross' },
       persist:  ['mode', 'sale_mode', 'valuation'],
     });
   const { filters: v2Filters, setFilter: setV2, clearAll: clearV2, activeCount: v2Active } = v2FilterApi;
@@ -879,7 +880,7 @@ export default function SalesAnalyticsPage() {
       // Sale/Return/Net or Gross/Ex-GST/MRP is pure client-side enrichment
       // (see lines 949-1061 below), so we must not invalidate the cache or
       // refetch on those flips. Tab toggles become instant.
-      `m${v2Filters.mode||'active'}`,
+      `m${v2Filters.mode||'all'}`,
     ].join('|');
   }, [v2Filters]);
 
@@ -952,7 +953,7 @@ export default function SalesAnalyticsPage() {
       city:        csv(v2Filters.city)        || undefined,
       group_name:  csv(v2Filters.group_name)  || undefined,
       store_code:  csv(v2Filters.store_code)  || undefined,
-      mode:        v2Filters.mode             || 'active',
+      mode:        v2Filters.mode             || 'all',
     };
 
     // ── Dual-fetch: slim endpoint runs 3 aggregates instead of 8, so it
@@ -1186,7 +1187,7 @@ export default function SalesAnalyticsPage() {
       city:        csvJ(v2Filters.city),
       group_name:  csvJ(v2Filters.group_name),
       store_code:  csvJ(v2Filters.store_code),
-      mode:        v2Filters.mode || 'active',
+      mode:        v2Filters.mode || 'all',
       sale_mode:   v2Filters.sale_mode || 'net',
       valuation:   v2Filters.valuation || 'gross',
     };

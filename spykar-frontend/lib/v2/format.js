@@ -33,6 +33,20 @@ export function formatCompact(value) {
   return `${sign}${Math.round(abs).toLocaleString('en-IN')}`;
 }
 
+// KPI cards show the figure in full (Indian grouping) — never K / L / Cr.
+export function formatFull(value, { rupee = false } = {}) {
+  const n = N(value);
+  if (n == null) return '—';
+  return `${n < 0 ? '−' : ''}${rupee ? '₹' : ''}${Math.round(Math.abs(n)).toLocaleString('en-IN')}`;
+}
+
+// A full-length figure must still fit its card. Sets the character count the
+// .kpi-fit rules in globals.css shrink the type by (maxPx = size when it fits).
+export const kpiFit = (text, maxPx) => ({
+  '--kpi-len': String(text ?? '').length || 1,
+  ...(maxPx ? { '--kpi-max': `${maxPx}px` } : {}),
+});
+
 // Percentage with one decimal — used by sell-through, return rate, deltas.
 export function formatPct(value, { decimals = 1 } = {}) {
   const n = N(value);

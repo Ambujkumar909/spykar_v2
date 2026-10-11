@@ -956,12 +956,24 @@ function erpDateTime(v) {
 
 // ─── Row resolvers — extract typed fields from SP result rows ─────────────────
 
+// sale_value is the ERP's GROSSAMT (GST-inclusive billed amount); gst_amount is
+// its SGST + CGST + IGST. SALEAMT is the taxable amount BEFORE GST — storing it
+// as sale_value understated gross by the GST. GROSSAMT = SALEAMT + GST on every
+// ERP line, so Ex-GST = sale_value − gst_amount = SALEAMT.
+function erpAmounts(row) {
+  const num = (...names) => parseFloat(col(row, ...names)) || 0;
+  const gstValue = num('SGST_AMOUNT', 'SGST_Amount') + num('CGST_AMOUNT', 'CGST_Amount') + num('IGST_AMOUNT', 'IGST_Amount');
+  const gross    = col(row, 'GROSSAMT', 'GrossAmt');
+  const saleValue = gross != null ? (parseFloat(gross) || 0) : num('SALEAMT', 'SaleAmt') + gstValue;
+  return { saleValue: saleValue || null, gstValue };
+}
+
 function resolveSalesRow(row, lookupMaps) {
   const storeCode    = String(col(row, 'storeid', 'STOREID', 'StoreId', 'storecode') || '').trim().toUpperCase();
   const barcode      = String(col(row, 'BARCODE', 'barcode', 'Barcode')              || '').trim().toUpperCase();
   const styleVariant = String(col(row, 'style', 'STYLE', 'InforItemCode')            || '').trim().toUpperCase();
   const qty          = Math.abs(parseInt(col(row, 'QTY', 'qty', 'Qty')              || 0));
-  const saleValue    = parseFloat(col(row, 'SALEAMT', 'saleamt', 'SaleAmt')         || 0);
+  const { saleValue, gstValue } = erpAmounts(row);
   const refNo        = String(col(row, 'Invoice No', 'INVOICE_NO', 'InvoiceNo', 'invoice_no') || '').trim();
   const movedAt      = erpDateTime(col(row, 'DATE', 'date', 'Date')) || new Date();
 
@@ -972,7 +984,7 @@ function resolveSalesRow(row, lookupMaps) {
 
   if (!locationId || !skuId) return null;
 
-  return { locationId, skuId, qty, refNo: refNo || null, saleValue: saleValue || null, movedAt };
+  return { locationId, skuId, qty, refNo: refNo || null, saleValue, gstValue, movedAt };
 }
 
 function resolveReturnRow(row, lookupMaps) {
@@ -981,7 +993,7 @@ function resolveReturnRow(row, lookupMaps) {
   const styleVariant = String(col(row, 'style', 'STYLE')                                  || '').trim().toUpperCase();
   const inforCode    = String(col(row, 'InforItemCode', 'INFORITEMCODE')                  || '').trim().toUpperCase();
   const qty          = Math.abs(parseInt(col(row, 'QTY', 'qty', 'Qty')                   || 0));
-  const returnValue  = parseFloat(col(row, 'SALEAMT', 'saleamt', 'SaleAmt')              || 0);
+  const { saleValue, gstValue } = erpAmounts(row);
   const refNo        = String(col(row, 'VOUDNO', 'voudno', 'VoudNo')                      || '').trim();
   const movedAt      = erpDateTime(col(row, 'DATE', 'date', 'Date')) || new Date();
 
@@ -994,7 +1006,7 @@ function resolveReturnRow(row, lookupMaps) {
 
   if (!locationId || !skuId) return null;
 
-  return { locationId, skuId, qty, refNo: refNo || null, saleValue: returnValue || null, movedAt };
+  return { locationId, skuId, qty, refNo: refNo || null, saleValue, gstValue, movedAt };
 }
 
 // ─── Streaming movement upsert (MSSQL row-stream → COPY → MERGE) ──────────────
@@ -1030,12 +1042,13 @@ async function streamMovements({ erpPool, executeSp, movementType, direction, re
         qty_change     INTEGER      NOT NULL,
         reference_no   TEXT,
         sale_value     NUMERIC(15,2),
+        gst_amount     NUMERIC(15,2),
         moved_at       TIMESTAMPTZ  NOT NULL
       )
     `);
 
     const copyStream = pgClient.query(copyFrom(
-      `COPY tmp_movements (location_id, sku_id, movement_type, qty_change, reference_no, sale_value, moved_at) FROM STDIN WITH (FORMAT csv)`
+      `COPY tmp_movements (location_id, sku_id, movement_type, qty_change, reference_no, sale_value, gst_amount, moved_at) FROM STDIN WITH (FORMAT csv)`
     ));
 
     const request = erpPool.request();
@@ -1064,6 +1077,7 @@ async function streamMovements({ erpPool, executeSp, movementType, direction, re
           csvEscape(String(direction * r.qty)) + ',' +
           csvEscape(r.refNo)                   + ',' +
           csvEscape(r.saleValue == null ? '' : String(r.saleValue)) + ',' +
+          csvEscape(String(r.gstValue))        + ',' +
           csvEscape(tsForCopy(r.movedAt))      + '\n';
 
         if (!copyStream.write(line)) {
@@ -1098,18 +1112,18 @@ async function streamMovements({ erpPool, executeSp, movementType, direction, re
     const merge = await pgClient.query(`
       INSERT INTO inventory_movements
         (location_id, sku_id, movement_type, qty_change, qty_before, qty_after,
-         reference_no, sale_value, moved_at, synced_from)
+         reference_no, sale_value, gst_amount, moved_at, synced_from)
       SELECT
         location_id, sku_id, movement_type::movement_type, SUM(qty_change)::int,
         0, 0,
-        reference_no, SUM(sale_value), moved_at, 'SQL_SERVER_SYNC'
+        reference_no, SUM(sale_value), SUM(gst_amount), moved_at, 'SQL_SERVER_SYNC'
       FROM tmp_movements
       GROUP BY location_id, sku_id, movement_type, reference_no, moved_at
       ON CONFLICT (location_id, sku_id, movement_type, reference_no, moved_at)
         WHERE reference_no IS NOT NULL
-      DO UPDATE SET qty_change = EXCLUDED.qty_change, sale_value = EXCLUDED.sale_value
-        WHERE (inventory_movements.qty_change, inventory_movements.sale_value)
-              IS DISTINCT FROM (EXCLUDED.qty_change, EXCLUDED.sale_value)
+      DO UPDATE SET qty_change = EXCLUDED.qty_change, sale_value = EXCLUDED.sale_value, gst_amount = EXCLUDED.gst_amount
+        WHERE (inventory_movements.qty_change, inventory_movements.sale_value, inventory_movements.gst_amount)
+              IS DISTINCT FROM (EXCLUDED.qty_change, EXCLUDED.sale_value, EXCLUDED.gst_amount)
     `);
 
     return merge.rowCount || 0;
@@ -1645,4 +1659,8 @@ async function runDeltaSync(syncType = 'DELTA') {
   }
 }
 
-module.exports = { runDeltaSync, SYNC_LOCK_CLASSID, SYNC_LOCK_OBJID };
+module.exports = {
+  runDeltaSync, SYNC_LOCK_CLASSID, SYNC_LOCK_OBJID,
+  // Stage primitives, for a sales/returns-only history reload.
+  tryConnectSqlServer, buildLookupMaps, syncSalesChunked, syncReturnsChunked, FULL_HISTORY_START,
+};

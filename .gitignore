@@ -58,3 +58,13 @@ generate_pdf.py
 coverage/
 .nyc_output/
 .claude
+# TLS certificates / private keys — never commit
+spykar-ssl/
+*.pfx
+*.p12
+*.key
+.env.bak*
+*.env.bak*
+
+# Uploaded data bundles are not source (the ESales workbooks live in the mirrored OneDrive folder)
+/ESales_Stock.zip

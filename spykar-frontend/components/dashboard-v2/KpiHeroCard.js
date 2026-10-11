@@ -6,12 +6,12 @@
 //      Sparkline (32px tall, no axes) — anchored right
 //   4. Delta pill (▲/▼, colored by health) + footnote line
 //
-// Props are documented inline. All values flow through formatINR/formatPct
+// Props are documented inline. All values flow through formatFull/formatPct
 // from lib/v2/format.js so a single helper change updates every card.
 
 import { useEffect, useRef, useState } from 'react';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { formatINR, formatCompact, formatPct, formatDelta } from '../../lib/v2/format';
+import { formatFull, kpiFit, formatPct, formatDelta } from '../../lib/v2/format';
 import { healthFromDelta, inverseHealthFromDelta, HEALTH_TOKENS } from '../../lib/v2/colors';
 
 // Count-up: 700ms ease-out, respects prefers-reduced-motion.  Anchored on
@@ -144,8 +144,8 @@ export default function KpiHeroCard({
   const display = (() => {
     if (loading || value == null) return null;
     const n = typeof value === 'number' ? animatedValue : value;
-    if (unit === 'cr')    return formatINR(n);
-    if (unit === 'count') return formatCompact(n);
+    if (unit === 'cr')    return formatFull(n, { rupee: true });
+    if (unit === 'count') return formatFull(n);
     if (unit === '%')     return formatPct(n, { decimals: 1 });
     return String(value);
   })();
@@ -198,10 +198,11 @@ export default function KpiHeroCard({
       </div>
 
       {/* Hero row — number left, sparkline right */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14, marginBottom: 10 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14, marginBottom: 10 }}>
         <div
           className="tabular-nums"
           style={{
+            ...kpiFit(display),
             fontFamily: 'var(--v2-font-display)',
             fontSize: 34, fontWeight: 700, letterSpacing: '-0.03em',
             lineHeight: 1, color: 'var(--v2-fg-primary)',

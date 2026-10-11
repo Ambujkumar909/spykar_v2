@@ -160,7 +160,7 @@ export default function TopBar({
             textTransform: 'uppercase',
             color: 'var(--v2-fg-tertiary)',
           }}>
-            Inventory Intelligence
+            Business Command Centre
           </div>
         </div>
       </div>

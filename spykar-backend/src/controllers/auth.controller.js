@@ -1,28 +1,16 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
 const { query, transaction } = require('../config/database');
 const logger = require('../config/logger');
 const { AppError } = require('../middleware/errorHandler');
 const { revokeAccessToken } = require('../middleware/auth');
+const sessions = require('../services/sessions');
 
 // Compared against when the email is unknown, so a miss costs the same bcrypt
 // time as a hit (no account enumeration by timing).
 const DUMMY_HASH = bcrypt.hashSync('no-such-user-placeholder', 12);
 
 const ACCESS_TOKEN_EXPIRY = process.env.JWT_EXPIRY || '15m';
-const REFRESH_TOKEN_EXPIRY = process.env.JWT_REFRESH_EXPIRY || '7d';
-const REFRESH_TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
-
-function generateAccessToken(userId, role) {
-  return jwt.sign({ userId, role }, process.env.JWT_SECRET, {
-    expiresIn: ACCESS_TOKEN_EXPIRY,
-  });
-}
-
-function generateRefreshToken() {
-  return crypto.randomBytes(64).toString('hex');
-}
 
 // POST /api/v1/auth/login
 async function login(req, res, next) {
@@ -43,24 +31,13 @@ async function login(req, res, next) {
       throw new AppError('Invalid credentials.', 401);
     }
 
-    // Generate tokens
-    const accessToken = generateAccessToken(user.id, user.role);
-    const refreshToken = generateRefreshToken();
-    const refreshTokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-    const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_MS);
-
-    await transaction(async (client) => {
-      // Store refresh token
-      await client.query(
-        'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
-        [user.id, refreshTokenHash, expiresAt]
-      );
-      // Update last login
-      await client.query(
-        'UPDATE users SET last_login_at = NOW() WHERE id = $1',
-        [user.id]
-      );
+    // New server-side session (one per device) + httpOnly refresh cookie.
+    const { session, refresh, accessToken } = await transaction(async (client) => {
+      const out = await sessions.createSession(client, user, req);
+      await client.query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [user.id]);
+      return out;
     });
+    sessions.setRefreshCookie(req, res, refresh, new Date(session.idle_expires_at));
 
     logger.info(`User logged in: ${user.email}`);
 
@@ -68,8 +45,8 @@ async function login(req, res, next) {
       success: true,
       data: {
         accessToken,
-        refreshToken,
         expiresIn: ACCESS_TOKEN_EXPIRY,
+        session: { id: session.id, idleExpiresAt: session.idle_expires_at, absoluteExpiresAt: session.absolute_expires_at, idleTimeoutSec: Math.round(sessions.IDLE_MS / 1000) },
         user: {
           id: user.id,
           name: user.name,
@@ -84,62 +61,80 @@ async function login(req, res, next) {
 }
 
 // POST /api/v1/auth/refresh
+// Rotates the httpOnly refresh cookie (see services/sessions.js). A 401 carries
+// a reason code (SESSION_IDLE, SESSION_EXPIRED, SESSION_REVOKED, …) so the
+// app can tell the user why; any other failure leaves the session intact.
 async function refresh(req, res, next) {
   try {
-    const { refreshToken } = req.body;
-    const tokenHash = crypto.createHash('sha256').update(String(refreshToken)).digest('hex');
-
-    // Rotate atomically: whoever's DELETE removes the row wins. Two requests
-    // replaying the same token can no longer both succeed and fork a session.
-    const newRefreshToken = generateRefreshToken();
-    const newHash = crypto.createHash('sha256').update(newRefreshToken).digest('hex');
-    const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_MS);
-    const record = await transaction(async (client) => {
-      const del = await client.query(
-        `DELETE FROM refresh_tokens rt USING users u
-          WHERE rt.token_hash = $1 AND u.id = rt.user_id AND u.is_active AND rt.expires_at > NOW()
-          RETURNING rt.user_id, u.role`,
-        [tokenHash]
-      );
-      if (!del.rows.length) return null;
-      await client.query(
-        'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
-        [del.rows[0].user_id, newHash, expiresAt]
-      );
-      return del.rows[0];
-    });
-    if (!record) throw new AppError('Invalid or expired refresh token.', 401);
-    const newAccessToken = generateAccessToken(record.user_id, record.role);
-
+    const out = await sessions.rotate(sessions.readRefreshToken(req), req);
+    if (out.refresh) sessions.setRefreshCookie(req, res, out.refresh, new Date(out.session.idle_expires_at));
     res.json({
       success: true,
       data: {
-        accessToken: newAccessToken,
-        refreshToken: newRefreshToken,
-        expiresIn: ACCESS_TOKEN_EXPIRY,
+        accessToken: out.accessToken,
+        expiresIn: sessions.ACCESS_TOKEN_EXPIRY,
+        session: { id: out.session.id, idleExpiresAt: out.session.idle_expires_at, absoluteExpiresAt: out.session.absolute_expires_at, idleTimeoutSec: Math.round(sessions.IDLE_MS / 1000) },
       },
     });
+  } catch (err) {
+    if (err.statusCode === 401) sessions.clearRefreshCookie(req, res);
+    next(err);
+  }
+}
+
+// POST /api/v1/auth/logout — ends THIS device's session.
+async function logout(req, res, next) {
+  try {
+    revokeCurrentAccessToken(req);
+    if (req.sessionId) await sessions.revokeSession(req.sessionId, 'logout', req.user.id);
+    else await transaction((c) => sessions.revokeUserSessions(c, req.user.id, 'logout'));   // pre-session token
+    sessions.clearRefreshCookie(req, res);
+    logger.info(`User logged out: ${req.user.email} (session ${req.sessionId || 'legacy'})`);
+    res.json({ success: true, message: 'Logged out successfully.' });
   } catch (err) {
     next(err);
   }
 }
 
-// POST /api/v1/auth/logout
-async function logout(req, res, next) {
+// POST /api/v1/auth/logout-all — ends every session of this user, everywhere.
+async function logoutAll(req, res, next) {
   try {
-    // Blacklist the current access token until its natural expiry
-    const decoded = jwt.decode(req.token);
-    const ttl = decoded.exp - Math.floor(Date.now() / 1000);
-    if (ttl > 0) revokeAccessToken(req.token, ttl);
-
-    // Delete all refresh tokens for this user (logout all devices) or just current
-    await query('DELETE FROM refresh_tokens WHERE user_id = $1', [req.user.id]);
-
-    logger.info(`User logged out: ${req.user.email}`);
-    res.json({ success: true, message: 'Logged out successfully.' });
+    revokeCurrentAccessToken(req);
+    const n = await transaction((c) => sessions.revokeUserSessions(c, req.user.id, 'logout_all'));
+    sessions.clearRefreshCookie(req, res);
+    logger.info(`User logged out everywhere: ${req.user.email} (${n} session(s))`);
+    res.json({ success: true, message: `Signed out of ${n} session(s).` });
   } catch (err) {
     next(err);
   }
+}
+
+// GET /api/v1/auth/sessions — this user's live sessions (devices).
+async function listMySessions(req, res, next) {
+  try {
+    const rows = await sessions.listSessions(req.user.id);
+    res.json({ success: true, data: rows.map((r) => ({ ...r, current: r.id === req.sessionId })) });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// DELETE /api/v1/auth/sessions/:id — sign out one of this user's devices.
+async function revokeMySession(req, res, next) {
+  try {
+    const n = await sessions.revokeSession(req.params.id, 'revoked_by_user', req.user.id);
+    if (!n) throw new AppError('Session not found.', 404);
+    if (req.params.id === req.sessionId) { revokeCurrentAccessToken(req); sessions.clearRefreshCookie(req, res); }
+    res.json({ success: true, message: 'Session signed out.' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+function revokeCurrentAccessToken(req) {
+  const decoded = jwt.decode(req.token);
+  const ttl = decoded && decoded.exp ? decoded.exp - Math.floor(Date.now() / 1000) : 0;
+  if (ttl > 0) revokeAccessToken(req.token, ttl);
 }
 
 // GET /api/v1/auth/me
@@ -173,7 +168,8 @@ async function changePassword(req, res, next) {
     const newHash = await bcrypt.hash(newPassword, 12);
     await transaction(async (client) => {
       await client.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [newHash, req.user.id]);
-      await client.query('DELETE FROM refresh_tokens WHERE user_id = $1', [req.user.id]);
+      // End every OTHER session; the device that changed the password stays signed in.
+      await sessions.revokeUserSessions(client, req.user.id, 'password_changed', req.sessionId || null);
     });
 
     logger.info(`Password changed for user: ${req.user.email}`);
@@ -314,6 +310,7 @@ async function updateUser(req, res, next) {
       throw new AppError('User not found.', 404);
     }
 
+    if (is_active === false) await transaction((c) => sessions.revokeUserSessions(c, id, 'account_disabled'));
     logger.info(`User updated: ${result.rows[0].email} by ${req.user.email}`);
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
@@ -340,6 +337,7 @@ async function toggleUser(req, res, next) {
       throw new AppError('User not found.', 404);
     }
 
+    if (!result.rows[0].is_active) await transaction((c) => sessions.revokeUserSessions(c, id, 'account_disabled'));
     logger.info(`User toggled: ${result.rows[0].email} by ${req.user.email}`);
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
@@ -375,8 +373,8 @@ async function resetUserPassword(req, res, next) {
         'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2',
         [newHash, id]
       );
-      // Force re-login everywhere: drop all refresh tokens for this user.
-      await client.query('DELETE FROM refresh_tokens WHERE user_id = $1', [id]);
+      // Force re-login everywhere: end every session of this user.
+      await sessions.revokeUserSessions(client, id, 'password_reset_by_admin');
     });
 
     logger.info(`Password reset for ${targetUser.email} by ${req.user.email}`);
@@ -390,6 +388,9 @@ module.exports = {
   login,
   refresh,
   logout,
+  logoutAll,
+  listMySessions,
+  revokeMySession,
   me,
   changePassword,
   listUsers,

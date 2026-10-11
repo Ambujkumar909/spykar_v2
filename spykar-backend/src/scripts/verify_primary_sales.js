@@ -198,8 +198,11 @@ function expectedRollup(ledger) {
     if (!isActiveItem(r.ITNO)) continue;
     const it = ITEM.get(r.ITNO); const price = r.TRPR !== 0 ? r.TRPR : it.mrp; const cost = r.PUPR !== 0 ? r.PUPR : (it.cost ?? 0);
     const k = `${r.TRDT}|${r.WHLO}|${r.ITNO}|${r.TTYP}`;
-    const a = g.get(k) || { qty: 0, gross: 0, gabs: 0, cost: 0, txns: 0 };
+    const a = g.get(k) || { qty: 0, gross: 0, gabs: 0, cost: 0, txns: 0, qabs: 0, it: 0, iq: 0, ig: 0, ot: 0, oq: 0, og: 0 };
     a.qty += r.TRQT; a.gross += r.TRQT * price; a.gabs += Math.abs(r.TRQT * price); a.cost += r.TRQT * cost; a.txns++;
+    a.qabs += Math.abs(r.TRQT);
+    if (r.TRQT > 0) { a.it++; a.iq += r.TRQT; a.ig += Math.abs(r.TRQT * price); }
+    if (r.TRQT < 0) { a.ot++; a.oq -= r.TRQT; a.og += Math.abs(r.TRQT * price); }
     g.set(k, a);
   }
   return g;
@@ -272,12 +275,22 @@ function expectedRollup(ledger) {
     check(`${label}: rollup == SQL re-aggregation of the ledger`, sameTotals, `rollup=${JSON.stringify(roll)} truth=${JSON.stringify(sqlTruth)}`);
     // JS re-aggregation of the SOURCE dataset (independent of any SQL).
     const jsExp = expectedRollup(exp);
-    const rows = (await query(`SELECT r.trdt::text d, w.whlo, r.sku_id, r.ttyp, r.qty, r.gross, r.gross_abs, r.cost, r.txns FROM primary_sales_daily r JOIN primary_warehouses w ON w.id = r.warehouse_id`)).rows;
-    let bad = 0;
+    const rows = (await query(`SELECT r.trdt::text d, w.whlo, r.sku_id, r.ttyp, r.qty, r.gross, r.gross_abs, r.cost, r.txns,
+        r.qty_abs, r.in_txns, r.in_qty, r.in_gross_abs, r.out_txns, r.out_qty, r.out_gross_abs FROM primary_sales_daily r JOIN primary_warehouses w ON w.id = r.warehouse_id`)).rows;
+    let bad = 0, dirBad = 0;
+    const c2 = (a, b) => Math.abs(Number(a) - b) <= 0.02;
     for (const r of rows) {
       const e = jsExp.get(`${r.d}|${r.whlo}|${skuIdToItno.get(r.sku_id)}|${r.ttyp}`);
       if (!e || Number(r.qty) !== e.qty || Math.abs(Number(r.gross) - e.gross) > 0.02 || Math.abs(Number(r.gross_abs) - e.gabs) > 0.02 || Math.abs(Number(r.cost) - e.cost) > 0.02 || Number(r.txns) !== e.txns) bad++;
+      if (!e || Number(r.qty_abs) !== e.qabs || Number(r.in_txns) !== e.it || Number(r.in_qty) !== e.iq || !c2(r.in_gross_abs, e.ig)
+        || Number(r.out_txns) !== e.ot || Number(r.out_qty) !== e.oq || !c2(r.out_gross_abs, e.og)) dirBad++;
     }
+    check(`${label}: rollup direction columns (units moved, inbound/outbound per ROW) == JS source`, dirBad === 0 && rows.length > 0, `bad=${dirBad}`);
+    const dirW = (await query(`SELECT coalesce(sum(qty_abs),0) a, coalesce(sum(in_txns),0) b, coalesce(sum(in_qty),0) c, coalesce(sum(in_gross_abs),0) d,
+        coalesce(sum(out_txns),0) e, coalesce(sum(out_qty),0) f, coalesce(sum(out_gross_abs),0) g FROM primary_sales_daily_wh`)).rows[0];
+    const dirS = (await query(`SELECT coalesce(sum(qty_abs),0) a, coalesce(sum(in_txns),0) b, coalesce(sum(in_qty),0) c, coalesce(sum(in_gross_abs),0) d,
+        coalesce(sum(out_txns),0) e, coalesce(sum(out_qty),0) f, coalesce(sum(out_gross_abs),0) g FROM primary_sales_daily`)).rows[0];
+    check(`${label}: warehouse-grain direction columns == sku grain`, JSON.stringify(dirW) === JSON.stringify(dirS), `wh=${JSON.stringify(dirW)} sku=${JSON.stringify(dirS)}`);
     check(`${label}: rollup == JS re-aggregation of the source (${jsExp.size} groups)`, bad === 0 && rows.length === jsExp.size, `bad=${bad} rows=${rows.length}`);
     // Warehouse-grain rollup must equal a fresh re-aggregation of the sku grain
     // (same SQL the engine uses) AND a JS re-aggregation of the source.
@@ -297,6 +310,27 @@ function expectedRollup(ledger) {
     check(`${label}: warehouse-grain rollup == JS re-aggregation of the source (${whJs.size} groups)`, whBad === 0 && whRows.length === whJs.size, `bad=${whBad} rows=${whRows.length}`);
     const dirty = (await query('SELECT count(*)::int c FROM primary_rollup_dirty')).rows[0].c;
     check(`${label}: no dirty dates left`, dirty === 0, `dirty=${dirty}`);
+    await compareStock(label, exp);
+  }
+  // Stock on hand: latest ledger row per (cono, whlo, itno) in MITTRA order
+  // (RGDT, RGTM, TMSX) → its NSTT and PUPR; zero positions are not stored.
+  async function compareStock(label, exp) {
+    const last = new Map();
+    for (const r of exp.values()) {
+      const k = `${r.CONO}|${r.WHLO}|${r.ITNO}`; const c = last.get(k);
+      if (!c || r.RGDT > c.RGDT || (r.RGDT === c.RGDT && (r.RGTM > c.RGTM || (r.RGTM === c.RGTM && r.TMSX > c.TMSX)))) last.set(k, r);
+    }
+    const want = [...last.values()].filter((r) => r.NSTT !== 0);
+    const got = new Map((await query(`SELECT cono, whlo, itno, qty, pupr, last_trdt::text d FROM primary_stock`)).rows.map((r) => [`${r.cono}|${r.whlo}|${r.itno}`, r]));
+    let bad = 0; const sample = [];
+    for (const e of want) {
+      const g = got.get(`${e.CONO}|${e.WHLO}|${e.ITNO}`);
+      if (!g || Number(g.qty) !== e.NSTT || Math.abs(Number(g.pupr) - e.PUPR) > 1e-6 || g.d !== e.TRDT) { bad++; if (sample.length < 2) sample.push({ k: `${e.WHLO}|${e.ITNO}`, got: g && g.qty, exp: e.NSTT }); }
+    }
+    check(`${label}: stock on hand == latest NSTT per warehouse × item (${want.length} positions)`, bad === 0 && got.size === want.length,
+      `bad=${bad} got=${got.size}${sample.length ? ' ' + JSON.stringify(sample) : ''}`);
+    const sd = (await query('SELECT count(*)::int c FROM primary_stock_dirty')).rows[0].c;
+    check(`${label}: no dirty stock positions left`, sd === 0, `dirty=${sd}`);
   }
   const hw = async () => (await query(`SELECT last_lmts_ts FROM primary_sync_state WHERE feed = $1`, [P.FEED])).rows[0]?.last_lmts_ts || null;
   const maxLmts = (rows) => rows.reduce((m, r) => (SRC_VISIBLE(r) && mappable(r.ITNO) && r.LMTS && (!m || r.LMTS > m) ? r.LMTS : m), null);
@@ -347,7 +381,7 @@ function expectedRollup(ledger) {
   check('CSV escaping round-trips comma / quote / newline in WHSL', (await query(`SELECT count(*)::int c FROM primary_sales_movements WHERE whsl IN ('L,1', 'Q"2', E'N\\n3')`)).rows[0].c === [...exp.values()].filter((x) => ['L,1', 'Q"2', 'N\n3'].includes(x.WHSL)).length);
   check('NULL-LMTS rows loaded', (await query(`SELECT count(*)::int c FROM primary_sales_movements WHERE lmts IS NULL`)).rows[0].c === [...exp.values()].filter((x) => x.LMTS == null).length);
   check('the rollup swap happened via RENAME (canonical index names on both rollups, no side tables)',
-    JSON.stringify(await indexNames('primary_sales_daily')) === JSON.stringify(['idx_psd_trdt_sku'])
+    JSON.stringify(await indexNames('primary_sales_daily')) === JSON.stringify(['idx_psd_sku_trdt', 'idx_psd_trdt_sku', 'idx_psd_wh_sku_trdt'])
     && JSON.stringify(await indexNames('primary_sales_daily_wh')) === JSON.stringify(['idx_psdw_trdt'])
     && (await query(`SELECT count(*)::int c FROM pg_tables WHERE tablename LIKE 'primary_sales_daily%_next' OR tablename LIKE 'primary_sales_daily%_old'`)).rows[0].c === 0,
     (await indexNames('primary_sales_daily')).join(',') + ' | ' + (await indexNames('primary_sales_daily_wh')).join(','));
@@ -531,6 +565,38 @@ function expectedRollup(ledger) {
   const jsAgg = expectedRollup(exp); let gabs = 0, txns = 0; for (const g of jsAgg.values()) { gabs += g.gabs; txns += g.txns; }
   check('overview throughput == Σ|qty×price| of the source', Math.abs(ov.data.kpis.throughput - gabs) <= 1, `${ov.data.kpis.throughput} vs ${gabs.toFixed(2)}`);
   check('overview txns == source row count', ov.data.kpis.txns === txns);
+  {
+    // Units moved and the inbound/outbound split are per ledger ROW.
+    const act = [...exp.values()].filter((g) => isActiveItem(g.ITNO));
+    const px = (g) => (g.TRPR !== 0 ? g.TRPR : ITEM.get(g.ITNO).mrp);
+    const units = act.reduce((a, g) => a + Math.abs(g.TRQT), 0);
+    check('overview units moved == Σ|qty| per source row', ov.data.kpis.throughput_units === units, `${ov.data.kpis.throughput_units} vs ${units}`);
+    for (const [dir, f] of [['Inbound', (g) => g.TRQT > 0], ['Outbound', (g) => g.TRQT < 0]]) {
+      const rs = act.filter(f); const got = ov.data.flow.find((x) => x.dir === dir) || {};
+      const g$ = rs.reduce((a, g) => a + Math.abs(g.TRQT * px(g)), 0); const u = rs.reduce((a, g) => a + Math.abs(g.TRQT), 0);
+      check(`overview flow ${dir}: txns / ₹ / units == source rows with that sign`, got.txns === rs.length && Math.abs(got.g - g$) <= 1 && got.u === u, `${got.txns}/${got.g}/${got.u} vs ${rs.length}/${g$.toFixed(2)}/${u}`);
+    }
+    const dayU = new Map(); for (const g of act) dayU.set(g.TRDT, (dayU.get(g.TRDT) || 0) + Math.abs(g.TRQT));
+    check('overview daily units == Σ|qty| per day', ov.data.daily.every((d) => d.u === dayU.get(d.d)) && ov.data.daily.length === dayU.size);
+    // Stock for a window: closing(to) = now − Σ movements after `to`;
+    // opening = closing − Σ movements in the window (active SKUs, rollup cost).
+    const nowAct = (await query(`SELECT COALESCE(SUM(p.qty),0)::numeric u, COALESCE(SUM(p.qty*COALESCE(p.pupr,0)),0)::numeric v
+      FROM primary_stock p JOIN skus s ON s.id = p.sku_id AND s.is_active`)).rows[0];
+    const cost = (g) => g.TRQT * (g.PUPR !== 0 ? g.PUPR : (ITEM.get(g.ITNO).cost ?? 0));
+    for (const [from, to] of [[FIRST_DAY, LAST_DAY], ['2026-06-10', '2026-06-20'], ['2026-06-15', '2026-06-15']]) {
+      cache.clear();
+      const st = (await call(ctrl.getOverview, { from, to })).data.stock;
+      const after = act.filter((g) => g.TRDT > to); const win = act.filter((g) => g.TRDT >= from && g.TRDT <= to);
+      const cu = Number(nowAct.u) - after.reduce((a, g) => a + g.TRQT, 0);
+      const cv = Number(nowAct.v) - after.reduce((a, g) => a + cost(g), 0);
+      const ou = cu - win.reduce((a, g) => a + g.TRQT, 0);
+      const ovv = cv - win.reduce((a, g) => a + cost(g), 0);
+      check(`stock ${from}..${to}: closing/opening units + ₹ == source roll-back`, st.closing_units === Math.round(cu) && Math.abs(st.closing_value - cv) <= 1
+        && st.opening_units === Math.round(ou) && Math.abs(st.opening_value - ovv) <= 1, `${JSON.stringify(st)} exp c=${cu}/${cv.toFixed(2)} o=${ou}/${ovv.toFixed(2)}`);
+      check(`stock ${from}..${to}: opening + change == closing (units and ₹)`, st.opening_units + st.change_units === st.closing_units && st.opening_value + st.change_value === st.closing_value);
+    }
+    cache.clear();
+  }
   const sc = await call(ctrl.getSkuCount, { from: FIRST_DAY, to: LAST_DAY });
   check('/sku-count distinct SKUs == source distinct SKUs (lazy KPI; /overview leaves it null)', sc.data.sku_count === new Set([...exp.values()].filter((g) => isActiveItem(g.ITNO)).map((g) => g.ITNO)).size && ov.data.kpis.sku_count === null, `${sc.data.sku_count}`);
   {

@@ -631,7 +631,7 @@ export default function AiChatbot() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                   <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ADE80', display: 'inline-block', boxShadow: '0 0 6px #4ADE80', animation: 'glowPulse 2s ease-in-out infinite', flexShrink: 0 }} />
-                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', letterSpacing: '0.01em' }}>Inventory Intelligence · Online</span>
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', letterSpacing: '0.01em' }}>Business Assistant · Online</span>
                 </div>
               </div>
               {/* Header buttons */}

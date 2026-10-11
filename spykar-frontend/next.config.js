@@ -8,6 +8,16 @@ const nextConfig = {
     domains: [],
   },
 
+  // The browser calls the API on its own origin (NEXT_PUBLIC_API_URL=/api/v1).
+  // Behind nginx, /api/ goes straight to the API; hitting :3000 directly
+  // (internal LAN), this rewrite proxies it — one build serves both, and
+  // HTTPS never makes a mixed-content call to http://…:4000.
+  async rewrites() {
+    return [{ source: '/api/v1/:path*', destination: `${process.env.API_INTERNAL_URL || 'http://127.0.0.1:4000'}/api/v1/:path*` }];
+  },
+  // Above the API's own 45 s request cap (Next's default proxy timeout is 30 s).
+  experimental: { proxyTimeout: 60000 },
+
   // ─── Dev-server hardening (Windows + WSL) ──────────────────────────────
   // Webpack's PackFileCacheStrategy writes .next/cache/webpack/*.pack.gz
   // and renames the temp file into place at the end of every build.  On
