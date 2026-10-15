@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Mirror the OneDrive LFR / ESales Excel folders to local disk and report what
+# Mirror the OneDrive ESales stock folder (dtlake's folder, added as a
+# shortcut in BIMis@spykar.com's My files) to local disk and report what
 # changed since the last run. rclone compares size + modified-time + hash, so an
 # edited workbook and a brand-new one are both picked up.
 #
@@ -18,15 +19,16 @@
 set -euo pipefail
 
 RCLONE=${RCLONE:-$HOME/.local/bin/rclone}
-REMOTE=${ONEDRIVE_REMOTE:-spykar_od:QlickSense/ESales_Data}
+REMOTE=${ONEDRIVE_REMOTE:-"spykar_od:DtLake's files - ESales_Stock"}
 DEST=${ONEDRIVE_DEST:-$HOME/spykar/onedrive/ESales_Data}
 
 mkdir -p "$DEST/.changes"
-report="$DEST/.changes/$(date +%Y%m%d-%H%M%S).txt"
-
 # '~$*' = Excel lock files left while someone has the workbook open.
-"$RCLONE" sync "$REMOTE" "$DEST" \
-  --exclude '~$*' --exclude '.changes/**' \
+# Anything the sync overwrites or deletes is kept in $DEST/.trash/<timestamp>.
+stamp=$(date +%Y%m%d-%H%M%S)
+report="$DEST/.changes/$stamp.txt"
+"$RCLONE" sync "$REMOTE" "$DEST/ESales_Stock" \
+  --exclude '~$*' --backup-dir "$DEST/.trash/$stamp" \
   --combined "$report.all" "$@"
 
 grep -v '^= ' "$report.all" > "$report" || true   # '=' lines are unchanged files
