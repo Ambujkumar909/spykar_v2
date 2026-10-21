@@ -68,3 +68,7 @@ spykar-ssl/
 
 # Uploaded data bundles are not source (the ESales workbooks live in the mirrored OneDrive folder)
 /ESales_Stock.zip
+
+# Planner samples dropped in the repo root (War Room HTML / workbook) are not source
+/*.html
+/*.xlsx
