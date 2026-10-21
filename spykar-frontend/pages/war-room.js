@@ -87,7 +87,18 @@ export default function WarRoomPage() {
   const stores = useMemo(() => filterStores(all, lens), [all, lens]);
   const current = useMemo(() => (storeCode ? all.find((s) => s.code === storeCode) : null), [all, storeCode]);
   const openStore = useCallback((code) => { setStoreCode(code); setView('store'); if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' }); }, []);
-  const onFilter = useCallback((k, v) => filtersApi.setFilter(k, v), [filtersApi]);
+  // Click-to-filter anywhere on the page: clicking the same single value again clears it.
+  const onFilter = useCallback((k, v) => {
+    const cur = list(lens[k]);
+    filtersApi.setFilter(k, v.length === 1 && cur.length === 1 && cur[0] === v[0] ? [] : v);
+  }, [filtersApi, lens]);
+  // Health tile: add / remove one status (several can be on at once).
+  const onToggle = useCallback((k, v) => {
+    const cur = list(lens[k]);
+    filtersApi.setFilter(k, cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v]);
+  }, [filtersApi, lens]);
+  // The stores before the Status filter — so the Health tile keeps showing every status's count.
+  const statusBase = useMemo(() => filterStores(all, { ...lens, wr_status: [] }), [all, lens]);
   const onSaved = useCallback((code, n) => {
     setNotes((x) => ({ ...x, notes: { ...x.notes, [code]: n }, asm: n.asm ? { ...x.asm, [code]: n.asm } : x.asm }));
   }, []);
@@ -179,7 +190,7 @@ export default function WarRoomPage() {
             ) : (
               <div className={`wr-stage${loading ? ' is-loading' : ''}`} aria-busy={loading}>
                 {stores.length === 0 ? <div className="wr-empty">No stores match. <button type="button" className="wr-chip" onClick={() => filtersApi.clearAll()}>Clear</button></div>
-                  : view === 'command' ? <CommandView board={board} stores={stores} measure={measure} isDark={isDark} onFilter={onFilter} onOpen={openStore} lens={lens} />
+                  : view === 'command' ? <CommandView board={board} stores={stores} statusBase={statusBase} measure={measure} isDark={isDark} onFilter={onFilter} onToggle={onToggle} onOpen={openStore} lens={lens} />
                     : view === 'snap' ? <SnapView board={board} stores={stores} onFilter={onFilter} />
                       : view === 'league' ? <LeagueView stores={stores} measure={measure} onOpen={openStore} />
                         : current ? <StoreView board={board} store={current} list={stores} network={all} onNav={setStoreCode} onSaved={onSaved} measure={measure} isDark={isDark} />

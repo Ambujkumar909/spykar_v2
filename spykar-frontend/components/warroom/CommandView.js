@@ -16,7 +16,7 @@ function Tile({ icon: Icon, eyebrow, title, value, format, children, accent }) {
   );
 }
 
-export default function CommandView({ board, stores, measure, isDark, onFilter, onOpen, lens }) {
+export default function CommandView({ board, stores, statusBase, measure, isDark, onFilter, onToggle, onOpen, lens }) {
   const P = board.periods;
   const A = useMemo(() => sumPeriods(stores), [stores]);
   const W = useMemo(() => sumWeeks(stores, P.weeks.length), [stores, P]);
@@ -30,7 +30,10 @@ export default function CommandView({ board, stores, measure, isDark, onFilter, 
   const fmtM = measure === 'qty' ? (v) => num(v) : (v) => inr(v);
 
   const act = useMemo(() => stores.filter(isActive), [stores]);
-  const statusCount = STATUS.map((s) => [s, stores.filter((x) => statusOf(x) === s).length]).filter(([, n]) => n);
+  // counts before the Status filter, so every status stays visible (faded when not picked)
+  const statusCount = STATUS.map((s) => [s, statusBase.filter((x) => statusOf(x) === s).length]).filter(([, n]) => n);
+  const picked = [].concat(lens.wr_status || []);
+  const stCls = (s) => (picked.length ? (picked.includes(s) ? ' on' : ' off') : '');
   const rev = act.filter(reviewed).length;
   const KC = kpis(A.cw); const KL = kpis(A.ly);
   const streaks = useMemo(() => act.map((s) => [s, streak(s)]).filter(([, n]) => n >= 3), [act]);
@@ -91,8 +94,10 @@ export default function CommandView({ board, stores, measure, isDark, onFilter, 
         <div className="wr-tile wr-accent-mint">
           <div className="wr-tile-h"><span className="wr-tile-ic"><HeartPulse size={14} /></span><div><div className="wr-eyebrow">MTD vs LY · {num(act.length)} trading</div><div className="wr-tile-t">Health</div></div></div>
           <div className="wr-health">
-            <div className="wr-health-bar">{statusCount.map(([s, n]) => <i key={s} className={`wr-hb-${s}`} style={{ flex: n }} title={`${s} ${n}`} onClick={() => onFilter('wr_status', [s])} />)}</div>
-            <div className="wr-health-leg">{statusCount.map(([s, n]) => <button key={s} type="button" onClick={() => onFilter('wr_status', [s])}><StatusPill status={s} small /><b>{n}</b></button>)}</div>
+            <div className={`wr-health-bar${picked.length ? ' picking' : ''}`}>{statusCount.map(([s, n]) => <i key={s} className={`wr-hb-${s}${stCls(s)}`} style={{ flex: n }} title={`${s} ${n}`} onClick={() => onToggle('wr_status', s)} />)}</div>
+            <div className={`wr-health-leg${picked.length ? ' picking' : ''}`}>{statusCount.map(([s, n]) => (
+              <button key={s} type="button" className={stCls(s).trim()} aria-pressed={picked.includes(s)} onClick={() => onToggle('wr_status', s)}><StatusPill status={s} small /><b>{n}</b></button>))}
+            </div>
           </div>
           <div className="wr-tile-s">Reviewed <b>{num(rev)}</b>/{num(act.length)} <span className="wr-prog"><i style={{ width: `${act.length ? (rev / act.length) * 100 : 0}%` }} /></span></div>
         </div>

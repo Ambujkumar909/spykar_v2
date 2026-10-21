@@ -285,6 +285,16 @@ html.theme-light .wr {
 /* ── toast ── */
 .wr-toast { position: fixed; right: 22px; bottom: 22px; z-index: 60; max-width: 460px; padding: 12px 16px; border-radius: 14px; font-size: 13px; background: var(--bg-elevated); border: 1px solid rgba(16,185,129,0.4); box-shadow: var(--wr-shadow); animation: wrIn 300ms both; }
 
+/* ── health toggles: picked = bold, the rest faded; click again to clear ── */
+.wr-health-bar i, .wr-health-leg button { transition: opacity 200ms, filter 200ms, transform 200ms, box-shadow 200ms; }
+.wr-health-bar.picking i.off, .wr-health-leg.picking button.off { opacity: 0.28; filter: saturate(0.4); }
+.wr-health-bar.picking i.on { filter: brightness(0.85) saturate(1.3); box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.55); }
+.wr-health-leg button { padding: 2px 4px; border-radius: 999px; }
+.wr-health-leg button.on { box-shadow: 0 0 0 1.5px var(--wr-gold); transform: translateY(-1px); }
+.wr-health-leg button.on .wr-pill { filter: brightness(0.82) saturate(1.35); font-weight: 900; }
+.wr-health-leg button.on b { color: var(--wr-gold); }
+.wr-health-leg button:hover { opacity: 1 !important; filter: none !important; }
+
 /* ── signals ── */
 .wr-signals { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
 .wr-sig { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; padding: 10px 12px; border-radius: 14px; text-align: left; cursor: default;
