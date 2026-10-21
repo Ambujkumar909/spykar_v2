@@ -22,6 +22,7 @@ const filterRoutes = require('./routes/filters.routes');
 const stockAvailabilityRoutes = require('./routes/stockAvailability.routes');
 const primarySalesRoutes = require('./routes/primarySales.routes');
 const esalesStockRoutes = require('./routes/esalesStock.routes');
+const warRoomRoutes = require('./routes/warRoom.routes');
 const ageingRoutes = require('./routes/ageing.routes');
 
 const app = express();
@@ -120,7 +121,7 @@ const API_V1 = '/api/v1';
 // The strict limiter guards password guessing only. It used to cover the whole
 // /auth router, so ~30 page loads (/me) or token refreshes per 15 min from one
 // office IP got a 429 — which the frontend treated as a dead session.
-app.use([`${API_V1}/stock-availability/export.csv`, `${API_V1}/ageing/export.csv`, `${API_V1}/primary-sales/export.csv`, `${API_V1}/esales-stock/export.csv`, `${API_V1}/inventory/snapshot/export`], limits.exportCsv);
+app.use([`${API_V1}/stock-availability/export.csv`, `${API_V1}/ageing/export.csv`, `${API_V1}/primary-sales/export.csv`, `${API_V1}/esales-stock/export.csv`, `${API_V1}/war-room/export.xlsx`, `${API_V1}/inventory/snapshot/export`], limits.exportCsv);
 app.use(`${API_V1}/auth/login`, limits.loginByIp, limits.loginByAccount);
 app.use(`${API_V1}/auth/refresh`, limits.refresh);
 app.use(`${API_V1}/auth`, authRouter);
@@ -138,6 +139,7 @@ app.use(`${API_V1}/filters`, filterRoutes);
 app.use(`${API_V1}/stock-availability`, stockAvailabilityRoutes);
 app.use(`${API_V1}/primary-sales`, primarySalesRoutes);
 app.use(`${API_V1}/esales-stock`, esalesStockRoutes);
+app.use(`${API_V1}/war-room`, warRoomRoutes);
 // Inventory Ageing DISABLED for now — route intentionally not registered so all
 // /ageing/* API calls 404. Re-enable this line to bring the feature back.
 app.use(`${API_V1}/ageing`, ageingRoutes);

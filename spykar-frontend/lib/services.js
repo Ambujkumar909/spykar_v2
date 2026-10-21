@@ -146,6 +146,15 @@ export const primarySalesService = {
 
 // ─── ESales Stock (partner month-end stock files) ────────────────────────────
 // Read-only stock snapshots at the e-commerce partners. Mirrors primarySalesService.
+export const warRoomService = {
+  getMeta:    () => api.get('/war-room/meta'),
+  getBoard:   (params = {}) => api.get('/war-room/board', { params }),
+  getFilterOptions: (params = {}) => api.get('/war-room/filter-options', { params }),
+  getNotes:   (weekStart) => api.get('/war-room/notes', { params: { week_start: weekStart } }),
+  saveNote:   (body) => api.put('/war-room/notes', body),
+  exportXlsx: (params = {}) => api.get('/war-room/export.xlsx', { params, responseType: 'blob' }),
+};
+
 export const esalesStockService = {
   getOverview: (params = {}) => api.get('/esales-stock/overview', { params }),
   getSkuCount: (params = {}) => api.get('/esales-stock/sku-count', { params }),

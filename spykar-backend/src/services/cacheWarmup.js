@@ -268,6 +268,21 @@ async function warmEsalesStock() {
   }
 }
 
+// /war-room — the board for the latest sales day (the page's default) and its
+// filter lists, through the same controller path so the cache keys match.
+async function warmWarRoom() {
+  const start = Date.now();
+  try {
+    const ctrl = require('../controllers/warRoom.controller');
+    await require('./warRoom').loadEngine();          // in-memory engine, rebuilt after each sync (no-op if current)
+    await invokeController(ctrl.getBoard, {});
+    await invokeController(ctrl.getFilterOptions, {});
+    logger.info(`🔥 Cache warmed: war-room (latest day) in ${Date.now() - start}ms`);
+  } catch (err) {
+    logger.warn(`Cache warm-up (war-room) failed: ${err.message}`);
+  }
+}
+
 async function warmCaches() {
   logger.info('🔥 Starting background cache warm-up…');
   await Promise.allSettled([
@@ -286,6 +301,7 @@ async function warmCaches() {
   // compete with their long scans for the pool right after a restart (and an
   // uncached ESales request is ~90 ms anyway).
   await warmEsalesStock();       // /esales-stock — every pill + every as-on date
+  await warmWarRoom();           // /war-room — latest day
   logger.info('🔥 Cache warm-up complete — Overview hot for every lens');
 }
 

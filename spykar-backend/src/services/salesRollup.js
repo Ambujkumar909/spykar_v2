@@ -66,6 +66,7 @@ function rowSource(dateWhere) {
       ${VAL.gst}   AS gst,
       ${VAL.exgst} AS exgst,
       s.sku_code, s.product_name, s.fit_type, s.color_code, s.color_name, s.size, s.mrp AS sku_mrp,
+      m.reference_no AS bill_no, s.gender_name, s.category_norm, s.product AS sku_product,
       l.name AS loc_name, l.code AS loc_code, COALESCE(l.external_id,'') AS external_id,
       COALESCE(l.group_name, l.type::text) AS channel, l.city, l.state, l.shop_closed
     FROM inventory_movements m
@@ -102,6 +103,36 @@ function skuInsertSQL(dateWhere) {
              b.sku_code, b.product_name, b.fit_type, b.color_code, b.color_name, b.size`;
 }
 
+// War Room rollups (migration 036), from the same rows as srd_store so the
+// two always agree. NOB = distinct bill numbers of sale AND return bills —
+// the definition the War Room workbook uses. Product drops its price-band
+// suffix ('JEANS<', 'JACKETS>=5000' → 'JEANS', 'JACKETS'); net = sold − returned.
+function warRoomInsertSQL(dateWhere) {
+  return [`
+    INSERT INTO wr_store_day (sale_date, location_id, bills)
+    SELECT b.moved_at::date, b.location_id, COUNT(DISTINCT b.bill_no)::int
+    FROM (${rowSource(dateWhere)}) b
+    GROUP BY b.moved_at::date, b.location_id`, `
+    INSERT INTO wr_cat_day (sale_date, location_id, gender, category, product, qty, val, mrp)
+    SELECT b.moved_at::date, b.location_id,
+      COALESCE(b.gender_name, ''), COALESCE(b.category_norm, ''),
+      regexp_replace(COALESCE(b.sku_product, ''), '\\s*[<>].*$', ''),
+      SUM(CASE WHEN b.mt = 'SALE' THEN b.qty ELSE -b.qty END)::int,
+      SUM(CASE WHEN b.mt = 'SALE' THEN b.val ELSE -b.val END),
+      SUM(CASE WHEN b.mt = 'SALE' THEN b.mrp ELSE -b.mrp END)
+    FROM (${rowSource(dateWhere)}) b
+    GROUP BY 1, 2, 3, 4, 5`];
+}
+
+// Rebuild only the War Room rollups (first build after migration 036, or a repair).
+async function rebuildWarRoom(client) {
+  const t0 = Date.now();
+  await client.query('TRUNCATE wr_store_day, wr_cat_day');
+  for (const sql of warRoomInsertSQL('')) await client.query(sql);
+  const { rows: [r] } = await client.query('SELECT (SELECT COUNT(*) FROM wr_store_day)::int AS d, (SELECT COUNT(*) FROM wr_cat_day)::int AS c');
+  return { wr_store_day: r.d, wr_cat_day: r.c, ms: Date.now() - t0 };
+}
+
 // Full rebuild — used by FULL sync and the one-time backfill. TRUNCATE + reload
 // inside the caller's transaction (AccessExclusiveLock → readers see new data
 // atomically, never an empty table).
@@ -111,6 +142,8 @@ async function rebuildAll(client) {
   await client.query('TRUNCATE srd_sku');
   await client.query(storeInsertSQL(''));
   await client.query(skuInsertSQL(''));
+  await client.query('TRUNCATE wr_store_day, wr_cat_day');
+  for (const sql of warRoomInsertSQL('')) await client.query(sql);
   const [{ rows: [a] }, { rows: [b] }] = await Promise.all([
     client.query('SELECT COUNT(*)::int n FROM srd_store'),
     client.query('SELECT COUNT(*)::int n FROM srd_sku'),
@@ -127,7 +160,10 @@ async function refreshRange(client, fromISO, toISO) {
   await client.query(`DELETE FROM srd_sku   WHERE sale_date >= $1::date AND sale_date <= $2::date`, [fromISO, toISO]);
   await client.query(storeInsertSQL(dateWhere));
   await client.query(skuInsertSQL(dateWhere));
+  await client.query(`DELETE FROM wr_store_day WHERE sale_date >= $1::date AND sale_date <= $2::date`, [fromISO, toISO]);
+  await client.query(`DELETE FROM wr_cat_day   WHERE sale_date >= $1::date AND sale_date <= $2::date`, [fromISO, toISO]);
+  for (const sql of warRoomInsertSQL(dateWhere)) await client.query(sql);
   return { window: [fromISO, toISO], ms: Date.now() - t0 };
 }
 
-module.exports = { rebuildAll, refreshRange };
+module.exports = { rebuildAll, refreshRange, rebuildWarRoom };

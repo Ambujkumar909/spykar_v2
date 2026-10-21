@@ -22,11 +22,11 @@ import {
   CalendarRange, Briefcase, Activity
 } from 'lucide-react';
 import MultiSelect from '../filters/MultiSelect';
-import { filterService, esalesStockService } from '../../lib/services';
+import { filterService, esalesStockService, warRoomService } from '../../lib/services';
 import { getCached, setCached, isFresh } from '../../lib/dashboardCache';
 import { useSharedFilters } from '../../lib/FiltersContext';
 
-const FILTER_ROUTES = new Set(['/network', '/sales', '/primary-sales', '/esales-stock', '/stock-availability', '/inventory-ageing']);
+const FILTER_ROUTES = new Set(['/war-room', '/network', '/sales', '/primary-sales', '/esales-stock', '/stock-availability', '/inventory-ageing']);
 // Inventory Ageing shows partner-level filters while its ESales source is
 // selected (the page keeps the source in the shared filter state).
 const AGEING_ESALES = '/inventory-ageing#esales';
@@ -38,6 +38,12 @@ const routeKeyFor = (pathname, filters) => (pathname === '/inventory-ageing' && 
 // Deliberately excluded: location/party/status (store-level, N/A to warehouses),
 // Shade (duplicate of Colour), Style (13k values), Fit (empty), Brand (single).
 const ROUTE_DIMS = {
+  // War Room is a STORE review: its own store lens (channel, region, store
+  // type, performance status, ASM, review state) + location + product.
+  // Store-side filters apply in the browser (instant); product filters
+  // re-cut the numbers on the server.
+  '/war-room': new Set(['wr_channel', 'wr_region', 'wr_type', 'wr_status', 'wr_asm', 'wr_review',
+    'state', 'city', 'store_code', 'gender_name', 'category', 'product', 'sub_product', 'size', 'color', 'season']),
   '/primary-sales': new Set(['gender_name', 'category', 'product', 'sub_product', 'size', 'color', 'season']),
   // ESales Stock is PARTNER-level (marketplaces, not stores): location / party /
   // status do not exist for it — it has its own Channel + Partner group instead
@@ -61,7 +67,8 @@ const ROUTE_DIMS = {
 // Routes whose Lens lists come from their OWN data instead of the global SKU
 // master — the page then offers only values it can actually show.
 const ESALES_OPTIONS = { prefix: 'esales:', fetch: (params) => esalesStockService.getFilterOptions(params) };
-const ROUTE_OPTIONS = { '/esales-stock': ESALES_OPTIONS, [AGEING_ESALES]: ESALES_OPTIONS };
+const WAR_ROOM_OPTIONS = { prefix: 'wr:', fetch: (params) => warRoomService.getFilterOptions(params) };   // cascading: every selection narrows the other lists
+const ROUTE_OPTIONS = { '/esales-stock': ESALES_OPTIONS, [AGEING_ESALES]: ESALES_OPTIONS, '/war-room': WAR_ROOM_OPTIONS };
 // Filter groups that exist on one route only, shown first.
 const PARTNER_GROUP = [{
   name: 'Partner',
@@ -71,7 +78,19 @@ const PARTNER_GROUP = [{
     { key: 'partner_name', label: 'Partner', apiKey: 'partner_name', Icon: Store     },
   ],
 }];
-const ROUTE_GROUPS = { '/esales-stock': PARTNER_GROUP, [AGEING_ESALES]: PARTNER_GROUP };
+const WAR_ROOM_GROUP = [{
+  name: 'War Room',
+  eyebrow: 'Which stores',
+  dims: [
+    { key: 'wr_channel', label: 'Channel',    apiKey: 'wr_channel', Icon: Briefcase },
+    { key: 'wr_region',  label: 'Region',     apiKey: 'wr_region',  Icon: MapPin    },
+    { key: 'wr_type',    label: 'Store type', apiKey: 'wr_type',    Icon: Store     },
+    { key: 'wr_status',  label: 'Status',     apiKey: 'wr_status',  Icon: Activity  },
+    { key: 'wr_asm',     label: 'ASM',        apiKey: 'wr_asm',     Icon: Users     },
+    { key: 'wr_review',  label: 'Review',     apiKey: 'wr_review',  Icon: Sparkles  },
+  ],
+}];
+const ROUTE_GROUPS = { '/esales-stock': PARTNER_GROUP, [AGEING_ESALES]: PARTNER_GROUP, '/war-room': WAR_ROOM_GROUP };
 function groupsForRoute(pathname) {
   const allow = ROUTE_DIMS[pathname];
   if (!allow) return FILTER_GROUPS;

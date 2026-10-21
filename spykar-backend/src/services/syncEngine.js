@@ -1538,7 +1538,7 @@ async function runDeltaSync(syncType = 'DELTA') {
           // that srd_store is non-empty). Empty them so every request takes the
           // always-correct live path, and the next sync does a full rebuild.
           logger.error(`[ROLLUP] refresh failed — rollups switched off until the next sync rebuilds them: ${rollupErr.message}`);
-          try { await query('TRUNCATE srd_store, srd_sku'); } catch (e2) { logger.error(`[ROLLUP] could not switch rollups off: ${e2.message}`); }
+          try { await query('TRUNCATE srd_store, srd_sku, wr_store_day, wr_cat_day'); } catch (e2) { logger.error(`[ROLLUP] could not switch rollups off: ${e2.message}`); }
         }
 
       } finally {
