@@ -29,6 +29,27 @@ export function kpis([q, v, mrp, b]) {
   return { qty: q, val: v, mrp, bills: b, upt: b ? q / b : null, asp: q ? v / q : null, atv: b ? v / b : null, disc: mrp ? 1 - v / mrp : null };
 }
 
+// Targets of the stores in view, per window [units, ₹] (cw / pw / mtd / ytd
+// to date; week / month / fy whole). `cover` = stores in view with a target.
+export const TARGET_KEYS = ['cw', 'pw', 'mtd', 'ytd', 'week', 'month', 'fy'];
+export function sumTargets(stores) {
+  const t = Object.fromEntries(TARGET_KEYS.map((k) => [k, [0, 0]])); let cover = 0;
+  for (const s of stores) {
+    if (!s.t) continue; cover++;
+    for (const k of TARGET_KEYS) if (s.t[k]) { t[k][0] += s.t[k][0]; t[k][1] += s.t[k][1]; }
+  }
+  return { ...t, cover };
+}
+export const achTone = (a) => (a == null ? 'mute' : a >= 1 ? 'pos' : a >= 0.9 ? 'warn' : 'neg');
+// Month run-rate: target still to sell ÷ days left, vs the pace so far.
+export function runRate(monthTgt, mtdVal, P) {
+  if (!monthTgt || !P) return null;
+  const d = (s) => new Date(`${s}T00:00:00Z`);
+  const end = d(P.mtd[0]); end.setUTCMonth(end.getUTCMonth() + 1); end.setUTCDate(0);
+  const left = Math.round((end - d(P.mtd[1])) / 864e5); const done = Math.round((d(P.mtd[1]) - d(P.mtd[0])) / 864e5) + 1;
+  return { left, need: monthTgt - mtdVal, perDay: left > 0 ? (monthTgt - mtdVal) / left : null, pace: mtdVal / done, ach: mtdVal / monthTgt };
+}
+
 // Weekly ₹ series (TY and LY) of the stores in view.
 export function sumWeeks(stores, n) {
   const ty = new Array(n).fill(0); const ly = new Array(n).fill(0);

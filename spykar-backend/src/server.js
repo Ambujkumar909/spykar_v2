@@ -16,6 +16,7 @@ const { connectDatabase } = require('./config/database');
 const { startScheduler } = require('./jobs/syncScheduler');
 const { startCacheInvalidator } = require('./jobs/cacheInvalidator');
 const { startEsalesWatcher } = require('./jobs/esalesWatcher');
+const { startTargetWatcher } = require('./jobs/targetWatcher');
 
 const PORT = process.env.PORT || 4000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -147,6 +148,7 @@ async function bootstrap() {
 
     // ESales stock: load new / changed / removed workbooks from ESALES_STOCK_DIR
     startEsalesWatcher();
+    startTargetWatcher();
 
     // Start ETL sync scheduler
     if (process.env.ENABLE_SCHEDULER === 'true') {

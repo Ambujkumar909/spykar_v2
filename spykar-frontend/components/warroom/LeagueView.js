@@ -2,7 +2,7 @@
 import { useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, Search, CheckCircle2, CircleDashed, Flame } from 'lucide-react';
 import { Spark, StatusPill, Delta } from './ui';
-import { kpis, growth, statusOf, reviewed, streak, weekRanks, inr, num, pct, share, sumPeriods } from './wrMath';
+import { kpis, growth, statusOf, reviewed, streak, weekRanks, inr, num, pct, share, sumPeriods, sumTargets, achTone } from './wrMath';
 
 const COLS = [
   { k: 'rank', l: '#', w: 44, sort: (r) => r.rank ?? 9999 },
@@ -14,6 +14,7 @@ const COLS = [
   { k: 'cwg', l: 'Wk Δ', w: 74, sort: (r) => r.cwg ?? -9 },
   { k: 'mtd', l: 'MTD', sub: 'TY · LY', w: 120, sort: (r) => r.mtd },
   { k: 'mtdg', l: 'MTD Δ', w: 76, sort: (r) => r.mtdg ?? -9 },
+  { k: 'ach', l: 'MTD ach', sub: 'vs target', w: 76, sort: (r) => r.ach ?? -9 },
   { k: 'ytd', l: 'YTD', sub: 'TY · LY', w: 120, sort: (r) => r.ytd },
   { k: 'ytdg', l: 'YTD Δ', w: 76, sort: (r) => r.ytdg ?? -9 },
   { k: 'bills', l: 'Bills', sub: 'MTD', w: 92, sort: (r) => r.k.bills ?? -1 },
@@ -43,6 +44,7 @@ export default function LeagueView({ stores, measure, onOpen }) {
         s, status: statusOf(s), rev: reviewed(s), k, kl, rank: r?.now, move: r?.move, streak: streak(s),
         cw: s.m.cw[I], cwly: s.m.ly[I], cwg: growth(s.m.cw[I], s.m.ly[I]),
         mtd: s.m.mtd[I], mtdly: s.m.mtdly[I], mtdg: growth(s.m.mtd[I], s.m.mtdly[I]),
+        ach: s.t && s.t.mtd && s.t.mtd[I] ? s.m.mtd[I] / s.t.mtd[I] : null,
         ytd: s.m.ytd[I], ytdly: s.m.ytdly[I], ytdg: growth(s.m.ytd[I], s.m.ytdly[I]),
         trend: s.wk.slice(-5, -1).reduce((a, b) => a + b, 0) - s.wkly.slice(-5, -1).reduce((a, b) => a + b, 0),
       };
@@ -55,6 +57,7 @@ export default function LeagueView({ stores, measure, onOpen }) {
       .sort((a, b) => { const x = col.sort(a); const y = col.sort(b); return (x > y ? 1 : x < y ? -1 : 0) * sort.dir; });
   }, [rows, sort, q]);
   const A = useMemo(() => sumPeriods(stores), [stores]); const tk = kpis(A.mtd);
+  const TT = useMemo(() => sumTargets(stores), [stores]); const tach = TT.cover && TT.mtd[I] ? A.mtd[I] / TT.mtd[I] : null;
   const click = (k) => setSort((s) => (s.k === k ? { k, dir: -s.dir } : { k, dir: ['store', 'region', 'rank', 'status'].includes(k) ? 1 : -1 }));
 
   return (
@@ -77,6 +80,7 @@ export default function LeagueView({ stores, measure, onOpen }) {
               <td /><td /><td><b>Total</b><em>{num(stores.length)} stores</em></td><td /><td />
               <td><b>{fmtM(A.cw[I])}</b><em>{fmtM(A.ly[I])}</em></td><td style={heat(growth(A.cw[I], A.ly[I]))}>{pct(growth(A.cw[I], A.ly[I]))}</td>
               <td><b>{fmtM(A.mtd[I])}</b><em>{fmtM(A.mtdly[I])}</em></td><td style={heat(growth(A.mtd[I], A.mtdly[I]))}>{pct(growth(A.mtd[I], A.mtdly[I]))}</td>
+              <td className={`wr-${achTone(tach)}`}>{tach == null ? '—' : share(tach, 0)}</td>
               <td><b>{fmtM(A.ytd[I])}</b><em>{fmtM(A.ytdly[I])}</em></td><td style={heat(growth(A.ytd[I], A.ytdly[I]))}>{pct(growth(A.ytd[I], A.ytdly[I]))}</td>
               <td>{num(tk.bills)}</td><td>{num(tk.upt, 2)}</td><td>{inr(tk.atv, { compact: false })}</td><td>{share(tk.disc)}</td><td /><td /><td />
             </tr>
@@ -89,6 +93,7 @@ export default function LeagueView({ stores, measure, onOpen }) {
                 <td><StatusPill status={r.status} small /></td>
                 <td><b>{fmtM(r.cw)}</b><em>{fmtM(r.cwly)}</em></td><td style={heat(r.cwg)}>{pct(r.cwg)}</td>
                 <td><b>{fmtM(r.mtd)}</b><em>{fmtM(r.mtdly)}</em></td><td style={heat(r.mtdg)}>{pct(r.mtdg)}</td>
+                <td className={`wr-${achTone(r.ach)}`}>{r.ach == null ? '—' : share(r.ach, 0)}</td>
                 <td><b>{fmtM(r.ytd)}</b><em>{fmtM(r.ytdly)}</em></td><td style={heat(r.ytdg)}>{pct(r.ytdg)}</td>
                 <td>{r.k.bills == null ? 'n/a' : num(r.k.bills)}<Delta v={growth(r.k.bills, r.kl.bills)} size="sm" /></td>
                 <td>{num(r.k.upt, 2)}</td>

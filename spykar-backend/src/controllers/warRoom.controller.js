@@ -136,8 +136,9 @@ async function exportXlsx(req, res, next) {
     const pc = (v) => ({ v: v == null || !Number.isFinite(v) ? null : v, s: 2 });
     const head = ['Store code', 'Store', 'City', 'State', 'Region', 'Channel', 'Type', 'ASM',
       'Week qty', 'Week ₹ lakh', 'PW ₹ lakh', 'LY week ₹ lakh', 'vs PW', 'vs LY',
-      'MTD qty', 'MTD ₹ lakh', 'MTD LY ₹ lakh', 'MTD GoLY',
-      'YTD qty', 'YTD ₹ lakh', 'YTD MRP ₹ lakh', 'YTD disc %', 'YTD LY ₹ lakh', 'YTD GoLY',
+      'Week target ₹ lakh', 'Week ach %',
+      'MTD qty', 'MTD ₹ lakh', 'MTD LY ₹ lakh', 'MTD GoLY', 'MTD target ₹ lakh', 'MTD ach %', 'Month target ₹ lakh',
+      'YTD qty', 'YTD ₹ lakh', 'YTD MRP ₹ lakh', 'YTD disc %', 'YTD LY ₹ lakh', 'YTD GoLY', 'YTD target ₹ lakh', 'YTD ach %',
       'MTD bills', 'MTD bills GoLY', 'MTD UPT', 'MTD ASP ₹', 'MTD ATV ₹', 'YTD bills', 'YTD UPT', 'YTD ASP ₹', 'YTD ATV ₹',
       'Weeks below LY (in a row)', 'Reason', 'Action', 'Updated by'];
     const rows = [head.map(H)];
@@ -146,11 +147,14 @@ async function exportXlsx(req, res, next) {
       const kpi = (x) => [x[3], x[3] ? x[0] / x[3] : null, x[0] ? x[1] / x[0] : null, x[3] ? x[1] / x[3] : null];
       let streak = 0; for (let i = s.wk.length - 2; i >= 0 && s.wk[i] < s.wkly[i]; i--) streak++;   // full weeks only
       const km = kpi(m.mtd);
+      const tgt = (k) => (s.t && s.t[k] ? L(s.t[k][1]) : null);
+      const ach = (v, k) => pc(s.t && s.t[k] && s.t[k][1] ? v / s.t[k][1] : null);
       const note = nt.notes[s.code];
       rows.push([s.code, s.name, s.city, s.state, s.region, s.channel, s.type, nt.asm[s.code] || '',
         m.cw[0], L(m.cw[1]), L(m.pw[1]), L(m.ly[1]), pc(growth(m.cw[1], m.pw[1])), pc(growth(m.cw[1], m.ly[1])),
-        m.mtd[0], L(m.mtd[1]), L(m.mtdly[1]), pc(growth(m.mtd[1], m.mtdly[1])),
-        m.ytd[0], L(m.ytd[1]), L(m.ytd[2]), pc(m.ytd[2] ? 1 - m.ytd[1] / m.ytd[2] : null), L(m.ytdly[1]), pc(growth(m.ytd[1], m.ytdly[1])),
+        tgt('cw'), ach(m.cw[1], 'cw'),
+        m.mtd[0], L(m.mtd[1]), L(m.mtdly[1]), pc(growth(m.mtd[1], m.mtdly[1])), tgt('mtd'), ach(m.mtd[1], 'mtd'), tgt('month'),
+        m.ytd[0], L(m.ytd[1]), L(m.ytd[2]), pc(m.ytd[2] ? 1 - m.ytd[1] / m.ytd[2] : null), L(m.ytdly[1]), pc(growth(m.ytd[1], m.ytdly[1])), tgt('ytd'), ach(m.ytd[1], 'ytd'),
         km[0], pc(growth(m.mtd[3], m.mtdly[3])), km[1], km[2], km[3], ...kpi(m.ytd),
         streak, note?.reason || '', note?.action || '', note?.by || '']);
     }

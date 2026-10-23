@@ -18,6 +18,26 @@ export function Delta({ v, d = 1, good, bad, label, size = 'md', invert = false 
   );
 }
 
+// Achievement ring: arc = value (to 100 %), a thin gold inner arc beyond 100 %.
+export function Ring({ value, size = 64, stroke = 6, label, sub }) {
+  const r = (size - stroke) / 2; const c = 2 * Math.PI * r;
+  const v = value == null || !Number.isFinite(value) ? 0 : Math.max(0, Math.min(value, 2));
+  const t = value == null ? 'mute' : value >= 1 ? 'pos' : value >= 0.9 ? 'warn' : 'neg';
+  const over = Math.max(0, v - 1); const ri = r - stroke - 1.5;
+  return (
+    <div className={`wr-ring wr-${t}`} style={{ width: size, height: size }} title={value == null ? undefined : `${(value * 100).toFixed(1)}%`}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={size / 2} cy={size / 2} r={r} className="wr-ring-track" strokeWidth={stroke} fill="none" />
+        <circle cx={size / 2} cy={size / 2} r={r} className="wr-ring-arc" strokeWidth={stroke} fill="none"
+          strokeDasharray={`${c * Math.min(v, 1)} ${c}`} strokeLinecap="round" transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+        {over > 0 && <circle cx={size / 2} cy={size / 2} r={ri} className="wr-ring-over" strokeWidth={2.5} fill="none"
+          strokeDasharray={`${2 * Math.PI * ri * Math.min(over, 1)} ${2 * Math.PI * ri}`} strokeLinecap="round" transform={`rotate(-90 ${size / 2} ${size / 2})`} />}
+      </svg>
+      <div className="wr-ring-c"><b>{label ?? (value == null ? '—' : `${Math.round(value * 100)}%`)}</b>{sub && <span>{sub}</span>}</div>
+    </div>
+  );
+}
+
 // Sparkline of TY with LY ghosted behind; last point marked.
 export function Spark({ ty = [], ly = [], w = 96, h = 26, stroke = 1.6 }) {
   const all = [...ty, ...ly].filter((x) => Number.isFinite(x));

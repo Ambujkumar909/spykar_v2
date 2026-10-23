@@ -9,8 +9,15 @@
 #           (no shortcut: BIMis can read only the Stock folder, not its
 #           parents, so it is addressed by drive id + folder id)
 #
-#   onedrive_pull.sh            pull, write the change reports
-#   onedrive_pull.sh --dry-run  show what WOULD change, touch nothing
+#   Target  QlickSense/EBO-Data/Master Files/DaywiseTarget → $BASE/Target_Data/DaywiseTarget
+#           (the War Room's day-wise store targets; shared folder, by drive + folder id)
+#
+#   onedrive_pull.sh                         ESales + LFR (cron 22:00 daily)
+#   onedrive_pull.sh Target --every-days=3   targets only, at most every 3 days (cron 01:00 daily)
+#   onedrive_pull.sh [feeds] --dry-run       show what WOULD change, touch nothing
+#
+# The API's target watcher (jobs/targetWatcher.js) loads a changed target
+# workbook into wr_targets within a minute.
 #
 # Report per feed: <feed dir>/.changes/<timestamp>.txt, one line per file:
 #   "+ path" new   "* path" modified   "- path" deleted in OneDrive
@@ -27,8 +34,20 @@ RCLONE=${RCLONE:-$HOME/.local/bin/rclone}
 BASE=${ONEDRIVE_BASE:-$HOME/spykar/onedrive}
 ESALES_REMOTE=${ESALES_REMOTE:-"spykar_od:DtLake's files - ESales_Stock"}
 LFR_REMOTE=${LFR_REMOTE:-"spykar_od,drive_id=b!mCDQ0pRZrk2Ab6cBGZ5eQiEccB39Go5DtNKoDEg4kOdOfqmN8Pj8Sou4cfR2Ku3A,drive_type=business,root_folder_id=01F4V6TQEGC3QZKWLFCVGZIGJ62AID3FYI:"}
+TARGET_REMOTE=${TARGET_REMOTE:-"spykar_od,drive_id=b!mCDQ0pRZrk2Ab6cBGZ5eQiEccB39Go5DtNKoDEg4kOdOfqmN8Pj8Sou4cfR2Ku3A,drive_type=business,root_folder_id=01F4V6TQAJLXL5QUFLCZC243LHMEO5RB62:"}
 stamp=$(date +%Y%m%d-%H%M%S)
 failed=0
+
+# feeds = plain words, rclone options = --… (except --every-days=N, ours)
+feeds=(); opts=(); every=0
+for a in "$@"; do
+  case "$a" in
+    --every-days=*) every=${a#--every-days=} ;;
+    -*) opts+=("$a") ;;
+    *) feeds+=("$a") ;;
+  esac
+done
+[ ${#feeds[@]} -eq 0 ] && feeds=(ESales LFR)
 
 pull() {   # pull <name> <remote> <feed dir> <subfolder> [rclone args]
   local name=$1 remote=$2 dir=$3 sub=$4; shift 4
@@ -47,6 +66,20 @@ pull() {   # pull <name> <remote> <feed dir> <subfolder> [rclone args]
   find "$dir/.trash" -mindepth 1 -maxdepth 1 -mtime +30 -exec rm -rf {} + 2>/dev/null
 }
 
-pull ESales "$ESALES_REMOTE" "$BASE/ESales_Data" ESales_Stock "$@"
-pull LFR    "$LFR_REMOTE"    "$BASE/LFR_Data"    LFR_Stock    "$@"
+for f in "${feeds[@]}"; do
+  case "$f" in
+    ESales) pull ESales "$ESALES_REMOTE" "$BASE/ESales_Data" ESales_Stock "${opts[@]}" ;;
+    LFR)    pull LFR    "$LFR_REMOTE"    "$BASE/LFR_Data"    LFR_Stock    "${opts[@]}" ;;
+    Target)
+      last="$BASE/Target_Data/.last_pull"
+      # every N days: skip until N days (less an hour of slack) have passed since the last good pull
+      if [ "$every" -gt 0 ] && [ -f "$last" ] && [ $(( $(date +%s) - $(stat -c %Y "$last") )) -lt $(( every * 86400 - 3600 )) ]; then
+        echo "$(date '+%F %T') Target: not due (last pull $(date -r "$last" '+%F %T'), every $every days)"; continue
+      fi
+      before=$failed
+      pull Target "$TARGET_REMOTE" "$BASE/Target_Data" DaywiseTarget "${opts[@]}"
+      [ $failed -eq $before ] && [[ ! " ${opts[*]} " =~ " --dry-run " ]] && touch "$last" ;;
+    *) echo "$(date '+%F %T') unknown feed '$f' (ESales | LFR | Target)"; failed=1 ;;
+  esac
+done
 exit $failed

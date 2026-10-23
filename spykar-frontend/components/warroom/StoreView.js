@@ -1,10 +1,10 @@
 // ─── War Room · Store — one store, its numbers, and the ASM's review ─────────
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, NotebookPen, Save, History, MapPin, Store as StoreIcon, Award, Flame } from 'lucide-react';
-import { Card, StatusPill } from './ui';
+import { Card, StatusPill, Ring } from './ui';
 import StorePicker from './StorePicker';
 import { PeriodCard, TrendPanel, CategoryPanel, DriversPanel, PacePanel } from './Panels';
-import { sumPeriods, sumWeeks, sumDays, sumCats, sumStock, growth, statusOf, reviewed, streak, weekRanks, num, pct, fmtDay } from './wrMath';
+import { sumPeriods, sumWeeks, sumDays, sumCats, sumStock, sumTargets, runRate, growth, statusOf, reviewed, streak, weekRanks, inr, num, pct, share, fmtDay } from './wrMath';
 import { warRoomService } from '../../lib/services';
 import { notifyApiError } from '../../lib/notifyApiError';
 
@@ -14,6 +14,8 @@ export default function StoreView({ board, store, list, network, onNav, onSaved,
   const A = useMemo(() => sumPeriods(one), [one]);
   const W = useMemo(() => sumWeeks(one, P.weeks.length), [one, P]);
   const Dd = useMemo(() => sumDays(one), [one]);
+  const T = useMemo(() => sumTargets(one), [one]);
+  const rr = store.t && store.t.month ? runRate(store.t.month[1], store.m.mtd[1], P) : null;
   const catSum = useMemo(() => sumCats(one, board.cats), [one, board.cats]);
   const stockSum = useMemo(() => sumStock(one, board.cats), [one, board.cats]);
   const [coreOnly, setCoreOnly] = useState(true);
@@ -74,13 +76,17 @@ export default function StoreView({ board, store, list, network, onNav, onSaved,
             {rank.wk && <div><b>#{rank.wk.now}<i className={rank.wk.move > 0 ? 'pos' : rank.wk.move < 0 ? 'neg' : 'mute'}>{rank.wk.move > 0 ? ` ▲${rank.wk.move}` : rank.wk.move < 0 ? ` ▼${-rank.wk.move}` : ' ='}</i></b><span>week · vs PW</span></div>}
           </div>
           <StatusPill status={statusOf(store)} />
+          {store.t && store.t.mtd && store.t.mtd[1] ? <Ring value={store.m.mtd[1] / store.t.mtd[1]} size={70} sub="MTD target" /> : null}
         </div>
       </div>
+      {rr && rr.left > 0 && (
+        <div className="wr-runrate">Month target <b>{inr(store.t.month[1])}</b> · sold <b>{inr(store.m.mtd[1])}</b> ({share(rr.ach, 0)}) · need <b>{inr(Math.max(0, rr.perDay))}</b>/day for {rr.left} days · now <b>{inr(rr.pace)}</b>/day</div>
+      )}
 
       <div className="wr-tri">
-        <PeriodCard kind="week" P={P} A={A} measure={measure} />
-        <PeriodCard kind="mtd" P={P} A={A} measure={measure} />
-        <PeriodCard kind="ytd" P={P} A={A} measure={measure} />
+        <PeriodCard kind="week" P={P} A={A} measure={measure} T={T} />
+        <PeriodCard kind="mtd" P={P} A={A} measure={measure} T={T} />
+        <PeriodCard kind="ytd" P={P} A={A} measure={measure} T={T} />
       </div>
 
       <div className="wr-store2">

@@ -156,6 +156,19 @@ html.theme-light .wr {
 .wr-spark.is-down .wr-spark-ty { stroke: var(--wr-neg); } .wr-spark.is-down .wr-spark-area { fill: rgba(244,63,94,0.10); } .wr-spark.is-down .wr-spark-dot { fill: var(--wr-neg); }
 .wr-spark.is-up .wr-spark-ty { stroke: var(--wr-pos); } .wr-spark.is-up .wr-spark-area { fill: rgba(16,185,129,0.10); } .wr-spark.is-up .wr-spark-dot { fill: var(--wr-pos); }
 
+/* ── achievement ring ── */
+.wr-ring { position: relative; flex-shrink: 0; }
+.wr-ring-track { stroke: var(--wr-line-2); }
+.wr-ring-arc { transition: stroke-dasharray 700ms cubic-bezier(0.16,1,0.3,1); filter: drop-shadow(0 0 6px rgba(0,0,0,0.15)); }
+.wr-ring.wr-pos .wr-ring-arc { stroke: var(--wr-pos); } .wr-ring.wr-warn .wr-ring-arc { stroke: var(--wr-warn); } .wr-ring.wr-neg .wr-ring-arc { stroke: var(--wr-neg); } .wr-ring.wr-mute .wr-ring-arc { stroke: transparent; }
+.wr-ring-over { stroke: var(--wr-gold); }
+.wr-ring-c { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.05; }
+.wr-ring-c b { font-family: var(--wr-num); font-weight: 800; font-size: 14px; letter-spacing: -0.02em; }
+.wr-ring-c span { font-size: 8.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+.wr-tile-ring { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.wr-prow.tgt { background: rgba(233,196,106,0.06); border-radius: 8px; padding: 6px; margin: 2px -6px 0; border-bottom: 0; }
+.wr-prow.tgt .wr-prow-l { color: var(--wr-gold); font-weight: 700; }
+
 /* ── brief ── */
 .wr-brief { position: relative; padding: 14px 18px 14px 18px; border-radius: 16px; border: 1px solid rgba(233,196,106,0.28);
   background: linear-gradient(135deg, rgba(233,196,106,0.08), rgba(225,29,72,0.05) 60%, transparent), var(--bg-card); }

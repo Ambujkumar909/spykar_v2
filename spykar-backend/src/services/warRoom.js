@@ -38,6 +38,7 @@ const minusYear = (s) => {   // same calendar date a year earlier (29 Feb → 28
 };
 const mondayOf = (s) => { const d = toD(s); return addDays(s, -((d.getUTCDay() + 6) % 7)); };
 const monthStart = (s) => `${s.slice(0, 7)}-01`;
+const monthEnd = (s) => { const d = toD(monthStart(s)); return iso(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0))); };
 const fyStart = (s) => { const d = toD(s); const y = d.getUTCMonth() >= 3 ? d.getUTCFullYear() : d.getUTCFullYear() - 1; return `${y}-04-01`; };
 const WEEKS = 13;
 
@@ -185,6 +186,39 @@ async function buildBoard(q) {
   return transaction(async (c) => boardWith(q, scope, c.query.bind(c), c));
 }
 
+// ── targets (migration 037): day-wise store targets → per store and window ──
+// to date: cw (week so far), pw (previous week, same days), mtd, ytd;
+// whole: week (Mon–Sun), month, fy. Each [units, ₹]. Cached per as-on date
+// and per target load, so a new target file shows as soon as it is loaded.
+const tgCache = new Map();
+async function targetsFor(D, P) {
+  const { rows: [ld] } = await query(`SELECT id, files, loaded_at, date_from::text AS "from", date_to::text AS "to", stores
+    FROM wr_target_loads ORDER BY id DESC LIMIT 1`);
+  if (!ld) return null;
+  const key = `${D}|${ld.id}`;
+  if (tgCache.has(key)) return tgCache.get(key);
+  const fyEnd = `${Number(P.ytd[0].slice(0, 4)) + 1}-03-31`;
+  const W = { cw: P.cw, pw: P.pw, mtd: P.mtd, ytd: P.ytd, week: [P.cw[0], addDays(P.cw[0], 6)], month: [P.mtd[0], monthEnd(D)], fy: [P.ytd[0], fyEnd] };
+  const params = []; const cols = [];
+  for (const [k, [a, b]] of Object.entries(W)) {
+    params.push(a, b); const i = params.length - 1;
+    cols.push(`SUM(qty) FILTER (WHERE target_date BETWEEN $${i}::date AND $${i + 1}::date)::float AS "${k}_q"`,
+      `SUM(val) FILTER (WHERE target_date BETWEEN $${i}::date AND $${i + 1}::date)::float AS "${k}_v"`);
+  }
+  const lo = [P.pw[0], P.ytd[0]].sort()[0]; const hi = [fyEnd, monthEnd(D), addDays(P.cw[0], 6)].sort().pop();
+  const { rows } = await query(`SELECT external_id, ${cols.join(', ')} FROM wr_targets
+    WHERE target_date BETWEEN $${params.length + 1}::date AND $${params.length + 2}::date GROUP BY 1`, [...params, lo, hi]);
+  const map = {};
+  for (const r of rows) {
+    const t = {}; let any = false;
+    for (const k of Object.keys(W)) { const q = r[`${k}_q`]; const v = r[`${k}_v`]; t[k] = q == null && v == null ? null : [Math.round(q || 0), Math.round(v || 0)]; if (t[k]) any = true; }
+    if (any) map[r.external_id] = t;
+  }
+  const out = { map, info: { file: ld.files, loadedAt: ld.loaded_at, from: ld.from, to: ld.to, stores: ld.stores } };
+  tgCache.set(key, out); if (tgCache.size > 60) tgCache.delete(tgCache.keys().next().value);
+  return out;
+}
+
 // Shared by both paths: dates, stock dates (rollup materialised), store list.
 async function frame(q) {
   const meta = await getMeta();
@@ -239,7 +273,8 @@ async function boardFromEngine(q, scope, e) {
       CATS.forEach((c, ci) => { if (a[ci * 2] || a[ci * 2 + 1]) { const x = (m[c] ||= [0, 0, 0, 0]); x[ly] += a[ci * 2]; x[2 + ly] += a[ci * 2 + 1]; } });
     }
   } else K = stockByCat(stockRows.rows, F.lyStock);
-  return assemble(F, scope, stores, S, B, DY, C, K, 'engine');
+  const TG = scope.active ? null : await targetsFor(F.D, F.P);     // targets are per store, not per product
+  return assemble(F, scope, stores, S, B, DY, C, K, 'engine', TG);
 }
 
 async function boardWith(q, scope, run, client) {
@@ -341,7 +376,8 @@ async function boardWith(q, scope, run, client) {
   }
   for (const m of Object.values(C)) for (const a of Object.values(m)) for (let i = 6; i < 12; i++) a[i] /= 100;
   const K = stockByCat(stock.rows, lyStock);
-  return assemble({ meta, D, weekStart, P, weeks, windows, tyStock, lyStock, tyOk, lyOk }, scope, stores, S, B, DY, C, K, 'sql');
+  const TG = scope.active ? null : await targetsFor(D, P);
+  return assemble({ meta, D, weekStart, P, weeks, windows, tyStock, lyStock, tyOk, lyOk }, scope, stores, S, B, DY, C, K, 'sql', TG);
 }
 
 // Stock rollup rows → store × category [qty TY, qty LY, MRP TY, MRP LY] (MRP in paisa, then ₹).
@@ -356,13 +392,15 @@ function stockByCat(rows, lyStock) {
 }
 
 // Both paths end here: one store object per store that sold in any window.
-function assemble(F, scope, stores, S, B, DY, C, K, source) {
+function assemble(F, scope, stores, S, B, DY, C, K, source, TG) {
   const { meta, D, weekStart, P, weeks, windows, tyStock, lyStock, tyOk, lyOk } = F;
   const nDays = Number(D.slice(8));
   const out = [];
   for (const st of stores) {
-    const s = S[st.id]; const b = B[st.id];
-    if (!s || !windows.some(([k]) => Number(s[`${k}_q`]) || Number(s[`${k}_v`]))) continue;   // no sales in any window
+    const b = B[st.id]; const tg = TG ? TG.map[st.code] || null : null;
+    const s = S[st.id] || {};
+    const sold = windows.some(([k]) => Number(s[`${k}_q`]) || Number(s[`${k}_v`]));
+    if (!sold && !(tg && Object.values(tg).some((x) => x && (x[0] || x[1])))) continue;   // neither sales nor a target
     const m = {};
     for (const [k] of windows) m[k] = [Number(s[`${k}_q`] || 0), r2(s[`${k}_v`]), r2(s[`${k}_m`]), scope.active ? null : Number(b?.[k] || 0)];
     const dy = DY[st.id] || [new Array(nDays).fill(0), new Array(nDays).fill(0)];
@@ -374,12 +412,14 @@ function assemble(F, scope, stores, S, B, DY, C, K, source) {
       dy: dy[0].map(r0), dyly: dy[1].map(r0),
       cat: C[st.id] ? Object.fromEntries(Object.entries(C[st.id]).map(([k, a]) => [k, a.map(r0)])) : {},
       stk: K[st.id] ? Object.fromEntries(Object.entries(K[st.id]).map(([k, a]) => [k, a.map(r0)])) : {},
+      t: tg,
     });
   }
   return {
     meta, scoped: scope.active, cats: CATS, source,
     periods: { asOn: D, weekStart, ...P, weeks: weeks.map((w) => w.ty), weeksLy: weeks.map((w) => w.ly),
-      stock: { ty: tyOk ? tyStock : null, ly: lyOk ? lyStock : null } },
+      stock: { ty: tyOk ? tyStock : null, ly: lyOk ? lyStock : null },
+      targets: TG ? TG.info : null },
     stores: out,
   };
 }

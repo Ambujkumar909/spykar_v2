@@ -2,8 +2,8 @@
 import { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { CalendarDays, CalendarRange, CalendarClock, Boxes, Shirt, Scale, TrendingUp, Flame, Snail, CheckCircle2, Split, Waves, Gauge, Crosshair } from 'lucide-react';
-import { Card, Delta, DualBar, Seg } from './ui';
-import { kpis, growth, drivers, bridge, statusOf, isActive, inr, num, pct, share, pts, fmtRange, fmtDay, tone, STATUS_TONE } from './wrMath';
+import { Card, Delta, DualBar, Seg, Ring } from './ui';
+import { kpis, growth, drivers, bridge, statusOf, isActive, inr, num, pct, share, pts, fmtRange, fmtDay, tone, achTone, STATUS_TONE } from './wrMath';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 const axis = (isDark) => ({ fg: isDark ? '#94A3B8' : '#64748B', grid: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.07)', gold: isDark ? '#E9C46A' : '#B7791F' });
@@ -19,28 +19,34 @@ function Row({ label, ty, ly, g, fmt, strong }) {
     </div>
   );
 }
-export function PeriodCard({ kind, P, A, measure }) {
+export function PeriodCard({ kind, P, A, measure, T }) {
   const cfg = {
-    week: { title: 'Week', icon: CalendarDays, ty: 'cw', ly: 'ly', alt: 'pw', range: P.cw, lyRange: P.ly, accent: 'red' },
-    mtd: { title: 'MTD', icon: CalendarRange, ty: 'mtd', ly: 'mtdly', range: P.mtd, lyRange: P.mtdly, accent: 'gold' },
-    ytd: { title: 'YTD', icon: CalendarClock, ty: 'ytd', ly: 'ytdly', range: P.ytd, lyRange: P.ytdly, accent: 'violet' },
+    week: { title: 'Week', icon: CalendarDays, ty: 'cw', ly: 'ly', alt: 'pw', range: P.cw, lyRange: P.ly, accent: 'red', tg: 'cw', whole: 'week', wholeL: 'Week target' },
+    mtd: { title: 'MTD', icon: CalendarRange, ty: 'mtd', ly: 'mtdly', range: P.mtd, lyRange: P.mtdly, accent: 'gold', tg: 'mtd', whole: 'month', wholeL: 'Month target' },
+    ytd: { title: 'YTD', icon: CalendarClock, ty: 'ytd', ly: 'ytdly', range: P.ytd, lyRange: P.ytdly, accent: 'violet', tg: 'ytd', whole: 'fy', wholeL: 'FY target' },
   }[kind];
   const ty = A[cfg.ty]; const ly = A[cfg.ly]; const alt = cfg.alt ? A[cfg.alt] : null;
   const KT = kpis(ty); const KL = kpis(ly);
   const I = measure === 'qty' ? 0 : 1;
   const fmtM = measure === 'qty' ? (v) => num(v) : (v) => inr(v);
   const dd = KT.disc != null && KL.disc != null ? KT.disc - KL.disc : null;
+  const tg = T && T.cover && T[cfg.tg] && T[cfg.tg][1] ? T[cfg.tg] : null;          // target to date [units, ₹]
+  const whole = T && T.cover && T[cfg.whole] && T[cfg.whole][1] ? T[cfg.whole] : null;
+  const ach = tg ? ty[I] / tg[I] : null;
   const k4 = [['Bills', KT.bills, KL.bills, (v) => num(v)], ['UPT', KT.upt, KL.upt, (v) => num(v, 2)],
     ['ASP', KT.asp, KL.asp, (v) => inr(v, { compact: false })], ['ATV', KT.atv, KL.atv, (v) => inr(v, { compact: false })]];
   return (
     <Card className="wr-period" accent={cfg.accent} icon={cfg.icon} eyebrow={fmtRange(cfg.range)} title={cfg.title}
       right={<span className="wr-vs">LY {fmtRange(cfg.lyRange, true)}</span>}>
       <div className="wr-period-hero">
-        <div className="wr-hero-v">{fmtM(ty[I])}</div>
-        <div className="wr-hero-sub">
-          <Delta v={growth(ty[I], ly[I])} label="LY" />
-          {alt && <Delta v={growth(ty[I], alt[I])} label="PW" />}
+        <div>
+          <div className="wr-hero-v">{fmtM(ty[I])}</div>
+          <div className="wr-hero-sub">
+            <Delta v={growth(ty[I], ly[I])} label="LY" />
+            {alt && <Delta v={growth(ty[I], alt[I])} label="PW" />}
+          </div>
         </div>
+        {tg && <Ring value={ach} size={68} sub="target" />}
       </div>
       <div className="wr-ptable">
         <div className="wr-prow head"><span /><span>TY</span><span>LY</span><span>Δ</span></div>
@@ -53,6 +59,22 @@ export function PeriodCard({ kind, P, A, measure }) {
           <span className="wr-prow-g"><span className={`wr-delta wr-delta-sm wr-${dd == null ? 'mute' : dd > 0.005 ? 'neg' : dd < -0.005 ? 'pos' : 'flat'}`}>{pts(dd)}</span></span>
         </div>
         {alt && <Row label={`PW ${fmtRange(P.pw)}`} ty={ty[1]} ly={alt[1]} g={growth(ty[1], alt[1])} fmt={(v) => inr(v)} />}
+        {tg && (
+          <div className="wr-prow tgt">
+            <span className="wr-prow-l">Target</span>
+            <span className="wr-prow-ty">{fmtM(tg[I])}</span>
+            <span className="wr-prow-ly">{ty[I] >= tg[I] ? '+' : '−'}{fmtM(Math.abs(ty[I] - tg[I]))}</span>
+            <span className="wr-prow-g"><span className={`wr-delta wr-delta-sm wr-${achTone(ach)}`}>{share(ach, 0)}</span></span>
+          </div>
+        )}
+        {whole && (
+          <div className="wr-prow tgt">
+            <span className="wr-prow-l">{cfg.wholeL}</span>
+            <span className="wr-prow-ty">{fmtM(whole[I])}</span>
+            <span className="wr-prow-ly">{ty[I] >= whole[I] ? '+' : '−'}{fmtM(Math.abs(whole[I] - ty[I]))}</span>
+            <span className="wr-prow-g"><span className="wr-delta wr-delta-sm wr-flat">{share(ty[I] / whole[I], 0)}</span></span>
+          </div>
+        )}
       </div>
       <div className="wr-kq">
         {k4.map(([l, a, b, f]) => (

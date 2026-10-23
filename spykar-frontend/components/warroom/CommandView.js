@@ -1,17 +1,20 @@
 // ─── War Room · Command — the network (as filtered) on one screen ────────────
 import { useMemo, useState } from 'react';
 import { CalendarDays, CalendarRange, CalendarClock, Users, HeartPulse, Map as MapIcon, Trophy, Siren, Target, ArrowUpRight, ArrowDownRight, Flame } from 'lucide-react';
-import { Card, Delta, Spark, StatusPill, Tween, Seg } from './ui';
+import { Card, Delta, Spark, StatusPill, Tween, Seg, Ring } from './ui';
 import { PeriodCard, TrendPanel, CategoryPanel, DriversPanel, BridgePanel, PacePanel, QuadrantPanel } from './Panels';
 import WrMap from './WrMap';
-import { sumPeriods, sumWeeks, sumDays, sumCats, sumStock, kpis, growth, statusOf, isActive, reviewed, groupStores, streak,
+import { sumPeriods, sumWeeks, sumDays, sumCats, sumStock, sumTargets, runRate, kpis, growth, statusOf, isActive, reviewed, groupStores, streak,
   inr, num, pct, share, fmtRange, fmtDow, STATUS } from './wrMath';
 
-function Tile({ icon: Icon, eyebrow, title, value, format, children, accent }) {
+function Tile({ icon: Icon, eyebrow, title, value, format, children, accent, ring }) {
   return (
     <div className={`wr-tile wr-accent-${accent}`}>
       <div className="wr-tile-h"><span className="wr-tile-ic"><Icon size={14} strokeWidth={2.3} /></span><div><div className="wr-eyebrow">{eyebrow}</div><div className="wr-tile-t">{title}</div></div></div>
-      <div className="wr-tile-main"><div className="wr-tile-v"><Tween value={value} format={format} /></div>{children}</div>
+      <div className="wr-tile-ring">
+        <div className="wr-tile-main"><div className="wr-tile-v"><Tween value={value} format={format} /></div>{children}</div>
+        {ring}
+      </div>
     </div>
   );
 }
@@ -20,6 +23,7 @@ export default function CommandView({ board, stores, statusBase, measure, isDark
   const P = board.periods;
   const A = useMemo(() => sumPeriods(stores), [stores]);
   const W = useMemo(() => sumWeeks(stores, P.weeks.length), [stores, P]);
+  const T = useMemo(() => sumTargets(stores), [stores]);
   const Dd = useMemo(() => sumDays(stores), [stores]);
   const catSum = useMemo(() => sumCats(stores, board.cats), [stores, board.cats]);
   const stockSum = useMemo(() => sumStock(stores, board.cats), [stores, board.cats]);
@@ -36,6 +40,8 @@ export default function CommandView({ board, stores, statusBase, measure, isDark
   const stCls = (s) => (picked.length ? (picked.includes(s) ? ' on' : ' off') : '');
   const rev = act.filter(reviewed).length;
   const KC = kpis(A.cw); const KL = kpis(A.ly);
+  const ringOf = (k, a) => (T.cover && T[k] && T[k][I] ? <Ring value={a / T[k][I]} size={60} stroke={5.5} sub="target" /> : null);
+  const rr = T.cover ? runRate(T.month[1], A.mtd[1], P) : null;
   const streaks = useMemo(() => act.map((s) => [s, streak(s)]).filter(([, n]) => n >= 3), [act]);
 
   // signals: one line each, numbers only
@@ -72,14 +78,15 @@ export default function CommandView({ board, stores, statusBase, measure, isDark
   return (
     <div className="wr-view">
       <div className="wr-tiles">
-        <Tile icon={CalendarDays} accent="red" eyebrow={`${fmtRange(P.cw)} · ${fmtDow(P.cw[0])}–${fmtDow(P.cw[1])}`} title="Week" value={A.cw[I]} format={fmtM}>
+        <Tile icon={CalendarDays} accent="red" eyebrow={`${fmtRange(P.cw)} · ${fmtDow(P.cw[0])}–${fmtDow(P.cw[1])}`} title="Week" value={A.cw[I]} format={fmtM} ring={ringOf('cw', A.cw[I])}>
           <div className="wr-tile-d"><Delta v={growth(A.cw[I], A.ly[I])} label="LY" /><Delta v={growth(A.cw[I], A.pw[I])} label="PW" /></div>
         </Tile>
-        <Tile icon={CalendarRange} accent="gold" eyebrow={fmtRange(P.mtd)} title="MTD" value={A.mtd[I]} format={fmtM}>
+        <Tile icon={CalendarRange} accent="gold" eyebrow={fmtRange(P.mtd)} title="MTD" value={A.mtd[I]} format={fmtM} ring={ringOf('mtd', A.mtd[I])}>
           <div className="wr-tile-d"><Delta v={growth(A.mtd[I], A.mtdly[I])} label="LY" /></div>
-          <div className="wr-tile-s">LY <b>{fmtM(A.mtdly[I])}</b></div>
+          {rr && rr.left > 0 ? <div className="wr-tile-s">Need <b>{inr(Math.max(0, rr.perDay))}</b>/day · now <b>{inr(rr.pace)}</b></div>
+            : <div className="wr-tile-s">LY <b>{fmtM(A.mtdly[I])}</b></div>}
         </Tile>
-        <Tile icon={CalendarClock} accent="violet" eyebrow={fmtRange(P.ytd)} title="YTD" value={A.ytd[I]} format={fmtM}>
+        <Tile icon={CalendarClock} accent="violet" eyebrow={fmtRange(P.ytd)} title="YTD" value={A.ytd[I]} format={fmtM} ring={ringOf('ytd', A.ytd[I])}>
           <div className="wr-tile-d"><Delta v={growth(A.ytd[I], A.ytdly[I])} label="LY" /></div>
           <div className="wr-tile-s">Disc <b>{share(kpis(A.ytd).disc)}</b> · LY {share(kpis(A.ytdly).disc)}</div>
         </Tile>
@@ -112,9 +119,9 @@ export default function CommandView({ board, stores, statusBase, measure, isDark
       </div>
 
       <div className="wr-tri">
-        <PeriodCard kind="week" P={P} A={A} measure={measure} />
-        <PeriodCard kind="mtd" P={P} A={A} measure={measure} />
-        <PeriodCard kind="ytd" P={P} A={A} measure={measure} />
+        <PeriodCard kind="week" P={P} A={A} measure={measure} T={T} />
+        <PeriodCard kind="mtd" P={P} A={A} measure={measure} T={T} />
+        <PeriodCard kind="ytd" P={P} A={A} measure={measure} T={T} />
       </div>
 
       <div className="wr-two">
