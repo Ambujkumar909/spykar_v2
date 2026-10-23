@@ -14,6 +14,7 @@ export const authService = {
   updateUser: (id, data) => api.patch(`/users/${id}`, data),
   toggleUser: (id) => api.patch(`/users/${id}/toggle`),
   resetUserPassword: (id, newPassword) => api.patch(`/users/${id}/password`, { newPassword }),
+  deleteUser: (id) => api.delete(`/users/${id}`),
 };
 
 // ─── Inventory ────────────────────────────────────────────────────────────────

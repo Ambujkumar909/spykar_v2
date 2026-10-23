@@ -102,4 +102,12 @@ userRouter.patch('/:id/password',
   authController.resetUserPassword
 );
 
+userRouter.delete('/:id',
+  authenticate,
+  authorize('SUPER_ADMIN', 'ADMIN'),
+  [param('id').isUUID().withMessage('Invalid user id')],
+  validate,
+  authController.deleteUser
+);
+
 module.exports = { authRouter: router, userRouter };

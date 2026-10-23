@@ -9,6 +9,7 @@ import {
   RefreshCw,
   UserPlus,
   KeyRound,
+  Trash2,
 } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import KpiCard from '../components/ui/KpiCard';
@@ -56,6 +57,9 @@ export default function UsersPage() {
   const [resetUser, setResetUser] = useState(null);   // the user whose password we're resetting
   const [resetPw, setResetPw] = useState('');
   const [resetting, setResetting] = useState(false);
+  // Delete user (confirm first)
+  const [deleteUser, setDeleteUser] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Every keystroke in the search box refetches; a slower, OLDER response used
   // to land last and overwrite the list with an old search term's results.
@@ -186,6 +190,20 @@ export default function UsersPage() {
     }
   }
 
+  async function handleDeleteUser() {
+    setDeleting(true);
+    try {
+      await authService.deleteUser(deleteUser.id);
+      toast.success(`${deleteUser.email} deleted`);
+      setDeleteUser(null);
+      fetchUsers();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to delete user');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <DashboardLayout
       title="User Management"
@@ -280,6 +298,12 @@ export default function UsersPage() {
                         <Pencil size={14} />
                         Edit
                       </button>
+                      {entry.id !== user?.id && (
+                        <button type="button" className="btn btn-danger" onClick={() => setDeleteUser(entry)} title="Delete this user">
+                          <Trash2 size={14} />
+                          Delete
+                        </button>
+                      )}
                       <button type="button" className="btn btn-ghost" onClick={() => openResetModal(entry)} title="Set a new password for this user">
                         <KeyRound size={14} />
                         Reset PW
@@ -462,6 +486,34 @@ export default function UsersPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* ── Delete-user confirm ── */}
+      {deleteUser && (
+        <div style={{
+          position: 'fixed', inset: 0,
+          background: 'rgba(10, 10, 15, 0.76)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 24, zIndex: 220, backdropFilter: 'blur(10px)',
+        }}>
+          <div className="card" style={{ width: '100%', maxWidth: 460 }} role="alertdialog" aria-labelledby="del-user-title">
+            <div className="card-header">
+              <span className="card-title" id="del-user-title">Delete User</span>
+            </div>
+            <div className="card-body" style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+              Delete <strong style={{ color: 'var(--text-primary)' }}>{deleteUser.name}</strong> ({deleteUser.email})?
+              They’ll be signed out and can’t log in again. This can’t be undone.
+            </div>
+            <div className="card-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button type="button" className="btn btn-ghost" onClick={() => setDeleteUser(null)} disabled={deleting} autoFocus>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-danger" onClick={handleDeleteUser} disabled={deleting}>
+                <Trash2 size={14} />
+                {deleting ? 'Deleting…' : 'Delete User'}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -384,6 +384,32 @@ async function resetUserPassword(req, res, next) {
   }
 }
 
+// Permanently removes a user. Their sessions, refresh tokens and AI query log
+// go with them (ON DELETE CASCADE); dispatch orders they created are kept,
+// with no creator. Authorisation (SUPER_ADMIN/ADMIN) is enforced on the route.
+async function deleteUser(req, res, next) {
+  try {
+    const { id } = req.params;
+    if (id === req.user.id) throw new AppError('You cannot delete your own account.', 400);
+
+    const target = await query('SELECT email, role FROM users WHERE id = $1', [id]);
+    if (!target.rows.length) throw new AppError('User not found.', 404);
+    if (target.rows[0].role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      throw new AppError('Only a SUPER_ADMIN can delete a SUPER_ADMIN.', 403);
+    }
+
+    await transaction(async (client) => {
+      await client.query('UPDATE dispatch_orders SET created_by = NULL WHERE created_by = $1', [id]);
+      await client.query('DELETE FROM users WHERE id = $1', [id]);
+    });
+
+    logger.info(`User deleted: ${target.rows[0].email} by ${req.user.email}`);
+    res.json({ success: true, message: `${target.rows[0].email} deleted.` });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   login,
   refresh,
@@ -398,4 +424,5 @@ module.exports = {
   updateUser,
   toggleUser,
   resetUserPassword,
+  deleteUser,
 };
