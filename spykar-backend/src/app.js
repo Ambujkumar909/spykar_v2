@@ -24,6 +24,7 @@ const primarySalesRoutes = require('./routes/primarySales.routes');
 const esalesStockRoutes = require('./routes/esalesStock.routes');
 const warRoomRoutes = require('./routes/warRoom.routes');
 const ageingRoutes = require('./routes/ageing.routes');
+const licenseRoutes = require('./routes/license.routes');
 
 const app = express();
 
@@ -140,6 +141,7 @@ app.use(`${API_V1}/stock-availability`, stockAvailabilityRoutes);
 app.use(`${API_V1}/primary-sales`, primarySalesRoutes);
 app.use(`${API_V1}/esales-stock`, esalesStockRoutes);
 app.use(`${API_V1}/war-room`, warRoomRoutes);
+app.use(`${API_V1}/license`, licenseRoutes);
 // Inventory Ageing DISABLED for now — route intentionally not registered so all
 // /ageing/* API calls 404. Re-enable this line to bring the feature back.
 app.use(`${API_V1}/ageing`, ageingRoutes);

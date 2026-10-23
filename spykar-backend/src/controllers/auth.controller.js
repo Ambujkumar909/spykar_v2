@@ -5,6 +5,7 @@ const logger = require('../config/logger');
 const { AppError } = require('../middleware/errorHandler');
 const { revokeAccessToken } = require('../middleware/auth');
 const sessions = require('../services/sessions');
+const license = require('../services/license');
 
 // Compared against when the email is unknown, so a miss costs the same bcrypt
 // time as a hit (no account enumeration by timing).
@@ -30,6 +31,8 @@ async function login(req, res, next) {
     if (!user || !user.is_active || !passwordValid) {
       throw new AppError('Invalid credentials.', 401);
     }
+    const block = await license.gate(user, req.originalUrl);
+    if (block) throw new AppError(block.message, 403, block.code);
 
     // New server-side session (one per device) + httpOnly refresh cookie.
     const { session, refresh, accessToken } = await transaction(async (client) => {
@@ -252,11 +255,15 @@ async function createUser(req, res, next) {
     }
 
     const password_hash = await bcrypt.hash(password, 12);
-    const result = await query(`
-      INSERT INTO users (name, email, password_hash, role)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, name, email, role, is_active, last_login_at, created_at, updated_at
-    `, [name, email, password_hash, role]);
+    const result = await transaction(async (client) => {
+      if (role !== 'SUPER_ADMIN') await license.requireSeat(client);   // a new user takes a seat
+      return client.query(`
+        INSERT INTO users (name, email, password_hash, role)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, name, email, role, is_active, last_login_at, created_at, updated_at
+      `, [name, email, password_hash, role]);
+    });
+    license.touch();
 
     logger.info(`User created: ${email} by ${req.user.email}`);
     res.status(201).json({ success: true, data: result.rows[0] });
@@ -270,7 +277,7 @@ async function updateUser(req, res, next) {
     const { id } = req.params;
     const { name, role, is_active } = req.body;
 
-    const target = await query('SELECT role FROM users WHERE id = $1', [id]);
+    const target = await query('SELECT role, is_active FROM users WHERE id = $1', [id]);
     if (!target.rows.length) throw new AppError('User not found.', 404);
     if (req.user.role !== 'SUPER_ADMIN' && (target.rows[0].role === 'SUPER_ADMIN' || role === 'SUPER_ADMIN')) {
       throw new AppError('Only a SUPER_ADMIN can change a SUPER_ADMIN or grant that role.', 403);
@@ -278,6 +285,13 @@ async function updateUser(req, res, next) {
     if (id === req.user.id && ((role != null && role !== req.user.role) || is_active === false)) {
       throw new AppError('You cannot change your own role or deactivate your own account.', 400);
     }
+    const t = target.rows[0];
+    if (is_active === false && t.is_active && req.user.role !== 'SUPER_ADMIN') {
+      throw new AppError('Only a SUPER_ADMIN can deactivate a user.', 403);
+    }
+    // Licence seats: active non-Super-Admin accounts each take one.
+    const usesSeat = t.is_active && t.role !== 'SUPER_ADMIN';
+    const willUseSeat = (is_active ?? t.is_active) && (role ?? t.role) !== 'SUPER_ADMIN';
 
     const updates = [];
     const params = [];
@@ -299,12 +313,16 @@ async function updateUser(req, res, next) {
     }
 
     params.push(id);
-    const result = await query(`
-      UPDATE users
-      SET ${updates.join(', ')}, updated_at = NOW()
-      WHERE id = $${params.length}
-      RETURNING id, name, email, role, is_active, last_login_at, created_at, updated_at
-    `, params);
+    const result = await transaction(async (client) => {
+      if (!usesSeat && willUseSeat) await license.requireSeat(client);
+      return client.query(`
+        UPDATE users
+        SET ${updates.join(', ')}, updated_at = NOW()
+        WHERE id = $${params.length}
+        RETURNING id, name, email, role, is_active, last_login_at, created_at, updated_at
+      `, params);
+    });
+    license.touch();
 
     if (!result.rows.length) {
       throw new AppError('User not found.', 404);
@@ -326,12 +344,23 @@ async function toggleUser(req, res, next) {
       throw new AppError('You cannot deactivate your own account.', 400);
     }
 
-    const result = await query(`
-      UPDATE users
-      SET is_active = NOT is_active, updated_at = NOW()
-      WHERE id = $1
-      RETURNING id, name, email, role, is_active, last_login_at, created_at, updated_at
-    `, [id]);
+    const target = await query('SELECT role, is_active FROM users WHERE id = $1', [id]);
+    if (!target.rows.length) throw new AppError('User not found.', 404);
+    const t = target.rows[0];
+    // Admins may activate (when a seat is free); deactivating stays with Super Admins.
+    if (req.user.role !== 'SUPER_ADMIN' && (t.is_active || t.role === 'SUPER_ADMIN')) {
+      throw new AppError('Only a SUPER_ADMIN can deactivate a user or change a SUPER_ADMIN.', 403);
+    }
+    const result = await transaction(async (client) => {
+      if (!t.is_active && t.role !== 'SUPER_ADMIN') await license.requireSeat(client);
+      return client.query(`
+        UPDATE users
+        SET is_active = NOT is_active, updated_at = NOW()
+        WHERE id = $1
+        RETURNING id, name, email, role, is_active, last_login_at, created_at, updated_at
+      `, [id]);
+    });
+    license.touch();
 
     if (!result.rows.length) {
       throw new AppError('User not found.', 404);
@@ -402,6 +431,7 @@ async function deleteUser(req, res, next) {
       await client.query('UPDATE dispatch_orders SET created_by = NULL WHERE created_by = $1', [id]);
       await client.query('DELETE FROM users WHERE id = $1', [id]);
     });
+    license.touch();
 
     logger.info(`User deleted: ${target.rows[0].email} by ${req.user.email}`);
     res.json({ success: true, message: `${target.rows[0].email} deleted.` });

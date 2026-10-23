@@ -18,6 +18,7 @@ function isRevoked(token) {
 }
 const logger = require('../config/logger');
 const { AppError } = require('./errorHandler');
+const license = require('../services/license');
 
 /**
  * Verify JWT access token and attach user to request
@@ -73,6 +74,9 @@ async function authenticate(req, res, next) {
 
     req.user = result.rows[0];
     req.token = token;
+    // Licence: no valid licence or no seat → refused (Super Admins always pass).
+    const block = await license.gate(req.user, req.originalUrl);
+    if (block) throw new AppError(block.message, block.status, block.code);
     next();
   } catch (err) {
     next(err);

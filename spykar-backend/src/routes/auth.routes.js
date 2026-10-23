@@ -83,7 +83,7 @@ userRouter.patch('/:id',
 
 userRouter.patch('/:id/toggle',
   authenticate,
-  authorize('SUPER_ADMIN'),
+  authorize('SUPER_ADMIN', 'ADMIN'),
   [param('id').isUUID().withMessage('Invalid user id')],
   validate,
   authController.toggleUser

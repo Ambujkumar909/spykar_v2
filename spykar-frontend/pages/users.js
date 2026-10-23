@@ -10,12 +10,14 @@ import {
   UserPlus,
   KeyRound,
   Trash2,
+  BadgeCheck,
+  ArrowUpCircle,
 } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import KpiCard from '../components/ui/KpiCard';
 import { authService } from '../lib/services';
 import { useAuth } from '../lib/auth-context';
-import { formatDateTime, formatNumber } from '../lib/utils';
+import { formatDate, formatDateTime, formatNumber } from '../lib/utils';
 import toast from 'react-hot-toast';
 import { notifyApiError } from '../lib/notifyApiError';
 
@@ -60,6 +62,16 @@ export default function UsersPage() {
   // Delete user (confirm first)
   const [deleteUser, setDeleteUser] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  // Licence: seats + expiry, and the Upgrade (apply key) box
+  const [license, setLicense] = useState(null);
+  const [keyOpen, setKeyOpen] = useState(false);
+  const [keyText, setKeyText] = useState('');
+  const [applying, setApplying] = useState(false);
+  const fetchLicense = useCallback(() => {
+    authService.getLicense().then((r) => setLicense(r.data.data)).catch((err) => notifyApiError(err, 'Failed to load licence'));
+  }, []);
+  useEffect(() => { fetchLicense(); }, [fetchLicense]);
+  const noSeat = Boolean(license && (!license.valid || license.free <= 0));
 
   // Every keystroke in the search box refetches; a slower, OLDER response used
   // to land last and overwrite the list with an old search term's results.
@@ -74,13 +86,14 @@ export default function UsersPage() {
         limit: 100,
       });
       if (seq !== fetchSeq.current) return;
+      fetchLicense();
       setUsers((res.data.data || []).filter((entry) => entry.role !== 'SUPER_ADMIN'));
     } catch (err) {
       if (seq === fetchSeq.current) notifyApiError(err, 'Failed to load users');   // background load: console only
     } finally {
       if (seq === fetchSeq.current) setLoading(false);
     }
-  }, [search, roleFilter]);
+  }, [search, roleFilter, fetchLicense]);
 
   useEffect(() => {
     fetchUsers();
@@ -151,8 +164,8 @@ export default function UsersPage() {
   }
 
   async function handleToggleUser(targetUser) {
-    if (user?.role !== 'SUPER_ADMIN') {
-      toast.error('Only Super Admin can change activation state');
+    if (user?.role !== 'SUPER_ADMIN' && targetUser.is_active) {
+      toast.error('Only Super Admin can deactivate a user');
       return;
     }
 
@@ -190,6 +203,24 @@ export default function UsersPage() {
     }
   }
 
+  async function handleApplyKey(event) {
+    event.preventDefault();
+    setApplying(true);
+    try {
+      const r = await authService.applyLicense(keyText.trim());
+      setLicense(r.data.data);
+      const off = r.data.deactivated || [];
+      toast.success(`Licence updated: ${r.data.data.seats} seats, expires ${formatDate(r.data.data.expires)}${off.length ? ` · deactivated ${off.join(', ')}` : ''}`, { duration: 7000 });
+      setKeyOpen(false);
+      setKeyText('');
+      fetchUsers();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to apply the key');
+    } finally {
+      setApplying(false);
+    }
+  }
+
   async function handleDeleteUser() {
     setDeleting(true);
     try {
@@ -210,6 +241,24 @@ export default function UsersPage() {
       subtitle="Provision, govern and monitor access across the Spykar IQ control plane"
       allowedRoles={['SUPER_ADMIN', 'ADMIN']}
       hideSync={true}
+      headerSlot={license && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span
+            className={`badge ${!license.valid ? 'badge-danger' : license.daysLeft <= 30 || license.free <= 0 ? 'badge-warning' : 'badge-success'}`}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', fontSize: 12 }}
+            title={license.valid ? `${license.free} free seat${license.free === 1 ? '' : 's'} · ${license.daysLeft} days left` : undefined}
+          >
+            <BadgeCheck size={13} />
+            {license.valid
+              ? <>Licence {formatNumber(license.used)} / {formatNumber(license.seats)} users · expires {formatDate(license.expires)}</>
+              : license.reason === 'LICENSE_EXPIRED' ? <>Licence expired {formatDate(license.expires)}</> : <>No licence</>}
+          </span>
+          <button type="button" className="btn btn-primary" onClick={() => setKeyOpen(true)}>
+            <ArrowUpCircle size={14} />
+            Upgrade
+          </button>
+        </div>
+      )}
     >
       <div className="grid-4" style={{ marginBottom: 24 }}>
         <KpiCard label="Total Users" value={metrics.total} icon={UserCog} colorKey="violet" loading={loading} />
@@ -242,7 +291,8 @@ export default function UsersPage() {
               <RefreshCw size={14} />
               Refresh
             </button>
-            <button type="button" className="btn btn-primary" onClick={() => setIsCreateOpen(true)}>
+            <button type="button" className="btn btn-primary" onClick={() => setIsCreateOpen(true)} disabled={noSeat}
+              title={noSeat ? (license?.valid ? 'No free licence seat. Upgrade the licence or deactivate a user.' : 'The licence is not valid. Upgrade to continue.') : undefined}>
               <Plus size={14} />
               Add User
             </button>
@@ -298,24 +348,26 @@ export default function UsersPage() {
                         <Pencil size={14} />
                         Edit
                       </button>
-                      {entry.id !== user?.id && (
-                        <button type="button" className="btn btn-danger" onClick={() => setDeleteUser(entry)} title="Delete this user">
-                          <Trash2 size={14} />
-                          Delete
-                        </button>
-                      )}
                       <button type="button" className="btn btn-ghost" onClick={() => openResetModal(entry)} title="Set a new password for this user">
                         <KeyRound size={14} />
                         Reset PW
                       </button>
-                      {user?.role === 'SUPER_ADMIN' && (
+                      {(user?.role === 'SUPER_ADMIN' || !entry.is_active) && (
                         <button
                           type="button"
                           className={`btn ${entry.is_active ? 'btn-danger' : 'btn-ghost'}`}
                           onClick={() => handleToggleUser(entry)}
+                          disabled={!entry.is_active && noSeat}
+                          title={!entry.is_active && noSeat ? 'No free licence seat' : undefined}
                         >
                           <Power size={14} />
                           {entry.is_active ? 'Deactivate' : 'Reactivate'}
+                        </button>
+                      )}
+                      {entry.id !== user?.id && (
+                        <button type="button" className="btn btn-danger" onClick={() => setDeleteUser(entry)} title="Delete this user">
+                          <Trash2 size={14} />
+                          Delete
                         </button>
                       )}
                     </div>
@@ -489,6 +541,55 @@ export default function UsersPage() {
           </div>
         </div>
       )}
+      {/* ── Licence upgrade: paste a key ── */}
+      {keyOpen && (
+        <div style={{
+          position: 'fixed', inset: 0,
+          background: 'rgba(10, 10, 15, 0.76)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 24, zIndex: 220, backdropFilter: 'blur(10px)',
+        }}>
+          <div className="card" style={{ width: '100%', maxWidth: 520 }}>
+            <div className="card-header">
+              <span className="card-title">Upgrade Licence</span>
+            </div>
+            <form onSubmit={handleApplyKey}>
+              <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {license && (
+                  <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                    {license.valid
+                      ? <>Current: <strong style={{ color: 'var(--text-primary)' }}>{formatNumber(license.seats)} users</strong>, {formatNumber(license.used)} in use, expires {formatDate(license.expires)}.</>
+                      : license.reason === 'LICENSE_EXPIRED' ? <>The licence expired on {formatDate(license.expires)}.</> : <>No licence is installed.</>}
+                  </div>
+                )}
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: 'var(--text-secondary)' }}>Licence key</label>
+                  <textarea
+                    className="input"
+                    autoFocus
+                    rows={5}
+                    placeholder="SPK1.…"
+                    value={keyText}
+                    onChange={(e) => setKeyText(e.target.value)}
+                    style={{ width: '100%', fontFamily: 'monospace', fontSize: 12, resize: 'vertical' }}
+                    spellCheck={false}
+                  />
+                </div>
+              </div>
+              <div className="card-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button type="button" className="btn btn-ghost" onClick={() => { setKeyOpen(false); setKeyText(''); }} disabled={applying}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={applying || keyText.trim().length < 20}>
+                  <ArrowUpCircle size={14} />
+                  {applying ? 'Applying…' : 'Apply Key'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* ── Delete-user confirm ── */}
       {deleteUser && (
         <div style={{

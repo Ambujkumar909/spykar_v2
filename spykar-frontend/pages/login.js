@@ -17,6 +17,9 @@ const REASONS = {
   SESSION_EXPIRED: 'Your session reached its maximum length. Please sign in again.',
   SESSION_REVOKED: 'This session was signed out. Please sign in again.',
   ACCOUNT_DISABLED: 'This account has been deactivated. Contact your administrator.',
+  LICENSE_EXPIRED: 'The licence has expired. Ask your administrator to renew it.',
+  LICENSE_MISSING: 'No licence is installed. Ask your administrator.',
+  NO_SEAT: 'This account has no licence seat. Ask your Super Admin.',
 };
 // Only same-site paths — never an absolute or protocol-relative URL (open redirect).
 const safeNext = (n) => (typeof n === 'string' && n.startsWith('/') && !n.startsWith('//') && !n.startsWith('/\\') && !n.startsWith('/login') ? n : '/');
