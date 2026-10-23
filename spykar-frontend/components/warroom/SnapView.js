@@ -2,7 +2,7 @@
 import { useMemo, useState } from 'react';
 import { CalendarDays, CalendarRange, CalendarClock } from 'lucide-react';
 import { Card, Seg, Delta } from './ui';
-import { sumPeriods, sumTargets, kpis, growth, groupStores, isActive, inr, num, share, fmtRange, achTone } from './wrMath';
+import { sumPeriods, sumTargets, kpis, growth, groupStores, isActive, inr, num, share, fmtRange, monName, achTone } from './wrMath';
 
 const BY = [
   { value: 'wr_region', label: 'Region' }, { value: 'state', label: 'State' }, { value: 'city', label: 'City' }, { value: 'wr_type', label: 'Type' },
@@ -54,14 +54,14 @@ export default function SnapView({ board, stores, onFilter }) {
   return (
     <div className="wr-view">
       <div className="wr-snapbar"><Seg value={by} onChange={setBy} options={BY} /></div>
-      <Card icon={CalendarDays} eyebrow={`${fmtRange(P.cw)} · PW ${fmtRange(P.pw)} · LY ${fmtRange(P.ly, true)}`} title="Week">
-        {T(['', 'Units', 'Net ₹', 'PW ₹', 'LY ₹', 'vs PW', 'vs LY', 'Δ ₹', 'Share of Δ', 'Target', 'Ach', 'Bills', 'Bills Δ', 'ATV'], week)}
+      <Card icon={CalendarDays} eyebrow={`${fmtRange(P.cw)} · PW ${fmtRange(P.pw)} · LY SW ${fmtRange(P.ly, true)}`} title="Week">
+        {T(['', 'CW Qty', 'CW Val', 'PW Val', 'LY SW Val', 'WoW', 'YoY', 'Δ Val', 'Share of Δ', 'CW Tgt', 'Ach%', 'NOB', 'NOB YoY', 'ATV'], week)}
       </Card>
       <Card icon={CalendarRange} eyebrow={`${fmtRange(P.mtd)} · LY ${fmtRange(P.mtdly, true)}`} title="MTD">
-        {T(['', 'Units', 'Net ₹', 'LY units', 'LY ₹', 'Δ', 'Δ ₹', 'Share of Δ', 'MTD target', 'Ach', 'Month target', 'Of month', 'UPT', 'ASP', 'Disc', 'LY disc'], mtd)}
+        {T(['', 'Qty TY', 'Val TY', 'Qty LY', 'Val LY', 'GoLY%', 'Δ Val', 'Share of Δ', 'MTD Tgt', 'Ach%', `${monName(P.mtd[1])} Tgt`, `vs ${monName(P.mtd[1])}`, 'UPT', 'ASP', 'TY Disc', 'LY Disc'], mtd)}
       </Card>
       <Card icon={CalendarClock} eyebrow={`${fmtRange(P.ytd)} · LY ${fmtRange(P.ytdly, true)}`} title="YTD">
-        {T(['', 'Units', 'LY units', 'Net ₹', 'LY ₹', 'Δ', 'Δ ₹', 'YTD target', 'Ach', 'MRP ₹', 'MRP Δ', 'Disc', 'Bills', 'Bills Δ'], ytd)}
+        {T(['', 'Qty TY', 'Qty LY', 'Adj MRP TY', 'Adj MRP LY', 'Adj GoLY%', 'Δ Val', 'YTD Tgt', 'Ach%', 'MRP TY', 'MRP GoLY%', 'TY Disc', 'NOB TY', 'NOB GoLY%'], ytd)}
       </Card>
     </div>
   );

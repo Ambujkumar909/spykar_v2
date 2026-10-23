@@ -56,9 +56,9 @@ export default function WrMap({ rows, onPick, selected = [], metric = 'MTD' }) {
           <b>{hover.name}</b>
           {hover.r ? (
             <>
-              <div><span>{metric} sales</span><em>{inr(hover.r.ty)}</em></div>
-              <div><span>Last year</span><em>{inr(hover.r.ly)}</em></div>
-              <div><span>GoLY</span><em className={hover.r.g >= 0 ? 'pos' : 'neg'}>{pct(hover.r.g)}</em></div>
+              <div><span>{metric} TY</span><em>{inr(hover.r.ty)}</em></div>
+              <div><span>{metric} LY</span><em>{inr(hover.r.ly)}</em></div>
+              <div><span>GoLY%</span><em className={hover.r.g >= 0 ? 'pos' : 'neg'}>{pct(hover.r.g)}</em></div>
               <div><span>Stores</span><em>{num(hover.r.n)}</em></div>
             </>
           ) : <div className="mute">No stores in view</div>}

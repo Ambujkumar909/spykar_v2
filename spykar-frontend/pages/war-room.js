@@ -24,7 +24,7 @@ import StoreView from '../components/warroom/StoreView';
 import WarRoomStyles from '../components/warroom/WarRoomStyles';
 
 const LENS_NAMES = {
-  wr_channel: 'Channel', wr_region: 'Region', wr_type: 'Type', wr_status: 'Status', wr_asm: 'ASM', wr_review: 'Review',
+  wr_channel: 'Channel', wr_region: 'Region', wr_type: 'Type', wr_status: 'Status', wr_asm: 'ASM', wr_review: 'Reviewed',
   state: 'State', city: 'City', store_code: 'Store', gender_name: 'Gender', category: 'Category', product: 'Product',
   sub_product: 'Sub-product', size: 'Size', color: 'Colour', season: 'Season',
 };
@@ -131,14 +131,14 @@ export default function WarRoomPage() {
 
   return (
     <FiltersProvider value={filtersApi}>
-      <DashboardLayout title="War Room" subtitle="Week · MTD · YTD vs last year — every store" hideSync>
+      <DashboardLayout title="War Room" subtitle="Week · MTD · YTD · TY vs LY — every store" hideSync>
         <div className="wr">
           <WarRoomStyles />
           <div className="wr-crown">
             <div className="wr-crown-mark"><Crosshair size={16} /><span>War Room</span><i /></div>
             {P && (
               <div className="wr-ribbon">
-                {[['Week', P.cw], ['PW', P.pw], ['LY', P.ly, true], ['MTD', P.mtd], ['LY', P.mtdly, true], ['YTD', P.ytd], ['LY', P.ytdly, true]].map(([l, r, y], i) => (
+                {[['CW', P.cw], ['PW', P.pw], ['LY SW', P.ly, true], ['MTD', P.mtd], ['LY', P.mtdly, true], ['YTD', P.ytd], ['LY', P.ytdly, true]].map(([l, r, y], i) => (
                   <span key={`${l}${i}`} className={y ? 'ly' : ''}><b>{l}</b>{fmtRange(r, y)}</span>
                 ))}
                 <span className="stk"><b>Stock</b>{P.stock.ty ? fmtDay(P.stock.ty) : 'n/a'}</span>
@@ -160,12 +160,12 @@ export default function WarRoomPage() {
               {asOnSel && asOnSel !== meta?.to && <button type="button" className="wr-chip" onClick={() => setAsOnSel('')}>Latest</button>}
             </div>
             <Seg value={view} onChange={setView} options={[
-              { value: 'command', label: 'Command', icon: Radar }, { value: 'snap', label: 'Snap', icon: LayoutGrid },
-              { value: 'league', label: 'League', icon: ListOrdered, badge: board ? stores.length : null }, { value: 'store', label: 'Store', icon: StoreIcon }]} />
+              { value: 'command', label: 'Totality', icon: Radar }, { value: 'snap', label: 'Snap', icon: LayoutGrid },
+              { value: 'league', label: 'League', icon: ListOrdered, badge: board ? stores.length : null }, { value: 'store', label: 'Store Level', icon: StoreIcon }]} />
             <div className="wr-cmd-r">
-              <Seg size="sm" value={measure} onChange={setMeasure} options={[{ value: 'val', label: '₹', icon: IndianRupee }, { value: 'qty', label: 'Units', icon: Package }]} />
+              <Seg size="sm" value={measure} onChange={setMeasure} options={[{ value: 'val', label: 'Val', icon: IndianRupee }, { value: 'qty', label: 'Qty', icon: Package }]} />
               <button type="button" className="wr-iconbtn" onClick={() => window.print()} aria-label="Print"><Printer size={15} /></button>
-              <button type="button" className="wr-btn" onClick={doExport} disabled={!board || busy === 'export'}><Download size={14} /> {busy === 'export' ? '…' : 'Excel'}</button>
+              <button type="button" className="wr-btn" onClick={doExport} disabled={!board || busy === 'export'}><Download size={14} /> {busy === 'export' ? '…' : 'Save to Excel'}</button>
             </div>
           </div>
 
@@ -178,7 +178,7 @@ export default function WarRoomPage() {
                 </button>
               ))}
               {chips.length > 0 && <button type="button" className="wr-chip" onClick={() => filtersApi.clearAll()}>Clear</button>}
-              {board?.scoped && <span className="wr-scoped">Product view · bills, UPT, ATV n/a</span>}
+              {board?.scoped && <span className="wr-scoped">Product view · NOB, UPT, ATV n/a</span>}
               <span className="wr-count">{num(stores.length)} / {num(all.length)} stores</span>
             </div>
           )}

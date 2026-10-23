@@ -134,13 +134,14 @@ async function exportXlsx(req, res, next) {
     const L = (v) => (v == null ? null : Math.round(v) / 1e5);           // ₹ → lakh
     const H = (s) => ({ v: s, s: 1 });
     const pc = (v) => ({ v: v == null || !Number.isFinite(v) ? null : v, s: 2 });
-    const head = ['Store code', 'Store', 'City', 'State', 'Region', 'Channel', 'Type', 'ASM',
-      'Week qty', 'Week ₹ lakh', 'PW ₹ lakh', 'LY week ₹ lakh', 'vs PW', 'vs LY',
-      'Week target ₹ lakh', 'Week ach %',
-      'MTD qty', 'MTD ₹ lakh', 'MTD LY ₹ lakh', 'MTD GoLY', 'MTD target ₹ lakh', 'MTD ach %', 'Month target ₹ lakh',
-      'YTD qty', 'YTD ₹ lakh', 'YTD MRP ₹ lakh', 'YTD disc %', 'YTD LY ₹ lakh', 'YTD GoLY', 'YTD target ₹ lakh', 'YTD ach %',
-      'MTD bills', 'MTD bills GoLY', 'MTD UPT', 'MTD ASP ₹', 'MTD ATV ₹', 'YTD bills', 'YTD UPT', 'YTD ASP ₹', 'YTD ATV ₹',
-      'Weeks below LY (in a row)', 'Reason', 'Action', 'Updated by'];
+    const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(P.mtd[1].slice(5, 7)) - 1];
+    const head = ['Store Code', 'Store Name', 'City', 'State', 'Region', 'Channel', 'Store Type', 'ASM Name',
+      'CW Qty', 'CW Val ₹ lakh', 'PW Val ₹ lakh', 'LY SW Val ₹ lakh', 'WoW', 'YoY',
+      'CW Tgt ₹ lakh', 'CW Ach%',
+      'MTD Qty', 'MTD Val ₹ lakh', 'MTD LY Val ₹ lakh', 'MTD GoLY', 'MTD Tgt ₹ lakh', 'MTD Ach%', `${mon} Target ₹ lakh`,
+      'YTD Qty', 'YTD Adj MRP ₹ lakh', 'YTD MRP ₹ lakh', 'YTD TY Disc %', 'YTD LY Adj MRP ₹ lakh', 'YTD GoLY', 'YTD Tgt ₹ lakh', 'YTD Ach%',
+      'MTD NOB', 'MTD NOB GoLY', 'MTD UPT', 'MTD ASP ₹', 'MTD ATV ₹', 'YTD NOB', 'YTD UPT', 'YTD ASP ₹', 'YTD ATV ₹',
+      'Weeks below LY (in a row)', 'Reason', 'Remark | Action', 'Updated by'];
     const rows = [head.map(H)];
     for (const s of b.stores) {
       const m = s.m;
@@ -159,7 +160,7 @@ async function exportXlsx(req, res, next) {
         streak, note?.reason || '', note?.action || '', note?.by || '']);
     }
     const dates = [['Period', 'From', 'To'].map(H),
-      ...[['Week', 'cw'], ['Previous week', 'pw'], ['LY week', 'ly'], ['MTD', 'mtd'], ['MTD LY', 'mtdly'], ['YTD', 'ytd'], ['YTD LY', 'ytdly']].map(([l, k]) => [l, P[k][0], P[k][1]]),
+      ...[['Current Week', 'cw'], ['Previous Week', 'pw'], ['LY Same Week', 'ly'], ['MTD', 'mtd'], ['MTD LY', 'mtdly'], ['YTD', 'ytd'], ['YTD LY', 'ytdly']].map(([l, k]) => [l, P[k][0], P[k][1]]),
       ['Closing stock', P.stock.ty || 'n/a', P.stock.ly || 'n/a']];
     const buf = writeWorkbook([
       { name: 'War Room', rows, widths: [9, 34, 14, 14, 9, 14, 11, 16, ...new Array(head.length - 8).fill(11)], freeze: 1 },

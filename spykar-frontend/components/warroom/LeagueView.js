@@ -10,20 +10,20 @@ const COLS = [
   { k: 'store', l: 'Store', w: 250, sort: (r) => r.s.name },
   { k: 'region', l: 'Region', w: 96, sort: (r) => `${r.s.region}` },
   { k: 'status', l: 'Status', w: 92, sort: (r) => ['Critical', 'Degrowth', 'Soft', 'Stable', 'Growth', 'New', 'Closed'].indexOf(r.status) },
-  { k: 'cw', l: 'Week', sub: 'TY · LY', w: 120, sort: (r) => r.cw },
-  { k: 'cwg', l: 'Wk Δ', w: 74, sort: (r) => r.cwg ?? -9 },
-  { k: 'mtd', l: 'MTD', sub: 'TY · LY', w: 120, sort: (r) => r.mtd },
-  { k: 'mtdg', l: 'MTD Δ', w: 76, sort: (r) => r.mtdg ?? -9 },
-  { k: 'ach', l: 'MTD ach', sub: 'vs target', w: 76, sort: (r) => r.ach ?? -9 },
-  { k: 'ytd', l: 'YTD', sub: 'TY · LY', w: 120, sort: (r) => r.ytd },
-  { k: 'ytdg', l: 'YTD Δ', w: 76, sort: (r) => r.ytdg ?? -9 },
-  { k: 'bills', l: 'Bills', sub: 'MTD', w: 92, sort: (r) => r.k.bills ?? -1 },
+  { k: 'cw', l: 'Week', sub: 'CW / LY', w: 120, sort: (r) => r.cw },
+  { k: 'cwg', l: 'YoY', w: 74, sort: (r) => r.cwg ?? -9 },
+  { k: 'mtd', l: 'MTD', sub: 'TY / LY', w: 120, sort: (r) => r.mtd },
+  { k: 'mtdg', l: 'MTD GoLY', w: 76, sort: (r) => r.mtdg ?? -9 },
+  { k: 'ach', l: 'MTD Ach%', sub: 'of Tgt', w: 76, sort: (r) => r.ach ?? -9 },
+  { k: 'ytd', l: 'YTD', sub: 'TY / LY', w: 120, sort: (r) => r.ytd },
+  { k: 'ytdg', l: 'YTD GoLY', w: 76, sort: (r) => r.ytdg ?? -9 },
+  { k: 'bills', l: 'NOB', sub: 'MTD', w: 92, sort: (r) => r.k.bills ?? -1 },
   { k: 'upt', l: 'UPT', w: 60, sort: (r) => r.k.upt ?? -1 },
   { k: 'atv', l: 'ATV', w: 80, sort: (r) => r.k.atv ?? -1 },
   { k: 'disc', l: 'Disc', sub: 'MTD', w: 64, sort: (r) => r.k.disc ?? -1 },
   { k: 'streak', l: 'Below LY', sub: 'weeks', w: 72, sort: (r) => r.streak },
   { k: 'trend', l: '13 wks', w: 100, sort: (r) => r.trend },
-  { k: 'rev', l: 'Note', w: 52, sort: (r) => (r.rev ? 1 : 0) },
+  { k: 'rev', l: 'Rev', w: 52, sort: (r) => (r.rev ? 1 : 0) },
 ];
 const heat = (g) => {
   if (g == null || !Number.isFinite(g)) return undefined;
@@ -64,7 +64,7 @@ export default function LeagueView({ stores, measure, onOpen }) {
     <div className="wr-view">
       <div className="wr-league-bar">
         <div className="wr-search"><Search size={14} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Store, code, city, region, ASM" aria-label="Search stores" /></div>
-        <span className="wr-count">{num(shown.length)} stores · # = week ₹ growth vs LY</span>
+        <span className="wr-count">{num(shown.length)} stores · # = CW YoY</span>
       </div>
       <div className="wr-tablewrap">
         <table className="wr-table wr-league">

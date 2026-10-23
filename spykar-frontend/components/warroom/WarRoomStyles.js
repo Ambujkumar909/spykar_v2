@@ -282,6 +282,9 @@ html.theme-light .wr {
 .wr-rankbox b { font-family: var(--wr-num); font-size: 18px; font-weight: 800; } .wr-rankbox span { font-size: 10px; color: var(--text-muted); }
 .wr-runrate { font-size: 12.5px; color: var(--text-secondary); padding: 10px 14px; border-radius: 12px; border: 1px dashed rgba(233,196,106,0.4); background: rgba(233,196,106,0.05); }
 .wr-runrate b { color: var(--text-primary); }
+.wr-prow-l em { display: block; font-style: normal; font-size: 10px; color: var(--text-muted); }
+.wr-psec { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--wr-line); font-size: 9.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--wr-gold); }
+.wr-prow.tgt .wr-prow-ly { color: var(--text-primary); font-family: var(--wr-num); font-weight: 650; } .wr-prow.tgt .wr-prow-ly em { display: block; font-style: normal; font-size: 10.5px; font-weight: 700; }
 .wr-store2 { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 12px; }
 .wr-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
 .wr-field label { font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); }

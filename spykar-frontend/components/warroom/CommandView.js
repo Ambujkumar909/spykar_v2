@@ -40,7 +40,7 @@ export default function CommandView({ board, stores, statusBase, measure, isDark
   const stCls = (s) => (picked.length ? (picked.includes(s) ? ' on' : ' off') : '');
   const rev = act.filter(reviewed).length;
   const KC = kpis(A.cw); const KL = kpis(A.ly);
-  const ringOf = (k, a) => (T.cover && T[k] && T[k][I] ? <Ring value={a / T[k][I]} size={60} stroke={5.5} sub="target" /> : null);
+  const ringOf = (k, a) => (T.cover && T[k] && T[k][I] ? <Ring value={a / T[k][I]} size={60} stroke={5.5} sub="of Tgt" /> : null);
   const rr = T.cover ? runRate(T.month[1], A.mtd[1], P) : null;
   const streaks = useMemo(() => act.map((s) => [s, streak(s)]).filter(([, n]) => n >= 3), [act]);
 
@@ -79,27 +79,27 @@ export default function CommandView({ board, stores, statusBase, measure, isDark
     <div className="wr-view">
       <div className="wr-tiles">
         <Tile icon={CalendarDays} accent="red" eyebrow={`${fmtRange(P.cw)} · ${fmtDow(P.cw[0])}–${fmtDow(P.cw[1])}`} title="Week" value={A.cw[I]} format={fmtM} ring={ringOf('cw', A.cw[I])}>
-          <div className="wr-tile-d"><Delta v={growth(A.cw[I], A.ly[I])} label="LY" /><Delta v={growth(A.cw[I], A.pw[I])} label="PW" /></div>
+          <div className="wr-tile-d"><Delta v={growth(A.cw[I], A.ly[I])} label="YoY" /><Delta v={growth(A.cw[I], A.pw[I])} label="WoW" /></div>
         </Tile>
         <Tile icon={CalendarRange} accent="gold" eyebrow={fmtRange(P.mtd)} title="MTD" value={A.mtd[I]} format={fmtM} ring={ringOf('mtd', A.mtd[I])}>
-          <div className="wr-tile-d"><Delta v={growth(A.mtd[I], A.mtdly[I])} label="LY" /></div>
+          <div className="wr-tile-d"><Delta v={growth(A.mtd[I], A.mtdly[I])} label="GoLY" /></div>
           {rr && rr.left > 0 ? <div className="wr-tile-s">Need <b>{inr(Math.max(0, rr.perDay))}</b>/day · now <b>{inr(rr.pace)}</b></div>
             : <div className="wr-tile-s">LY <b>{fmtM(A.mtdly[I])}</b></div>}
         </Tile>
         <Tile icon={CalendarClock} accent="violet" eyebrow={fmtRange(P.ytd)} title="YTD" value={A.ytd[I]} format={fmtM} ring={ringOf('ytd', A.ytd[I])}>
-          <div className="wr-tile-d"><Delta v={growth(A.ytd[I], A.ytdly[I])} label="LY" /></div>
-          <div className="wr-tile-s">Disc <b>{share(kpis(A.ytd).disc)}</b> · LY {share(kpis(A.ytdly).disc)}</div>
+          <div className="wr-tile-d"><Delta v={growth(A.ytd[I], A.ytdly[I])} label="GoLY" /></div>
+          <div className="wr-tile-s">TY Disc <b>{share(kpis(A.ytd).disc)}</b> · LY Disc {share(kpis(A.ytdly).disc)}</div>
         </Tile>
         <div className="wr-tile wr-accent-sky">
-          <div className="wr-tile-h"><span className="wr-tile-ic"><Users size={14} /></span><div><div className="wr-eyebrow">Week vs LY</div><div className="wr-tile-t">Customers</div></div></div>
+          <div className="wr-tile-h"><span className="wr-tile-ic"><Users size={14} /></span><div><div className="wr-eyebrow">CW · YoY</div><div className="wr-tile-t">KPIs</div></div></div>
           <div className="wr-kgrid">
-            {[['Bills', KC.bills, KL.bills, (v) => num(v)], ['UPT', KC.upt, KL.upt, (v) => num(v, 2)], ['ASP', KC.asp, KL.asp, (v) => inr(v, { compact: false })], ['ATV', KC.atv, KL.atv, (v) => inr(v, { compact: false })]].map(([l, a, b, f]) => (
+            {[['NOB', KC.bills, KL.bills, (v) => num(v)], ['UPT', KC.upt, KL.upt, (v) => num(v, 2)], ['ASP', KC.asp, KL.asp, (v) => inr(v, { compact: false })], ['ATV', KC.atv, KL.atv, (v) => inr(v, { compact: false })]].map(([l, a, b, f]) => (
               <div key={l}><span>{l}</span><b>{a == null ? 'n/a' : f(a)}</b><Delta v={growth(a, b)} size="sm" /></div>
             ))}
           </div>
         </div>
         <div className="wr-tile wr-accent-mint">
-          <div className="wr-tile-h"><span className="wr-tile-ic"><HeartPulse size={14} /></span><div><div className="wr-eyebrow">MTD vs LY · {num(act.length)} trading</div><div className="wr-tile-t">Health</div></div></div>
+          <div className="wr-tile-h"><span className="wr-tile-ic"><HeartPulse size={14} /></span><div><div className="wr-eyebrow">MTD GoLY · {num(act.length)} active</div><div className="wr-tile-t">Health</div></div></div>
           <div className="wr-health">
             <div className={`wr-health-bar${picked.length ? ' picking' : ''}`}>{statusCount.map(([s, n]) => <i key={s} className={`wr-hb-${s}${stCls(s)}`} style={{ flex: n }} title={`${s} ${n}`} onClick={() => onToggle('wr_status', s)} />)}</div>
             <div className={`wr-health-leg${picked.length ? ' picking' : ''}`}>{statusCount.map(([s, n]) => (
@@ -136,12 +136,12 @@ export default function CommandView({ board, stores, statusBase, measure, isDark
       <CategoryPanel cats={board.cats} catSum={catSum} stockSum={stockSum} P={P} measure={measure} coreOnly={coreOnly} onCoreOnly={setCoreOnly} />
 
       <div className="wr-geo">
-        <Card icon={MapIcon} eyebrow={`MTD vs ${fmtRange(P.mtdly, true)}`} title="States" className="wr-geo-map">
+        <Card icon={MapIcon} eyebrow={`MTD GoLY% · LY ${fmtRange(P.mtdly, true)}`} title="State Performance" className="wr-geo-map">
           <WrMap rows={stateRows} selected={[].concat(lens.state || [])} onPick={(s) => onFilter('state', [s])} />
         </Card>
         <div className="wr-stack">
           <QuadrantPanel stores={stores} isDark={isDark} onOpen={onOpen} />
-          <Card icon={Target} eyebrow="MTD vs LY" title="League"
+          <Card icon={Target} eyebrow="MTD GoLY%" title="League"
             right={<Seg size="sm" value={geoBy} onChange={setGeoBy} options={[{ value: 'wr_region', label: 'Region' }, { value: 'state', label: 'State' }, { value: 'wr_type', label: 'Type' }, { value: 'wr_asm', label: 'ASM' }]} />}>
             <div className="wr-rank">
               {groups.map((g, i) => (
@@ -158,7 +158,7 @@ export default function CommandView({ board, stores, statusBase, measure, isDark
       </div>
 
       <div className="wr-movers">
-        <Card icon={Trophy} eyebrow="Change vs LY" title="Movers"
+        <Card icon={Trophy} eyebrow="Δ vs LY" title="Movers"
           right={<Seg size="sm" value={moverBy} onChange={setMoverBy} options={[{ value: 'cw', label: 'Week' }, { value: 'mtd', label: 'MTD' }, { value: 'ytd', label: 'YTD' }]} />}>
           <div className="wr-mv">
             {[['Gainers', 'pos', ArrowUpRight, movers.up], ['Losers', 'neg', ArrowDownRight, movers.down]].map(([h, t, Ic, list]) => (

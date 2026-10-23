@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { CalendarDays, CalendarRange, CalendarClock, Boxes, Shirt, Scale, TrendingUp, Flame, Snail, CheckCircle2, Split, Waves, Gauge, Crosshair } from 'lucide-react';
 import { Card, Delta, DualBar, Seg, Ring } from './ui';
-import { kpis, growth, drivers, bridge, statusOf, isActive, inr, num, pct, share, pts, fmtRange, fmtDay, tone, achTone, STATUS_TONE } from './wrMath';
+import { kpis, growth, drivers, bridge, statusOf, isActive, inr, num, pct, share, pts, fmtRange, fmtDay, monName, tone, achTone, STATUS_TONE } from './wrMath';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 const axis = (isDark) => ({ fg: isDark ? '#94A3B8' : '#64748B', grid: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.07)', gold: isDark ? '#E9C46A' : '#B7791F' });
@@ -21,9 +21,9 @@ function Row({ label, ty, ly, g, fmt, strong }) {
 }
 export function PeriodCard({ kind, P, A, measure, T }) {
   const cfg = {
-    week: { title: 'Week', icon: CalendarDays, ty: 'cw', ly: 'ly', alt: 'pw', range: P.cw, lyRange: P.ly, accent: 'red', tg: 'cw', whole: 'week', wholeL: 'Week target' },
-    mtd: { title: 'MTD', icon: CalendarRange, ty: 'mtd', ly: 'mtdly', range: P.mtd, lyRange: P.mtdly, accent: 'gold', tg: 'mtd', whole: 'month', wholeL: 'Month target' },
-    ytd: { title: 'YTD', icon: CalendarClock, ty: 'ytd', ly: 'ytdly', range: P.ytd, lyRange: P.ytdly, accent: 'violet', tg: 'ytd', whole: 'fy', wholeL: 'FY target' },
+    week: { title: 'Week', icon: CalendarDays, ty: 'cw', ly: 'ly', alt: 'pw', range: P.cw, lyRange: P.ly, accent: 'red', tg: 'cw', tgL: 'CW Tgt', whole: 'week', wholeL: 'Week Tgt', vs: 'YoY' },
+    mtd: { title: 'MTD', icon: CalendarRange, ty: 'mtd', ly: 'mtdly', range: P.mtd, lyRange: P.mtdly, accent: 'gold', tg: 'mtd', tgL: 'MTD Tgt', whole: 'month', wholeL: `${monName(P.mtd[1])} Target`, vs: 'GoLY' },
+    ytd: { title: 'YTD', icon: CalendarClock, ty: 'ytd', ly: 'ytdly', range: P.ytd, lyRange: P.ytdly, accent: 'violet', tg: 'ytd', tgL: 'YTD Tgt', whole: 'fy', wholeL: 'FY Target', vs: 'GoLY' },
   }[kind];
   const ty = A[cfg.ty]; const ly = A[cfg.ly]; const alt = cfg.alt ? A[cfg.alt] : null;
   const KT = kpis(ty); const KL = kpis(ly);
@@ -33,7 +33,9 @@ export function PeriodCard({ kind, P, A, measure, T }) {
   const tg = T && T.cover && T[cfg.tg] && T[cfg.tg][1] ? T[cfg.tg] : null;          // target to date [units, ₹]
   const whole = T && T.cover && T[cfg.whole] && T[cfg.whole][1] ? T[cfg.whole] : null;
   const ach = tg ? ty[I] / tg[I] : null;
-  const k4 = [['Bills', KT.bills, KL.bills, (v) => num(v)], ['UPT', KT.upt, KL.upt, (v) => num(v, 2)],
+  const vq = measure === 'qty' ? 'Qty' : 'Val';
+  const gap = (t) => { const d = ty[I] - t; return <em className={d >= 0 ? 'pos' : 'neg'}>{d >= 0 ? '+' : '−'}{fmtM(Math.abs(d))}</em>; };
+  const k4 = [['NOB', KT.bills, KL.bills, (v) => num(v)], ['UPT', KT.upt, KL.upt, (v) => num(v, 2)],
     ['ASP', KT.asp, KL.asp, (v) => inr(v, { compact: false })], ['ATV', KT.atv, KL.atv, (v) => inr(v, { compact: false })]];
   return (
     <Card className="wr-period" accent={cfg.accent} icon={cfg.icon} eyebrow={fmtRange(cfg.range)} title={cfg.title}
@@ -42,28 +44,30 @@ export function PeriodCard({ kind, P, A, measure, T }) {
         <div>
           <div className="wr-hero-v">{fmtM(ty[I])}</div>
           <div className="wr-hero-sub">
-            <Delta v={growth(ty[I], ly[I])} label="LY" />
-            {alt && <Delta v={growth(ty[I], alt[I])} label="PW" />}
+            <Delta v={growth(ty[I], ly[I])} label={cfg.vs} />
+            {alt && <Delta v={growth(ty[I], alt[I])} label="WoW" />}
           </div>
         </div>
-        {tg && <Ring value={ach} size={68} sub="target" />}
+        {tg && <Ring value={ach} size={68} sub="of Tgt" />}
       </div>
       <div className="wr-ptable">
-        <div className="wr-prow head"><span /><span>TY</span><span>LY</span><span>Δ</span></div>
-        <Row label="Net sales" ty={ty[1]} ly={ly[1]} g={growth(ty[1], ly[1])} fmt={(v) => inr(v)} strong />
-        <Row label="Units" ty={ty[0]} ly={ly[0]} g={growth(ty[0], ly[0])} fmt={(v) => num(v)} />
-        <Row label="MRP" ty={ty[2]} ly={ly[2]} g={growth(ty[2], ly[2])} fmt={(v) => inr(v)} />
+        <div className="wr-prow head"><span /><span>TY</span><span>LY</span><span>{cfg.vs}</span></div>
+        <Row label="Adj MRP" ty={ty[1]} ly={ly[1]} g={growth(ty[1], ly[1])} fmt={(v) => inr(v)} strong />
+        <Row label="Qty" ty={ty[0]} ly={ly[0]} g={growth(ty[0], ly[0])} fmt={(v) => num(v)} />
+        <Row label="MRP (Gross)" ty={ty[2]} ly={ly[2]} g={growth(ty[2], ly[2])} fmt={(v) => inr(v)} />
         <div className="wr-prow">
           <span className="wr-prow-l">Discount</span>
           <span className="wr-prow-ty">{share(KT.disc)}</span><span className="wr-prow-ly">{share(KL.disc)}</span>
           <span className="wr-prow-g"><span className={`wr-delta wr-delta-sm wr-${dd == null ? 'mute' : dd > 0.005 ? 'neg' : dd < -0.005 ? 'pos' : 'flat'}`}>{pts(dd)}</span></span>
         </div>
-        {alt && <Row label={`PW ${fmtRange(P.pw)}`} ty={ty[1]} ly={alt[1]} g={growth(ty[1], alt[1])} fmt={(v) => inr(v)} />}
+        {alt && <Row label={<>PW · WoW<em>{fmtRange(P.pw)}</em></>} ty={ty[1]} ly={alt[1]} g={growth(ty[1], alt[1])} fmt={(v) => inr(v)} />}
+        {(tg || whole) && <div className="wr-psec">{kind === 'week' ? 'Week Target vs Achievement' : 'Target vs Achievement'}</div>}
+        {(tg || whole) && <div className="wr-prow head"><span /><span>Tgt {vq}</span><span>Ach {vq}</span><span>Ach %</span></div>}
         {tg && (
           <div className="wr-prow tgt">
-            <span className="wr-prow-l">Target</span>
+            <span className="wr-prow-l">{cfg.tgL}</span>
             <span className="wr-prow-ty">{fmtM(tg[I])}</span>
-            <span className="wr-prow-ly">{ty[I] >= tg[I] ? '+' : '−'}{fmtM(Math.abs(ty[I] - tg[I]))}</span>
+            <span className="wr-prow-ly">{fmtM(ty[I])}{gap(tg[I])}</span>
             <span className="wr-prow-g"><span className={`wr-delta wr-delta-sm wr-${achTone(ach)}`}>{share(ach, 0)}</span></span>
           </div>
         )}
@@ -71,7 +75,7 @@ export function PeriodCard({ kind, P, A, measure, T }) {
           <div className="wr-prow tgt">
             <span className="wr-prow-l">{cfg.wholeL}</span>
             <span className="wr-prow-ty">{fmtM(whole[I])}</span>
-            <span className="wr-prow-ly">{ty[I] >= whole[I] ? '+' : '−'}{fmtM(Math.abs(whole[I] - ty[I]))}</span>
+            <span className="wr-prow-ly">{fmtM(ty[I])}{gap(whole[I])}</span>
             <span className="wr-prow-g"><span className="wr-delta wr-delta-sm wr-flat">{share(ty[I] / whole[I], 0)}</span></span>
           </div>
         )}
@@ -89,10 +93,10 @@ export function PeriodCard({ kind, P, A, measure, T }) {
 export function DriversPanel({ A }) {
   const rows = [['Week', A.cw, A.ly], ['MTD', A.mtd, A.mtdly], ['YTD', A.ytd, A.ytdly]].map(([l, t, y]) => [l, drivers(t, y)]);
   return (
-    <Card icon={Split} eyebrow="Net sales vs LY = bills × UPT × ASP" title="What moved sales">
-      {rows.every(([, d]) => !d) ? <div className="wr-empty sm">Bills are not split by product.</div> : (
+    <Card icon={Split} eyebrow="Adj MRP GoLY = NOB × UPT × ASP" title="What moved sales">
+      {rows.every(([, d]) => !d) ? <div className="wr-empty sm">NOB is not split by product.</div> : (
         <div className="wr-drv">
-          <div className="wr-drv-r head"><span /><span>Sales</span><span>Bills</span><span>UPT</span><span>ASP</span></div>
+          <div className="wr-drv-r head"><span /><span>Adj MRP</span><span>NOB</span><span>UPT</span><span>ASP</span></div>
           {rows.map(([l, d]) => (
             <div key={l} className="wr-drv-r">
               <span className="wr-drv-l">{l}</span>
@@ -195,7 +199,7 @@ export function TrendPanel({ weeks, weeksLy, series, isDark, title = '13 weeks' 
   }, [weeks, weeksLy, series, isDark]);
   const total = series.ty.reduce((a, b) => a + b, 0); const totalLy = series.ly.reduce((a, b) => a + b, 0);
   return (
-    <Card className="wr-trend" icon={TrendingUp} eyebrow="Net sales by week" title={title}
+    <Card className="wr-trend" icon={TrendingUp} eyebrow="Adj MRP by week" title={title}
       right={<span className="wr-vs">{inr(total)} <Delta v={growth(total, totalLy)} size="sm" /></span>}>
       <Chart type="line" height={240} options={opts}
         series={[{ name: 'TY', type: 'column', data: series.ty.map(Math.round) }, { name: 'LY', type: 'line', data: series.ly.map(Math.round) }]} />
@@ -225,8 +229,8 @@ export function QuadrantPanel({ stores, isDark, onOpen }) {
       events: { dataPointSelection: (e, ctx, { seriesIndex, dataPointIndex }) => { const d = series[seriesIndex]?.data[dataPointIndex]; if (d && onOpen) onOpen(d.code); } } },
     colors: groups.map((g) => COLOR[STATUS_TONE[g]]), markers: { size: 5, strokeWidth: 0, hover: { size: 7 } },
     grid: { borderColor: grid, strokeDashArray: 4 },
-    xaxis: { type: 'numeric', tickAmount: 6, labels: { style: { colors: fg, fontSize: '10px' }, formatter: (v) => inr(Number(v), { compact: true, decimals: 1 }) }, title: { text: 'LY sales', style: { color: fg, fontSize: '10px', fontWeight: 600 } } },
-    yaxis: { labels: { style: { colors: fg, fontSize: '10px' }, formatter: (v) => `${Math.round(v)}%` }, title: { text: 'Growth', style: { color: fg, fontSize: '10px', fontWeight: 600 } } },
+    xaxis: { type: 'numeric', tickAmount: 6, labels: { style: { colors: fg, fontSize: '10px' }, formatter: (v) => inr(Number(v), { compact: true, decimals: 1 }) }, title: { text: 'LY Val', style: { color: fg, fontSize: '10px', fontWeight: 600 } } },
+    yaxis: { labels: { style: { colors: fg, fontSize: '10px' }, formatter: (v) => `${Math.round(v)}%` }, title: { text: 'GoLY%', style: { color: fg, fontSize: '10px', fontWeight: 600 } } },
     annotations: { yaxis: [{ y: 0, borderColor: fg, strokeDashArray: 0, opacity: 0.4 }], xaxis: [{ x: medX, borderColor: fg, strokeDashArray: 4, opacity: 0.4 }] },
     legend: { show: true, position: 'top', horizontalAlign: 'right', labels: { colors: fg } },
     tooltip: { theme: isDark ? 'dark' : 'light', custom: ({ seriesIndex, dataPointIndex }) => {
@@ -235,7 +239,7 @@ export function QuadrantPanel({ stores, isDark, onOpen }) {
     } },
   };
   return (
-    <Card icon={Crosshair} eyebrow={`${pts_.length} stores · median LY ${inr(medX)}`} title="Size × growth"
+    <Card icon={Crosshair} eyebrow={`${pts_.length} stores · median LY Val ${inr(medX)}`} title="Size × growth"
       right={<Seg size="sm" value={period} onChange={setPeriod} options={[{ value: 'cw', label: 'Week' }, { value: 'mtd', label: 'MTD' }, { value: 'ytd', label: 'YTD' }]} />}>
       <div className="wr-quad-k">
         <span className="neg"><b>{quad.big_down}</b> big · falling <em>−{inr(quad.atRisk)}</em></span>
@@ -260,10 +264,10 @@ export function CategoryPanel({ cats, catSum, stockSum, P, measure, coreOnly, on
   const mx = Math.max(0.0001, ...list.map((x) => Math.max(totS ? catSum[x][0] / totS : 0, totK ? (stockSum[x] ? stockSum[x][0] : 0) / totK : 0)));   // longest bar
   return (
     <div className="wr-catgrid">
-      <Card className="wr-cat" icon={Shirt} eyebrow={`YTD ${fmtRange(P.ytd)}`} title="Categories"
+      <Card className="wr-cat" icon={Shirt} eyebrow={`YTD ${fmtRange(P.ytd)}`} title="Product Performance"
         right={<button type="button" className={`wr-chip${coreOnly ? ' on' : ''}`} onClick={() => onCoreOnly(!coreOnly)}>{coreOnly ? 'Core 6' : 'All'}</button>}>
         <div className="wr-ctable">
-          <div className="wr-crow head"><span /><span>TY</span><span>LY</span><span>Δ</span><span>Mix</span></div>
+          <div className="wr-crow head"><span /><span>TY</span><span>LY</span><span>GoLY%</span><span>Mix</span></div>
           {list.map((c) => {
             const a = catSum[c]; const g = growth(a[I[0]], a[I[1]]);
             return (
@@ -276,10 +280,10 @@ export function CategoryPanel({ cats, catSum, stockSum, P, measure, coreOnly, on
           })}
         </div>
       </Card>
-      <Card className="wr-cat" icon={Boxes} eyebrow={P.stock.ty ? `${fmtDay(P.stock.ty, true)}${hasLy ? ` vs ${fmtDay(P.stock.ly, true)}` : ''}` : '—'} title="Stock">
+      <Card className="wr-cat" icon={Boxes} eyebrow={P.stock.ty ? `${fmtDay(P.stock.ty, true)}${hasLy ? ` vs ${fmtDay(P.stock.ly, true)}` : ''}` : '—'} title="Closing Stock">
         {!P.stock.ty ? <div className="wr-empty sm">No stock snapshot.</div> : (
           <div className="wr-ctable">
-            <div className="wr-crow head"><span /><span>Units</span><span>{hasLy ? 'LY' : 'MRP'}</span><span>{hasLy ? 'Δ' : ''}</span><span>Cover</span></div>
+            <div className="wr-crow head"><span /><span>Qty</span><span>{hasLy ? 'LY' : 'MRP'}</span><span>{hasLy ? 'GoLY%' : ''}</span><span>Cover</span></div>
             {list.map((c) => {
               const k = stockSum[c] || [0, 0, 0, 0]; const rate = catSum[c] ? catSum[c][2] / days : 0; const cover = rate > 0 ? k[0] / rate : null;
               return (
@@ -295,10 +299,10 @@ export function CategoryPanel({ cats, catSum, stockSum, P, measure, coreOnly, on
           </div>
         )}
       </Card>
-      <Card className="wr-contro" icon={Scale} eyebrow="Share of YTD sales vs share of stock on hand" title="Sales vs stock">
+      <Card className="wr-contro" icon={Scale} eyebrow="YTD Sales mix vs Closing Stock mix" title="Sales Contro vs SOH Contro">
         {!totK ? <div className="wr-empty sm">No stock snapshot.</div> : (
           <div className="wr-mix2">
-            <div className="wr-mix2-r head"><span>Category</span><span><i className="s" />Sales share</span><span><i className="k" />Stock share</span><span>Gap</span></div>
+            <div className="wr-mix2-r head"><span>Category</span><span><i className="s" />Sales Contribution</span><span><i className="k" />Stock Contribution</span><span>Gap</span></div>
             {list.map((c) => {
               const sv = totS ? catSum[c][0] / totS : 0; const kv = totK ? (stockSum[c] ? stockSum[c][0] : 0) / totK : 0; const gap = sv - kv;
               const t = Math.abs(gap) < 0.03 ? 'bal' : gap > 0 ? 'hot' : 'slow';
@@ -309,7 +313,7 @@ export function CategoryPanel({ cats, catSum, stockSum, P, measure, coreOnly, on
                   <span className="wr-mix2-c k"><b>{share(kv)}</b><i style={{ width: `${(kv / mx) * 100}%` }} /></span>
                   <span className={`wr-mix2-g ${t}`}>
                     {t === 'hot' ? <Flame size={13} /> : t === 'slow' ? <Snail size={13} /> : <CheckCircle2 size={13} />}
-                    <b>{pts(gap)}</b><em>{t === 'hot' ? 'Sells faster than stocked' : t === 'slow' ? 'Overstocked' : 'Balanced'}</em>
+                    <b>{pts(gap)}</b><em>{t === 'hot' ? 'Hot · Replenish' : t === 'slow' ? 'Slow · Markdown' : 'Balanced'}</em>
                   </span>
                 </div>
               );

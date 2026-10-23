@@ -187,6 +187,7 @@ export function tone(g, { good = 0.05, bad = -0.10 } = {}) {
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const d0 = (s) => new Date(`${s}T00:00:00Z`);
+export const monName = (s) => MON[Number(String(s).slice(5, 7)) - 1] || '';
 export const fmtDay = (s, y) => { if (!s) return '—'; const d = d0(s); return `${d.getUTCDate()} ${MON[d.getUTCMonth()]}${y ? ` ’${String(d.getUTCFullYear()).slice(2)}` : ''}`; };
 export const fmtDow = (s) => (s ? DOW[d0(s).getUTCDay()] : '');
 export function fmtRange([a, b] = [], y) {
