@@ -35,7 +35,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (!router.isReady) return;
     const msg = REASONS[router.query.reason];
-    if (msg) toast(msg, { id: 'session-reason', icon: router.query.reason === 'LOGOUT' ? '👋' : '🔒', duration: 6000 });
+    if (msg) toast(msg, { id: 'session-reason', icon: router.query.reason === 'LOGOUT' ? '👋' : '🔒' });
   }, [router.isReady, router.query.reason]);
 
   async function handleSubmit(e) {

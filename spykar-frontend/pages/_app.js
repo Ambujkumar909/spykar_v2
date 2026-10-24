@@ -1,6 +1,6 @@
 import '../styles/globals.css';
 import { AuthProvider } from '../lib/auth-context';
-import { Toaster } from 'react-hot-toast';
+import toast, { Toaster, ToastBar } from 'react-hot-toast';
 import Head from 'next/head';
 import Script from 'next/script';
 import { useTheme } from '../lib/useTheme';
@@ -67,7 +67,7 @@ export default function App({ Component, pageProps }) {
       <Toaster
         position="top-right"
         toastOptions={{
-          duration: 4000,
+          duration: 3000,
           style: {
             background: toastBg,
             color: toastColor,
@@ -82,7 +82,22 @@ export default function App({ Component, pageProps }) {
           success: { iconTheme: { primary: '#059669', secondary: toastBg } },
           error:   { iconTheme: { primary: '#DC2626', secondary: toastBg } },
         }}
-      />
+      >
+        {(t) => (
+          <ToastBar toast={t}>
+            {({ icon, message }) => (
+              <>
+                {icon}
+                {message}
+                <button type="button" onClick={() => toast.dismiss(t.id)} aria-label="Close"
+                  style={{ background: 'none', border: 0, padding: '0 2px', cursor: 'pointer', color: 'inherit', opacity: 0.6, fontSize: '18px', lineHeight: 1 }}>
+                  ×
+                </button>
+              </>
+            )}
+          </ToastBar>
+        )}
+      </Toaster>
     </AuthProvider>
   );
 }

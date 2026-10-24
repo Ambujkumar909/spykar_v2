@@ -74,7 +74,7 @@ export default function UsersPage() {
   const noSeat = Boolean(license && (!license.valid || license.free <= 0));
   // Fixed id: repeat clicks refresh the one toast instead of stacking more.
   const seatToast = () => toast.error(
-    license?.valid ? 'No free licence seat. Upgrade the licence or deactivate a user.' : 'The licence is not valid. Upgrade to continue.',
+    license?.valid ? 'No free licence seat. Upgrade the licence.' : 'The licence is not valid. Upgrade to continue.',
     { id: 'no-seat' },
   );
 
@@ -215,7 +215,7 @@ export default function UsersPage() {
       const r = await authService.applyLicense(keyText.trim());
       setLicense(r.data.data);
       const off = r.data.deactivated || [];
-      toast.success(`Licence updated: ${r.data.data.seats} seats, expires ${formatDate(r.data.data.expires)}${off.length ? ` · deactivated ${off.join(', ')}` : ''}`, { duration: 7000 });
+      toast.success(`Licence updated: ${r.data.data.seats} seats, expires ${formatDate(r.data.data.expires)}${off.length ? ` · deactivated ${off.join(', ')}` : ''}`);
       setKeyOpen(false);
       setKeyText('');
       fetchUsers();
@@ -296,7 +296,8 @@ export default function UsersPage() {
               <RefreshCw size={14} />
               Refresh
             </button>
-            <button type="button" className="btn btn-primary" onClick={() => (noSeat ? seatToast() : setIsCreateOpen(true))}>
+            <button type="button" className="btn btn-primary" onClick={() => (noSeat ? seatToast() : setIsCreateOpen(true))}
+              title={noSeat ? (license?.valid ? 'No free licence seat. Upgrade the licence.' : 'The licence is not valid. Upgrade to continue.') : undefined}>
               <Plus size={14} />
               Add User
             </button>
@@ -361,6 +362,7 @@ export default function UsersPage() {
                           type="button"
                           className={`btn ${entry.is_active ? 'btn-danger' : 'btn-ghost'}`}
                           onClick={() => (!entry.is_active && noSeat ? seatToast() : handleToggleUser(entry))}
+                          title={!entry.is_active && noSeat ? 'No free licence seat. Upgrade the licence.' : undefined}
                         >
                           <Power size={14} />
                           {entry.is_active ? 'Deactivate' : 'Reactivate'}

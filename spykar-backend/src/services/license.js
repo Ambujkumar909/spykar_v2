@@ -166,7 +166,7 @@ async function requireSeat(client) {
   const st = await state();
   if (!st.valid) throw new AppError(st.reason === 'LICENSE_EXPIRED' ? `The licence expired on ${st.expires}. Renew it first.` : 'No licence is installed.', 403, st.reason);
   const { rows: [{ n }] } = await client.query("SELECT count(*)::int AS n FROM users WHERE is_active AND role <> 'SUPER_ADMIN'");
-  if (n >= st.seats) throw new AppError(`No free licence seat (${n} of ${st.seats} in use). Upgrade the licence or deactivate a user.`, 403, 'NO_SEAT');
+  if (n >= st.seats) throw new AppError(`No free licence seat (${n} of ${st.seats} in use). Upgrade the licence.`, 403, 'NO_SEAT');
 }
 
 // Apply a key. Returns the new state and the users deactivated to fit.
