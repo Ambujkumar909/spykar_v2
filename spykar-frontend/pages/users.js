@@ -72,6 +72,11 @@ export default function UsersPage() {
   }, []);
   useEffect(() => { fetchLicense(); }, [fetchLicense]);
   const noSeat = Boolean(license && (!license.valid || license.free <= 0));
+  // Fixed id: repeat clicks refresh the one toast instead of stacking more.
+  const seatToast = () => toast.error(
+    license?.valid ? 'No free licence seat. Upgrade the licence or deactivate a user.' : 'The licence is not valid. Upgrade to continue.',
+    { id: 'no-seat' },
+  );
 
   // Every keystroke in the search box refetches; a slower, OLDER response used
   // to land last and overwrite the list with an old search term's results.
@@ -291,8 +296,7 @@ export default function UsersPage() {
               <RefreshCw size={14} />
               Refresh
             </button>
-            <button type="button" className="btn btn-primary" onClick={() => setIsCreateOpen(true)} disabled={noSeat}
-              title={noSeat ? (license?.valid ? 'No free licence seat. Upgrade the licence or deactivate a user.' : 'The licence is not valid. Upgrade to continue.') : undefined}>
+            <button type="button" className="btn btn-primary" onClick={() => (noSeat ? seatToast() : setIsCreateOpen(true))}>
               <Plus size={14} />
               Add User
             </button>
@@ -356,9 +360,7 @@ export default function UsersPage() {
                         <button
                           type="button"
                           className={`btn ${entry.is_active ? 'btn-danger' : 'btn-ghost'}`}
-                          onClick={() => handleToggleUser(entry)}
-                          disabled={!entry.is_active && noSeat}
-                          title={!entry.is_active && noSeat ? 'No free licence seat' : undefined}
+                          onClick={() => (!entry.is_active && noSeat ? seatToast() : handleToggleUser(entry))}
                         >
                           <Power size={14} />
                           {entry.is_active ? 'Deactivate' : 'Reactivate'}
