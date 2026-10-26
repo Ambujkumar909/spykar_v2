@@ -10,7 +10,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import TimeRangeControl from '../components/dashboard-v2/TimeRangeControl';
-import { useTimeRange } from '../lib/v2/useTimeRange';
+import { useTimeRange, todayISO } from '../lib/v2/useTimeRange';
 import { useTheme } from '../lib/useTheme';
 import { useFilters } from '../lib/useFilters';
 import { FiltersProvider } from '../lib/FiltersContext';
@@ -391,7 +391,7 @@ export default function PrimarySalesPage() {
             <input type="date" className="ps-date" value={fromISO} min={dataRange?.from} max={toISO} style={dateInputSty}
               onChange={(e) => e.target.value && setCustom(e.target.value, toISO)} aria-label="From date" />
             <span style={{ color: 'var(--text-muted)', fontWeight: 800 }}>→</span>
-            <input type="date" className="ps-date" value={toISO} min={fromISO} max={dataRange?.to} style={dateInputSty}
+            <input type="date" className="ps-date" value={toISO} min={fromISO} max={dataRange?.to && dataRange.to < todayISO() ? dataRange.to : todayISO()} style={dateInputSty}
               onChange={(e) => e.target.value && setCustom(fromISO, e.target.value)} aria-label="To date" />
           </span>
         )}

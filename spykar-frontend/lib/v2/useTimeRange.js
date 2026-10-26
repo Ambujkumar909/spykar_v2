@@ -29,6 +29,17 @@ function anchorToday() {
   return d;
 }
 
+export const todayISO = () => fmt(anchorToday());
+const isISO = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+// Custom range rule: To is never after today, From is never after To.
+export function clampRange(from, to) {
+  const today = todayISO();
+  const t = isISO(to) && to < today ? to : today;
+  const f = isISO(from) && from < t ? from : t;
+  return { from: f, to: t };
+}
+
 function rangeFor(preset, customFrom, customTo) {
   const today = anchorToday();
   const to = fmt(today);
@@ -59,7 +70,7 @@ function rangeFor(preset, customFrom, customTo) {
       return { from: fmt(fyStart), to };
     }
     case 'custom':
-      return { from: customFrom || to, to: customTo || to };
+      return clampRange(customFrom, customTo);
     default:
       return { from: to, to };
   }
@@ -99,9 +110,10 @@ export function useTimeRange(initialPreset = 'mtd') {
     _setPreset(p);
   }, [preset, customFrom, customTo]);
 
+  // A cleared field ('') keeps the previous date; the rest is clamped in rangeFor.
   const setCustom = useCallback((from, to) => {
-    setCustomFrom(from);
-    setCustomTo(to);
+    if (isISO(from)) setCustomFrom(from);
+    if (isISO(to)) setCustomTo(to);
     _setPreset('custom');
   }, []);
 

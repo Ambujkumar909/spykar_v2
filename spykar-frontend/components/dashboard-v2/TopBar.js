@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react';
 import { Sun, Moon, ChevronDown } from 'lucide-react';
 import TimeRangeControl from './TimeRangeControl';
+import { todayISO } from '../../lib/v2/useTimeRange';
 
 // Inline header filters — same model as the /sales header (a labelled capsule
 // with a borderless select). Replaces the old Saved-Views dropdown + Filters
@@ -237,6 +238,7 @@ export default function TopBar({
             label="To"
             value={toISO}
             min={fromISO}
+            max={todayISO()}
             onChange={(v) => onCustomRangeChange?.(fromISO, v)}
           />
           <span style={{

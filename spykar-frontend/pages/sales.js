@@ -10,7 +10,7 @@ import DistributionDonuts from '../components/sales/DistributionDonuts';
 import DrilldownDrawer from '../components/sales/DrilldownDrawer';
 import { useFilters } from '../lib/useFilters';
 import { useRouter } from 'next/router';
-import { useTimeRange, PRESETS } from '../lib/v2/useTimeRange';
+import { useTimeRange, PRESETS, todayISO } from '../lib/v2/useTimeRange';
 import TimeRangeControl from '../components/dashboard-v2/TimeRangeControl';
 import { analyticsService, syncService } from '../lib/services';
 import { getCached, setCached, isFresh, clearCached } from '../lib/dashboardCache';
@@ -1431,12 +1431,12 @@ export default function SalesAnalyticsPage() {
           marginBottom: 12,
         }}>
           <Calendar size={14} color={T.muted} strokeWidth={2.2} />
-          <input type="date" value={dateFrom}
+          <input type="date" value={dateFrom} max={dateTo}
             onChange={e => setDateFrom(e.target.value)}
             className="sales-date-input"
             style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '6px 10px', fontSize: 12, fontWeight: 600, color: T.primary, outline: 'none', background: 'var(--bg-elevated)', height: 30, fontFamily: 'var(--font-body)', colorScheme: 'light dark' }} />
           <span style={{ fontWeight: 700, color: T.muted, fontSize: 14 }}>→</span>
-          <input type="date" value={dateTo}
+          <input type="date" value={dateTo} min={dateFrom} max={todayISO()}
             onChange={e => setDateTo(e.target.value)}
             className="sales-date-input"
             style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '6px 10px', fontSize: 12, fontWeight: 600, color: T.primary, outline: 'none', background: 'var(--bg-elevated)', height: 30, fontFamily: 'var(--font-body)', colorScheme: 'light dark' }} />
