@@ -55,7 +55,7 @@ async function authenticate(req, res, next) {
     // expire within 15 min on their own.
     const result = await query(
       `SELECT u.id, u.name, u.email, u.role, u.is_active,
-              s.id AS sid, s.revoked_at, s.absolute_expires_at
+              s.id AS sid, s.revoked_at, s.revoke_reason, s.absolute_expires_at
          FROM users u
          LEFT JOIN auth_sessions s ON s.id = $2::uuid AND s.user_id = u.id
         WHERE u.id = $1`,
@@ -66,11 +66,14 @@ async function authenticate(req, res, next) {
       throw new AppError('User account not found or deactivated.', 401, 'ACCOUNT_DISABLED');
     }
     const row = result.rows[0];
+    if (decoded.sid && row.revoked_at && row.revoke_reason === 'signed_in_elsewhere') {
+      throw new AppError('You were signed in on another device.', 401, 'SESSION_REPLACED');
+    }
     if (decoded.sid && (!row.sid || row.revoked_at || new Date(row.absolute_expires_at) <= new Date())) {
       throw new AppError('This session has ended. Please sign in again.', 401, 'SESSION_REVOKED');
     }
     req.sessionId = decoded.sid || null;
-    delete row.sid; delete row.revoked_at; delete row.absolute_expires_at;
+    delete row.sid; delete row.revoked_at; delete row.revoke_reason; delete row.absolute_expires_at;
 
     req.user = result.rows[0];
     req.token = token;

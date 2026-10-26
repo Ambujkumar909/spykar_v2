@@ -122,6 +122,27 @@ async function listMySessions(req, res, next) {
   }
 }
 
+// GET /api/v1/users/sessions — Super Admin: one row per user (live device + 7-day counts).
+async function listAllSessions(req, res, next) {
+  try {
+    res.json({ success: true, data: await sessions.overview() });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// DELETE /api/v1/users/:id/sessions — Super Admin signs a user out everywhere.
+async function signOutUser(req, res, next) {
+  try {
+    if (req.params.id === req.user.id) throw new AppError('Use Log out to end your own session.', 400);
+    const n = await transaction((c) => sessions.revokeUserSessions(c, req.params.id, 'revoked_by_admin'));
+    logger.info(`Super Admin ${req.user.email} signed out user ${req.params.id} (${n} session(s))`);
+    res.json({ success: true, message: n ? 'User signed out.' : 'User was not signed in.' });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // DELETE /api/v1/auth/sessions/:id — sign out one of this user's devices.
 async function revokeMySession(req, res, next) {
   try {
@@ -455,4 +476,6 @@ module.exports = {
   toggleUser,
   resetUserPassword,
   deleteUser,
+  listAllSessions,
+  signOutUser,
 };

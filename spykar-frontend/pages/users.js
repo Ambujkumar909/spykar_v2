@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import KpiCard from '../components/ui/KpiCard';
+import SessionsTab from '../components/users/SessionsTab';
 import { authService } from '../lib/services';
 import { useAuth } from '../lib/auth-context';
 import { formatDate, formatDateTime, formatNumber } from '../lib/utils';
@@ -63,6 +64,7 @@ export default function UsersPage() {
   const [deleteUser, setDeleteUser] = useState(null);
   const [deleting, setDeleting] = useState(false);
   // Licence: seats + expiry, and the Upgrade (apply key) box
+  const [tab, setTab] = useState('users');   // 'sessions' is Super Admin only
   const [license, setLicense] = useState(null);
   const [keyOpen, setKeyOpen] = useState(false);
   const [keyText, setKeyText] = useState('');
@@ -265,6 +267,18 @@ export default function UsersPage() {
         </div>
       )}
     >
+      {user?.role === 'SUPER_ADMIN' && (
+        <div role="tablist" style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+          {[['users', 'Users'], ['sessions', 'Sessions']].map(([key, label]) => (
+            <button key={key} type="button" role="tab" aria-selected={tab === key}
+              className={`btn ${tab === key ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(key)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {user?.role === 'SUPER_ADMIN' && tab === 'sessions' ? <SessionsTab currentUserId={user.id} /> : (<>
       <div className="grid-4" style={{ marginBottom: 24 }}>
         <KpiCard label="Total Users" value={metrics.total} icon={UserCog} colorKey="violet" loading={loading} />
         <KpiCard label="Active Users" value={metrics.activeCount} icon={Shield} colorKey="emerald" loading={loading} />
@@ -393,6 +407,7 @@ export default function UsersPage() {
           </table>
         </div>
       </div>
+      </>)}
 
       {(isCreateOpen || editUser) && (
         <div style={{

@@ -78,9 +78,14 @@ function clearRefreshCookie(req, res) {
 }
 
 const sessionEnded = (code, message) => new AppError(message, 401, code);
+// One device per login: a new sign-in ends the older session with this reason.
+const REPLACED = 'signed_in_elsewhere';
+const replacedError = () => sessionEnded('SESSION_REPLACED', 'You were signed in on another device.');
 
 // ── Create (login) ───────────────────────────────────────────────────────────
 async function createSession(client, user, req) {
+  // Serialise sign-ins of the same user, so two at once can't both stay live.
+  await client.query("SELECT pg_advisory_xact_lock(hashtext('auth_session:' || $1::text))", [user.id]);
   const now = Date.now();
   const absolute = new Date(now + ABSOLUTE_MS);
   const idle = new Date(Math.min(now + IDLE_MS, absolute.getTime()));
@@ -88,6 +93,10 @@ async function createSession(client, user, req) {
     `INSERT INTO auth_sessions (user_id, idle_expires_at, absolute_expires_at, ip, user_agent)
      VALUES ($1, $2, $3, $4, $5) RETURNING id, idle_expires_at, absolute_expires_at`,
     [user.id, idle, absolute, clientIp(req), clientUa(req)])).rows[0];
+  // One device per login: every other live session of this user ends now.
+  await client.query(
+    'UPDATE auth_sessions SET revoked_at = NOW(), revoke_reason = $3 WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL',
+    [user.id, s.id, REPLACED]);
   const refresh = newRefreshToken();
   await client.query(
     'INSERT INTO refresh_tokens (user_id, session_id, token_hash, expires_at) VALUES ($1, $2, $3, $4)',
@@ -130,6 +139,7 @@ async function rotate(presented, req) {
       'UPDATE auth_sessions SET revoked_at = NOW(), revoke_reason = $2 WHERE id = $1 AND revoked_at IS NULL', [sid, reason]);
 
     if (!rt.is_active) { await revoke('account_disabled'); return { error: sessionEnded('ACCOUNT_DISABLED', 'This account has been deactivated.') }; }
+    if (s.revoked_at && s.revoke_reason === REPLACED) return { error: replacedError() };
     if (s.revoked_at) return { error: sessionEnded('SESSION_REVOKED', 'This session was signed out. Please sign in again.') };
     const now = new Date();
     if (s.absolute_expires_at <= now) { await revoke('absolute_expiry'); return { error: sessionEnded('SESSION_EXPIRED', 'Your session reached its maximum length. Please sign in again.') }; }
@@ -189,7 +199,27 @@ async function listSessions(userId) {
       ORDER BY last_seen_at DESC`, [userId])).rows;
 }
 
+// Super Admin "Sessions" tab: one row per user — the live session (if any)
+// plus 7-day sign-in counts, which show a login being shared around.
+async function overview() {
+  return (await query(
+    `SELECT u.id, u.name, u.email, u.role, u.is_active, u.last_login_at,
+            cur.created_at AS signed_in_at, cur.last_seen_at, cur.ip, cur.user_agent,
+            st.logins_7d, st.ips_7d, st.replaced_7d
+       FROM users u
+       LEFT JOIN LATERAL (
+         SELECT created_at, last_seen_at, ip, user_agent FROM auth_sessions s
+          WHERE s.user_id = u.id AND s.revoked_at IS NULL AND s.idle_expires_at > NOW() AND s.absolute_expires_at > NOW()
+          ORDER BY s.created_at DESC LIMIT 1) cur ON true
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*)::int AS logins_7d, COUNT(DISTINCT s.ip)::int AS ips_7d,
+                COUNT(*) FILTER (WHERE s.revoke_reason = $1)::int AS replaced_7d
+           FROM auth_sessions s WHERE s.user_id = u.id AND s.created_at > NOW() - INTERVAL '7 days') st ON true
+      ORDER BY (cur.created_at IS NULL), cur.last_seen_at DESC NULLS LAST, u.name`, [REPLACED])).rows;
+}
+
 module.exports = {
+  REPLACED, overview,
   COOKIE, COOKIE_PATH, IDLE_MS, ABSOLUTE_MS, GRACE_MS, ACCESS_TOKEN_EXPIRY,
   sha256, readRefreshToken, setRefreshCookie, clearRefreshCookie,
   createSession, rotate, revokeSession, revokeUserSessions, listSessions,

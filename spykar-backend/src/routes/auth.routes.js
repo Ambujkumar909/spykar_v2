@@ -55,6 +55,16 @@ userRouter.get('/',
   authController.listUsers
 );
 
+// Super Admin only: everyone's sign-in (one row per user), and sign a user out.
+userRouter.get('/sessions', authenticate, authorize('SUPER_ADMIN'), authController.listAllSessions);
+userRouter.delete('/:id/sessions',
+  authenticate,
+  authorize('SUPER_ADMIN'),
+  [param('id').isUUID().withMessage('Invalid user id')],
+  validate,
+  authController.signOutUser
+);
+
 userRouter.post('/',
   authenticate,
   authorize('SUPER_ADMIN', 'ADMIN'),

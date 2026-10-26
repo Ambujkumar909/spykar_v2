@@ -16,6 +16,7 @@ const REASONS = {
   SESSION_IDLE: 'You were signed out after a period of inactivity.',
   SESSION_EXPIRED: 'Your session reached its maximum length. Please sign in again.',
   SESSION_REVOKED: 'This session was signed out. Please sign in again.',
+  SESSION_REPLACED: 'You were signed in on another device.',
   ACCOUNT_DISABLED: 'This account has been deactivated. Contact your administrator.',
   LICENSE_EXPIRED: 'The licence has expired. Ask your administrator to renew it.',
   LICENSE_MISSING: 'No licence is installed. Ask your administrator.',

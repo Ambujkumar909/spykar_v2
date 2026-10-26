@@ -7,6 +7,8 @@ export const authService = {
   logoutAll: () => api.post('/auth/logout-all'),
   sessions: () => api.get('/auth/sessions'),
   revokeSession: (id) => api.delete(`/auth/sessions/${id}`),
+  allSessions: () => api.get('/users/sessions'),
+  signOutUser: (id) => api.delete(`/users/${id}/sessions`),
   me: () => api.get('/auth/me'),
   refresh: (refreshToken) => api.post('/auth/refresh', { refreshToken }),
   listUsers: (params = {}) => api.get('/users', { params }),

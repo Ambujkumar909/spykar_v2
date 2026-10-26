@@ -42,7 +42,7 @@ api.interceptors.response.use(
     const code = error.response && error.response.data && error.response.data.code;
 
     if (status === 401 && !isAuthEndpoint(originalRequest.url)) {
-      if (['SESSION_REVOKED', 'ACCOUNT_DISABLED', 'LICENSE_EXPIRED', 'LICENSE_MISSING', 'NO_SEAT'].includes(code) || originalRequest._retry) {
+      if (['SESSION_REVOKED', 'SESSION_REPLACED', 'ACCOUNT_DISABLED', 'LICENSE_EXPIRED', 'LICENSE_MISSING', 'NO_SEAT'].includes(code) || originalRequest._retry) {
         endSession(code || 'SESSION_INVALID');
         return Promise.reject(error);
       }
