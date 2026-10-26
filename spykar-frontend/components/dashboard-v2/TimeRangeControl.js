@@ -13,6 +13,9 @@ const LABELS = {
   custom: 'Custom',
 };
 
+// The --v2-* tokens exist only inside .v2-app (Overview). On /sales and
+// /primary-sales the pill sits in the app header, so each token falls back to
+// the app's own theme token instead of resolving to nothing.
 export default function TimeRangeControl({ preset, onChange }) {
   const idx = Math.max(0, PRESETS.indexOf(preset));
   const seg = 100 / PRESETS.length;
@@ -25,8 +28,8 @@ export default function TimeRangeControl({ preset, onChange }) {
       style={{
         display: 'inline-flex',
         position: 'relative',
-        background: 'var(--v2-bg-elevated)',
-        border: '1px solid var(--v2-border)',
+        background: 'var(--v2-bg-elevated, var(--bg-elevated))',
+        border: '1px solid var(--v2-border, var(--border-subtle))',
         borderRadius: 999,
         padding: 3,
         height: 34,
@@ -50,7 +53,7 @@ export default function TimeRangeControl({ preset, onChange }) {
           boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12), 0 2px 8px rgba(0,0,0,0.30)',
           backdropFilter: 'blur(4px)',
           WebkitBackdropFilter: 'blur(4px)',
-          transition: 'left 220ms var(--v2-ease), width 220ms var(--v2-ease)',
+          transition: 'left 220ms var(--v2-ease, cubic-bezier(0.16, 1, 0.3, 1)), width 220ms var(--v2-ease, cubic-bezier(0.16, 1, 0.3, 1))',
         }}
       />
       {PRESETS.map(p => (
@@ -64,11 +67,11 @@ export default function TimeRangeControl({ preset, onChange }) {
             position: 'relative', zIndex: 1,
             background: 'transparent', border: 'none', cursor: 'pointer',
             padding: '0 14px',
-            fontFamily: 'var(--v2-font-body)',
+            fontFamily: 'var(--v2-font-body, var(--font-body))',
             fontSize: 12,
             fontWeight: 600,
             letterSpacing: '0.01em',
-            color: preset === p ? 'var(--v2-fg-primary)' : 'var(--v2-fg-tertiary)',
+            color: preset === p ? 'var(--v2-fg-primary, var(--text-primary))' : 'var(--v2-fg-tertiary, var(--text-muted))',
             transition: 'color 200ms',
           }}
         >
