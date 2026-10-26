@@ -276,7 +276,6 @@ function DateField({ label, value, min, max, onChange }) {
       </span>
       <input
         type="date"
-        className="v2-date"
         value={value || ''}
         min={min || undefined}
         max={max || undefined}

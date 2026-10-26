@@ -186,10 +186,6 @@ html.theme-light option:hover {
   background-color: var(--bg-elevated);
   color: var(--text-primary);
 }
-html.theme-light input[type='date']::-webkit-calendar-picker-indicator,
-html.theme-light input[type='datetime-local']::-webkit-calendar-picker-indicator {
-  filter: none;
-}
 
 /* ─── Reset ──────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -582,18 +578,28 @@ input[type='week'],
 input[type='number'] {
   color-scheme: dark;
 }
-/* Default the calendar-icon glyph to legible white on Webkit-based browsers
-   (Chrome / Edge) where it's near-invisible on dark backgrounds otherwise. */
+/* Light theme: field + calendar popup go light too (they stayed dark before). */
+html.theme-light input[type='date'],
+html.theme-light input[type='datetime-local'],
+html.theme-light input[type='time'],
+html.theme-light input[type='month'],
+html.theme-light input[type='week'],
+html.theme-light input[type='number'] {
+  color-scheme: light;
+}
+/* Calendar icon: fixed colour per theme (white on dark, black on light),
+   whatever the browser would draw. */
 input[type='date']::-webkit-calendar-picker-indicator,
 input[type='datetime-local']::-webkit-calendar-picker-indicator {
-  filter: invert(0.85);
+  filter: brightness(0) invert(1);
+  opacity: 0.8;
   cursor: pointer;
 }
-
-/* Overview custom-range picker: same fixed icon colour as the other pages
-   (white in dark theme, black in light), whatever the browser would draw. */
-input.v2-date[type='date']::-webkit-calendar-picker-indicator { filter: brightness(0) invert(1); opacity: 0.8; cursor: pointer; }
-html.theme-light input.v2-date[type='date']::-webkit-calendar-picker-indicator { filter: brightness(0); opacity: 0.6; }
+html.theme-light input[type='date']::-webkit-calendar-picker-indicator,
+html.theme-light input[type='datetime-local']::-webkit-calendar-picker-indicator {
+  filter: brightness(0);
+  opacity: 0.6;
+}
 
 /* ─── Page Header ────────────────────────────────────────────────────────── */
 .page-header { margin-bottom: 24px; }

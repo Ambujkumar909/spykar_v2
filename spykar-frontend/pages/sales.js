@@ -1434,12 +1434,12 @@ export default function SalesAnalyticsPage() {
           <input type="date" value={dateFrom} max={dateTo}
             onChange={e => setDateFrom(e.target.value)}
             className="sales-date-input"
-            style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '6px 10px', fontSize: 12, fontWeight: 600, color: T.primary, outline: 'none', background: 'var(--bg-elevated)', height: 30, fontFamily: 'var(--font-body)', colorScheme: 'light dark' }} />
+            style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '6px 10px', fontSize: 12, fontWeight: 600, color: T.primary, outline: 'none', background: 'var(--bg-elevated)', height: 30, fontFamily: 'var(--font-body)' }} />
           <span style={{ fontWeight: 700, color: T.muted, fontSize: 14 }}>→</span>
           <input type="date" value={dateTo} min={dateFrom} max={todayISO()}
             onChange={e => setDateTo(e.target.value)}
             className="sales-date-input"
-            style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '6px 10px', fontSize: 12, fontWeight: 600, color: T.primary, outline: 'none', background: 'var(--bg-elevated)', height: 30, fontFamily: 'var(--font-body)', colorScheme: 'light dark' }} />
+            style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '6px 10px', fontSize: 12, fontWeight: 600, color: T.primary, outline: 'none', background: 'var(--bg-elevated)', height: 30, fontFamily: 'var(--font-body)' }} />
           {hasFilters && (
             <button
               onClick={() => { setColorName(''); setSize(''); setLocationId(''); clearV2(); setPreset('mtd'); }}
