@@ -135,6 +135,9 @@ async function listAllSessions(req, res, next) {
 async function signOutUser(req, res, next) {
   try {
     if (req.params.id === req.user.id) throw new AppError('Use Log out to end your own session.', 400);
+    const t = (await query('SELECT role FROM users WHERE id = $1', [req.params.id])).rows[0];
+    if (!t) throw new AppError('User not found.', 404);
+    if (t.role === 'SUPER_ADMIN') throw new AppError('Super Admin sessions are not managed here.', 403);
     const n = await transaction((c) => sessions.revokeUserSessions(c, req.params.id, 'revoked_by_admin'));
     logger.info(`Super Admin ${req.user.email} signed out user ${req.params.id} (${n} session(s))`);
     res.json({ success: true, message: n ? 'User signed out.' : 'User was not signed in.' });

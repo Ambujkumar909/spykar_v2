@@ -199,7 +199,7 @@ async function listSessions(userId) {
       ORDER BY last_seen_at DESC`, [userId])).rows;
 }
 
-// Super Admin "Sessions" tab: one row per user — the live session (if any)
+// Super Admin "Sessions" tab: one row per user (Super Admins are never listed) — the live session (if any)
 // plus 7-day sign-in counts, which show a login being shared around.
 async function overview() {
   return (await query(
@@ -215,6 +215,7 @@ async function overview() {
          SELECT COUNT(*)::int AS logins_7d, COUNT(DISTINCT s.ip)::int AS ips_7d,
                 COUNT(*) FILTER (WHERE s.revoke_reason = $1)::int AS replaced_7d
            FROM auth_sessions s WHERE s.user_id = u.id AND s.created_at > NOW() - INTERVAL '7 days') st ON true
+      WHERE u.role <> 'SUPER_ADMIN'
       ORDER BY (cur.created_at IS NULL), cur.last_seen_at DESC NULLS LAST, u.name`, [REPLACED])).rows;
 }
 
