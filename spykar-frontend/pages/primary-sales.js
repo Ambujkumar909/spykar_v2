@@ -306,8 +306,11 @@ export default function PrimarySalesPage() {
   const grid = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)';
 
   // ── daily throughput area ──
+  // Long ranges (Custom = whole history, day by day) redraw without animation:
+  // animating thousands of points blocked the page on every theme switch.
+  const ANIM_MAX = 120;
   const dailyOpts = useMemo(() => ({
-    chart: { type: 'area', fontFamily: 'inherit', toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: true, speed: 600 }, background: 'transparent' },
+    chart: { type: 'area', fontFamily: 'inherit', toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: (ov?.daily?.length || 0) <= ANIM_MAX, speed: 600 }, background: 'transparent' },
     colors: [SEQ], stroke: { width: 2, curve: 'smooth', lineCap: 'round' },
     fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.28, opacityTo: 0, stops: [0, 100] } },
     dataLabels: { enabled: false }, markers: { size: 0, hover: { size: 5 } },
@@ -323,7 +326,7 @@ export default function PrimarySalesPage() {
 
   // ── explorer trend (multi-line) ──
   const trendOpts = useMemo(() => ({
-    chart: { type: 'line', fontFamily: 'inherit', toolbar: { show: false }, zoom: { enabled: false }, background: 'transparent' },
+    chart: { type: 'line', fontFamily: 'inherit', toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: (trend?.dates?.length || 0) <= ANIM_MAX }, background: 'transparent' },
     colors: drill ? [DENIM] : SERIES, stroke: { width: drill ? 3 : 2.5, curve: 'smooth' },
     markers: { size: (trend?.dates?.length || 0) <= 2 ? 5 : 0, hover: { size: 6 } }, dataLabels: { enabled: false },
     legend: { show: !drill, position: 'bottom', fontSize: '12px', labels: { colors: axis }, markers: { width: 10, height: 3, radius: 2 } },
