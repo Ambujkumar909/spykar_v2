@@ -68,9 +68,8 @@ export default function TimeRangeControl({ preset, onChange }) {
             fontSize: 12,
             fontWeight: 600,
             letterSpacing: '0.01em',
-            // No colour transition: a theme switch on a heavy page (charts
-            // redrawing) froze it halfway and left the labels stuck white.
             color: preset === p ? 'var(--v2-fg-primary)' : 'var(--v2-fg-tertiary)',
+            transition: 'color 200ms',
           }}
         >
           {LABELS[p]}
