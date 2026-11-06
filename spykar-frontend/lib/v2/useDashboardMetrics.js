@@ -114,7 +114,9 @@ function buildMetrics(b, valuation) {
     : 0;
 
   const lyNet     = pickNet(lyS, valuation);
-  const lyUnits   = Number(lyS.units_sold || 0);
+  // Units card = NET units (sold − returned), like the Net Sales ₹ card beside it.
+  const netUnits   = Number(c.units_sold || 0) - Number(c.return_units || 0);
+  const lyNetUnits = Number(lyS.units_sold || 0) - Number(lyS.return_units || 0);
   const lyReturn  = Number(lyS.return_rate_pct || 0);
   // No prior-year inventory or sell-through — leave deltas null so the
   // pill renders "—" rather than a phony number.
@@ -132,9 +134,9 @@ function buildMetrics(b, valuation) {
         : null,
     },
     unitsSold: {
-      value: unitsSold,
-      delta: dLy(unitsSold, lyUnits),
-      spark: realSparkline(dailyCur, 'sales_qty'),
+      value: netUnits,
+      delta: dLy(netUnits, lyNetUnits),
+      spark: (dailyCur || []).slice(-30).map((d) => Number(d.sales_qty || 0) - Number(d.return_qty || 0)),
       footnote: c.return_units > 0
         ? `${Number(c.return_units).toLocaleString('en-IN')} returned`
         : null,
